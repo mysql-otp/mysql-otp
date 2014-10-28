@@ -1,0 +1,5 @@
+{application, mysql, [
+    {description, "MySQL/OTP - Erlang MySQL driver"},
+    {vsn, "0.0.1"},
+    {modules, []}
+]}.
