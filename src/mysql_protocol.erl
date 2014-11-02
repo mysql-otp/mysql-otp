@@ -6,13 +6,18 @@
 %% TCP communication is not handled in this module.
 -module(mysql_protocol).
 
--export([parse_packet_header/1, add_packet_headers/2,
-         parse_handshake/1, build_handshake_response/3,
-         parse_handshake_confirm/1,
-         build_query/1, parse_query_response/1]).
+-export([
+         %parse_packet_header/1, add_packet_headers/2,
+         %parse_handshake/1, build_handshake_response/3,
+         %parse_handshake_confirm/1,
+         handshake/5,
+         query_tcp/3, query/3]).
 
 -include("records.hrl").
 -include("protocol.hrl").
+
+-type sendfun() :: fun((binary()) -> ok).
+-type recvfun() :: fun((integer()) -> {ok, binary()}).
 
 %% How much data do we want to send at most?
 -define(MAX_BYTES_PER_PACKET, 50000000).
@@ -20,7 +25,7 @@
 %% Macros for pattern matching on packets.
 -define(ok_pattern, <<?OK, _/binary>>).
 -define(error_pattern, <<?ERROR, _/binary>>).
--define(eof_pattern, <<?EOF, _/binary>>).
+-define(eof_pattern, <<?EOF, _:4/binary>>).
 
 %% @doc Parses a packet header (32 bits) and returns a tuple.
 %%
@@ -52,13 +57,30 @@ add_packet_headers(PacketBody, SeqNum) ->
         {[<<Size:24/little, SeqNum:8>>, Bin], SeqNum1}
     end.
 
+%% @doc Performs a handshake using the supplied functions for communication.
+%% Returns an ok or an error record.
+%%
+%% TODO: Implement setting the database in the handshake. Currently an error
+%% occurs if Database is anything other than undefined.
+-spec handshake(iodata(), iodata(), iodata() | undefined, sendfun(),
+                recvfun()) -> #ok{} | #error{}.
+handshake(Username, Password, Database, SendFun, RecvFun) ->
+    SeqNum0 = 0,
+    Database == undefined orelse error(database_in_handshake_not_implemented),
+    {ok, HandshakePacket, SeqNum1} = recv_packet(RecvFun, SeqNum0),
+    Handshake = parse_handshake(HandshakePacket),
+    Response = build_handshake_response(Handshake, Username, Password),
+    {ok, SeqNum2} = send_packet(SendFun, Response, SeqNum1),
+    {ok, ConfirmPacket, _SeqNum3} = recv_packet(RecvFun, SeqNum2),
+    parse_handshake_confirm(ConfirmPacket).
+
 %% @doc Parses a handshake. This is the first thing that comes from the server
 %% when connecting. If an unsupported version of variant of the protocol is used
 %% an error is raised.
 -spec parse_handshake(binary()) -> #handshake{}.
 parse_handshake(<<10, Rest/binary>>) ->
     %% Protocol version 10.
-    {ServerVersion, Rest1} = nulterm(Rest),
+    {ServerVersion, Rest1} = nulterm_str(Rest),
     <<ConnectionId:32/little,
       AuthPluginDataPart1:8/binary-unit:8,
       0, %% "filler" -- everything below is optional
@@ -103,12 +125,12 @@ build_handshake_response(Handshake, Username, Password) ->
                       ?CLIENT_TRANSACTIONS bor
                       ?CLIENT_SECURE_CONNECTION,
     Handshake#handshake.capabilities band CapabilityFlags == CapabilityFlags
-        orelse error({incompatible, <<"Server version is too old">>}),
+        orelse error({not_implemented, old_server_version}),
     Hash = hash_password(Password,
                          Handshake#handshake.auth_plugin_name,
                          Handshake#handshake.auth_plugin_data),
     HashLength = size(Hash),
-    CharacterSet = 16#21, %% utf8_general_ci
+    CharacterSet = ?UTF8,
     UsernameUtf8 = unicode:characters_to_binary(Username),
     <<CapabilityFlags:32/little,
       ?MAX_BYTES_PER_PACKET:32/little,
@@ -120,8 +142,9 @@ build_handshake_response(Handshake, Username, Password) ->
       Hash/binary>>.
 
 %% @doc Handles the second packet from the server, when we have replied to the
-%% initial handshake. Returns an error if unimplemented features are required.
--spec parse_handshake_confirm(binary()) -> #ok_packet{} | #error_packet{}.
+%% initial handshake. Returns an error if the server returns an error. Raises
+%% an error if unimplemented features are required.
+-spec parse_handshake_confirm(binary()) -> #ok{} | #error{}.
 parse_handshake_confirm(Packet) ->
     case Packet of
         ?ok_pattern ->
@@ -135,45 +158,151 @@ parse_handshake_confirm(Packet) ->
             %% single 0xfe byte. It is sent by server to request client to
             %% switch to Old Password Authentication if CLIENT_PLUGIN_AUTH
             %% capability is not supported (by either the client or the server)"
-            %%
-            %% Simulate an error packet (without code)
-            #error_packet{msg = <<"Old auth method not implemented">>};
+            error({not_implemented, old_auth});
         <<?EOF, _/binary>> ->
             %% "Authentication Method Switch Request Packet. If both server and
             %% client support CLIENT_PLUGIN_AUTH capability, server can send
             %% this packet to ask client to use another authentication method."
-            %%
-            %% Simulate an error packet (without code)
-            #error_packet{msg = <<"Auth method switch not implemented">>}
+            error({not_implemented, auth_method_switch})
     end.
 
-build_query(Query) when is_binary(Query) ->
-    <<?COM_QUERY, Query/binary>>.
+%% @doc Query on a tcp socket.
+query_tcp(Query, Socket, Timeout) ->
+    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
+    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
+    query(Query, SendFun, RecvFun).
 
-%% @doc TODO: Handle result set responses.
--spec parse_query_response(binary()) -> #ok_packet{} | #error_packet{}.
-parse_query_response(Resp) ->
+%% @doc Normally fun gen_tcp:send/2 and fun gen_tcp:recv/3 are used, except in
+%% unit testing.
+query(Query, SendFun, RecvFun) ->
+    Req = <<?COM_QUERY, (iolist_to_binary(Query))/binary>>,
+    SeqNum0 = 0,
+    {ok, SeqNum1} = send_packet(SendFun, Req, SeqNum0),
+    {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
     case Resp of
-        ?ok_pattern -> parse_ok_packet(Resp);
-        ?error_pattern -> parse_error_packet(Resp);
-        _ -> error(result_set_not_implemented)
+        ?ok_pattern ->
+            parse_ok_packet(Resp);
+        ?error_pattern ->
+            parse_error_packet(Resp);
+        _ResultSet ->
+            %% The first packet in a resultset is just the field count.
+            {FieldCount, <<>>} = lenenc_int(Resp),
+            fetch_resultset(RecvFun, FieldCount, SeqNum2)
     end.
+
+-spec fetch_resultset(recvfun(), integer(), integer()) ->
+    #text_resultset{} | #error{}.
+fetch_resultset(RecvFun, FieldCount, SeqNum) ->
+    {ok, ColDefs, SeqNum1} = fetch_column_definitions(RecvFun, SeqNum,
+                                                      FieldCount, []),
+    {ok, DelimiterPacket, SeqNum2} = recv_packet(RecvFun, SeqNum1),
+    case DelimiterPacket of
+        ?eof_pattern ->
+            #eof{} = parse_eof_packet(DelimiterPacket),
+            {ok, Rows, _SeqNum3} = fetch_resultset_rows(RecvFun, ColDefs,
+                                                        SeqNum2, []),
+            #text_resultset{column_definitions = ColDefs, rows = Rows};
+        ?error_pattern ->
+            parse_error_packet(DelimiterPacket)
+    end.
+
+%% Receives NumLeft packets and parses them as column definitions.
+-spec fetch_column_definitions(recvfun(), SeqNum :: integer(),
+                               NumLeft :: integer(), Acc :: [tuple()]) ->
+    {ok, [tuple()], NextSeqNum :: integer()}.
+fetch_column_definitions(RecvFun, SeqNum, NumLeft, Acc) when NumLeft > 0 ->
+    {ok, Packet, SeqNum1} = recv_packet(RecvFun, SeqNum),
+    ColDef = parse_column_definition(Packet),
+    fetch_column_definitions(RecvFun, SeqNum1, NumLeft - 1, [ColDef | Acc]);
+fetch_column_definitions(_RecvFun, SeqNum, 0, Acc) ->
+    {ok, lists:reverse(Acc), SeqNum}.
+
+fetch_resultset_rows(RecvFun, ColDefs, SeqNum, Acc) ->
+    {ok, Packet, SeqNum1} = recv_packet(RecvFun, SeqNum),
+    case Packet of
+        ?eof_pattern ->
+            {ok, lists:reverse(Acc), SeqNum1};
+        _AnotherRow ->
+            Row = parse_resultset_row(ColDefs, Packet, []),
+            fetch_resultset_rows(RecvFun, ColDefs, SeqNum1, [Row | Acc])
+    end.
+
+%% parses Data using ColDefs and builds the values Acc.
+parse_resultset_row([_ColDef | ColDefs], Data, Acc) ->
+    case Data of
+        <<16#fb, Rest/binary>> ->
+            %% NULL
+            parse_resultset_row(ColDefs, Rest, [null | Acc]);
+        _ ->
+            %% Every thing except NULL
+            {Str, Rest} = lenenc_str(Data),
+            parse_resultset_row(ColDefs, Rest, [Str | Acc])
+    end;
+parse_resultset_row([], <<>>, Acc) ->
+    lists:reverse(Acc).
+
+%% Parses a packet containing a column definition (part of a result set)
+parse_column_definition(Data) ->
+    {<<"def">>, Rest1} = lenenc_str(Data),   %% catalog (always "def")
+    {_Schema, Rest2} = lenenc_str(Rest1),    %% schema-name 
+    {_Table, Rest3} = lenenc_str(Rest2),     %% virtual table-name 
+    {_OrgTable, Rest4} = lenenc_str(Rest3),  %% physical table-name 
+    {Name, Rest5} = lenenc_str(Rest4),       %% virtual column name
+    {_OrgName, Rest6} = lenenc_str(Rest5),   %% physical column name
+    {16#0c, Rest7} = lenenc_int(Rest6),      %% length of the following fields
+                                             %% (always 0x0c)
+    <<Charset:16/little,        %% column character set
+      _ColumnLength:32/little,  %% maximum length of the field
+      ColumnType:8,             %% type of the column as defined in Column Type
+      _Flags:16/little,         %% flags
+      _Decimals:8,              %% max shown decimal digits:
+      0,  %% "filler"           %%   - 0x00 for integers and static strings
+      0,                        %%   - 0x1f for dynamic strings, double, float
+      Rest8/binary>> = Rest7,   %%   - 0x00 to 0x51 for decimals
+    %% Here, if command was COM_FIELD_LIST {
+    %%   default values: lenenc_str
+    %% }
+    <<>> = Rest8,
+    #column_definition{name = Name, type = ColumnType, charset = Charset}.
 
 %% --- internal ---
 
-%is_ok_packet(<<?OK, _/binary>>) -> true;
-%is_ok_packet(_)                 -> false;
+%% @doc Wraps Data in packet headers, sends it by calling SendFun and returns
+%% {ok, SeqNum1} where SeqNum1 is the next sequence number.
+-spec send_packet(sendfun(), Data :: binary(), SeqNum :: integer()) ->
+    {ok, NextSeqNum :: integer()}.
+send_packet(SendFun, Data, SeqNum) ->
+    {WithHeaders, SeqNum1} = add_packet_headers(Data, SeqNum),
+    ok = SendFun(WithHeaders),
+    {ok, SeqNum1}.
 
-%is_error_packet(<<?ERROR, _/binary>>) -> true;
-%is_error_packet(_)                    -> false;
+%% @doc Receives data by calling RecvFun and removes the packet headers. Returns
+%% the packet contents and the next packet sequence number.
+-spec recv_packet(RecvFun :: recvfun(), SeqNum :: integer()) ->
+    {ok, Data :: binary(), NextSeqNum :: integer()}.
+recv_packet(RecvFun, SeqNum) ->
+    recv_packet(RecvFun, SeqNum, <<>>).
 
-%is_eof_packet(<<?EOF, _/binary>>) -> true;
-%is_eof_paclet(_)                  -> false;
+%% @doc Receives data by calling RecvFun and removes packet headers. Returns the
+%% data and the next packet sequence number.
+-spec recv_packet(RecvFun :: recvfun(), ExpectSeqNum :: integer(),
+                  Acc :: binary()) ->
+    {ok, Data :: binary(), NextSeqNum :: integer()}.
+recv_packet(RecvFun, ExpectSeqNum, Acc) ->
+    {ok, Header} = RecvFun(4),
+    {Size, ExpectSeqNum, More} = parse_packet_header(Header),
+    {ok, Body} = RecvFun(Size),
+    Acc1 = <<Acc/binary, Body/binary>>,
+    NextSeqNum = (ExpectSeqNum + 1) band 16#ff,
+    case More of
+        false -> {ok, Acc1, NextSeqNum};
+        true  -> recv_packet(RecvFun, NextSeqNum, Acc1)
+    end.
 
--spec parse_ok_packet(binary()) -> #ok_packet{}.
+-spec parse_ok_packet(binary()) -> #ok{}.
 parse_ok_packet(<<?OK:8, Rest/binary>>) ->
-    {AffectedRows, Rest1} = lci(Rest),
-    {InsertId, Rest2} = lci(Rest1),
+    {AffectedRows, Rest1} = lenenc_int(Rest),
+    {InsertId, Rest2} = lenenc_int(Rest1),
     <<StatusFlags:16/little, WarningCount:16/little, Msg/binary>> = Rest2,
     %% We have enabled CLIENT_PROTOCOL_41 but not CLIENT_SESSION_TRACK in the
     %% conditional protocol:
@@ -192,24 +321,24 @@ parse_ok_packet(<<?OK:8, Rest/binary>>) ->
     %% } else {
     %%   string<EOF> info
     %% }
-    #ok_packet{affected_rows = AffectedRows,
-               insert_id = InsertId,
-               status = StatusFlags,
-               warning_count = WarningCount,
-               msg = Msg}.
+    #ok{affected_rows = AffectedRows,
+        insert_id = InsertId,
+        status = StatusFlags,
+        warning_count = WarningCount,
+        msg = Msg}.
 
--spec parse_error_packet(binary()) -> #error_packet{}.
+-spec parse_error_packet(binary()) -> #error{}.
 parse_error_packet(<<?ERROR:8, ErrNo:16/little, "#", SQLState:5/binary-unit:8,
                      Msg/binary>>) ->
     %% Error, 4.1 protocol.
     %% (Older protocol: <<?ERROR:8, ErrNo:16/little, Msg/binary>>)
-    #error_packet{code = ErrNo, state = SQLState, msg = Msg}.
+    #error{code = ErrNo, state = SQLState, msg = Msg}.
 
--spec parse_eof_packet(binary()) -> #eof_packet{}.
+-spec parse_eof_packet(binary()) -> #eof{}.
 parse_eof_packet(<<?EOF:8, NumWarnings:16/little, StatusFlags:16/little>>) ->
     %% EOF packet, 4.1 protocol.
     %% (Older protocol: <<?EOF:8>>)
-    #eof_packet{status = StatusFlags, warning_count = NumWarnings}.
+    #eof{status = StatusFlags, warning_count = NumWarnings}.
 
 -spec hash_password(Password :: iodata(), AuthPluginName :: binary(),
                     AuthPluginData :: binary()) -> binary().
@@ -236,42 +365,42 @@ hash_password(Password, <<"mysql_native_password">>, AuthData) ->
 hash_password(_, AuthPlugin, _) ->
     error({unsupported_auth_method, AuthPlugin}).
 
-%% lci/1 decodes length-coded-integer values
--spec lci(Input :: binary()) -> {Value :: integer(), Rest :: binary()}.
-lci(<<Value:8, Rest/bits>>) when Value < 251 -> {Value, Rest};
-lci(<<16#fc:8, Value:16/little, Rest/binary>>) -> {Value, Rest};
-lci(<<16#fd:8, Value:24/little, Rest/binary>>) -> {Value, Rest};
-lci(<<16#fe:8, Value:64/little, Rest/binary>>) -> {Value, Rest}.
+%% lenenc_int/1 decodes length-encoded-integer values
+-spec lenenc_int(Input :: binary()) -> {Value :: integer(), Rest :: binary()}.
+lenenc_int(<<Value:8, Rest/bits>>) when Value < 251 -> {Value, Rest};
+lenenc_int(<<16#fc:8, Value:16/little, Rest/binary>>) -> {Value, Rest};
+lenenc_int(<<16#fd:8, Value:24/little, Rest/binary>>) -> {Value, Rest};
+lenenc_int(<<16#fe:8, Value:64/little, Rest/binary>>) -> {Value, Rest}.
 
-%% lcs/1 decodes length-encoded-string values
--spec lcs(Input :: binary()) -> {String :: binary(), Rest :: binary()}.
-lcs(Bin) ->
-    {Length, Rest} = lci(Bin),
+%% lenenc_str/1 decodes length-encoded-string values
+-spec lenenc_str(Input :: binary()) -> {String :: binary(), Rest :: binary()}.
+lenenc_str(Bin) ->
+    {Length, Rest} = lenenc_int(Bin),
     <<String:Length/binary, Rest1/binary>> = Rest,
     {String, Rest1}.
 
 %% nts/1 decodes a nul-terminated string
--spec nulterm(Input :: binary()) -> {String :: binary(), Rest :: binary()}.
-nulterm(Bin) ->
+-spec nulterm_str(Input :: binary()) -> {String :: binary(), Rest :: binary()}.
+nulterm_str(Bin) ->
     [String, Rest] = binary:split(Bin, <<0>>),
     {String, Rest}.
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
-lci_test() ->
-    ?assertEqual({40, <<>>}, lci(<<40>>)),
-    ?assertEqual({16#ff, <<>>}, lci(<<16#fc, 255, 0>>)),
-    ?assertEqual({16#33aaff, <<>>}, lci(<<16#fd, 16#ff, 16#aa, 16#33>>)),
-    ?assertEqual({16#12345678, <<>>}, lci(<<16#fe, 16#78, 16#56, 16#34, 16#12,
-                                            0, 0, 0, 0>>)),
+lenenc_int_test() ->
+    ?assertEqual({40, <<>>}, lenenc_int(<<40>>)),
+    ?assertEqual({16#ff, <<>>}, lenenc_int(<<16#fc, 255, 0>>)),
+    ?assertEqual({16#33aaff, <<>>}, lenenc_int(<<16#fd, 16#ff, 16#aa, 16#33>>)),
+    ?assertEqual({16#12345678, <<>>}, lenenc_int(<<16#fe, 16#78, 16#56, 16#34,
+                                                 16#12, 0, 0, 0, 0>>)),
     ok.
 
-lcs_test() ->
-    ?assertEqual({<<"Foo">>, <<"bar">>}, lcs(<<3, "Foobar">>)).
+lenenc_str_test() ->
+    ?assertEqual({<<"Foo">>, <<"bar">>}, lenenc_str(<<3, "Foobar">>)).
 
 nulterm_test() ->
-    ?assertEqual({<<"Foo">>, <<"bar">>}, nulterm(<<"Foo", 0, "bar">>)).
+    ?assertEqual({<<"Foo">>, <<"bar">>}, nulterm_str(<<"Foo", 0, "bar">>)).
 
 parse_header_test() ->
     %% Example from "MySQL Internals", revision 307, section 14.1.3.3 EOF_Packet
@@ -280,26 +409,24 @@ parse_header_test() ->
     %% Check header contents and body length
     ?assertEqual({size(Body), 5, false}, parse_packet_header(Header)),
     ok.
-    
+
 add_packet_headers_test() ->
     {Data, 43} = add_packet_headers(<<"foo">>, 42),
     ?assertEqual(<<3, 0, 0, 42, "foo">>, list_to_binary(Data)).
 
 parse_ok_test() ->
     Body = <<0, 5, 1, 2, 0, 0, 0, "Foo">>,
-    ?assertEqual(#ok_packet{affected_rows = 5,
-                            insert_id = 1,
-                            status = ?SERVER_STATUS_AUTOCOMMIT,
-                            warning_count = 0,
-                            msg = <<"Foo">>},
+    ?assertEqual(#ok{affected_rows = 5,
+                     insert_id = 1,
+                     status = ?SERVER_STATUS_AUTOCOMMIT,
+                     warning_count = 0,
+                     msg = <<"Foo">>},
                  parse_ok_packet(Body)).
 
 parse_error_test() ->
     %% Protocol 4.1
     Body = <<255, 42, 0, "#", "XYZxx", "Foo">>,
-    ?assertEqual(#error_packet{code = 42,
-                               state = <<"XYZxx">>,
-                               msg = <<"Foo">>},
+    ?assertEqual(#error{code = 42, state = <<"XYZxx">>, msg = <<"Foo">>},
                  parse_error_packet(Body)),
     ok.
 
@@ -308,9 +435,10 @@ parse_eof_test() ->
     Packet = <<16#05, 16#00, 16#00, 16#05, 16#fe, 16#00, 16#00, 16#02, 16#00>>,
     <<_Header:4/binary-unit:8, Body/binary>> = Packet,
     %% Ignore header. Parse body as an eof_packet.
-    ?assertEqual(#eof_packet{warning_count = 0,
-                             status = ?SERVER_STATUS_AUTOCOMMIT},
+    ?assertEqual(#eof{warning_count = 0,
+                      status = ?SERVER_STATUS_AUTOCOMMIT},
                  parse_eof_packet(Body)),
     ok.
+
 
 -endif.

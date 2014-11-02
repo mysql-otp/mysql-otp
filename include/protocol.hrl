@@ -24,6 +24,9 @@
 -define(EOF, 16#fe).
 -define(ERROR, 16#ff).
 
+%% Character sets
+-define(UTF8, 16#21). %% utf8_general_ci
+
 %% --- Capability flags ---
 
 %% Server: supports the 4.1 protocol 
@@ -85,4 +88,34 @@
 -define(COM_STMT_RESET, 16#1a).
 -define(COM_SET_OPTION, 16#1b).
 -define(COM_STMT_FETCH, 16#1c).
+
+%% --- Types ---
+
+-define(TYPE_DECIMAL, 16#00).
+-define(TYPE_TINY, 16#01).
+-define(TYPE_SHORT, 16#02).
+-define(TYPE_LONG, 16#03).
+-define(TYPE_FLOAT, 16#04).
+-define(TYPE_DOUBLE, 16#05).
+-define(TYPE_NULL, 16#06).
+-define(TYPE_TIMESTAMP, 16#07).
+-define(TYPE_LONGLONG, 16#08).
+-define(TYPE_INT24, 16#09).
+-define(TYPE_DATE, 16#0a).
+-define(TYPE_TIME, 16#0b).
+-define(TYPE_DATETIME, 16#0c).
+-define(TYPE_YEAR, 16#0d).
+-define(TYPE_VARCHAR, 16#0f).
+-define(TYPE_BIT, 16#10).
+-define(TYPE_NEWDECIMAL, 16#f6).
+-define(TYPE_ENUM, 16#f7).
+-define(TYPE_SET, 16#f8).
+-define(TYPE_TINY_BLOB, 16#f9).
+-define(TYPE_MEDIUM_BLOB, 16#fa).
+-define(TYPE_LONG_BLOB, 16#fb).
+-define(TYPE_BLOB, 16#fc).
+-define(TYPE_VAR_STRING, 16#fd).
+-define(TYPE_STRING, 16#fe).
+-define(TYPE_GEOMETRY, 16#ff).
+
 

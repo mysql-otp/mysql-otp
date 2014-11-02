@@ -3,7 +3,7 @@ MySQL/OTP
 
 This is a MySQL driver for Erlang following the OTP principles.
 
-Status: Just started. Connecting works but nothing else.
+Status: Pre-alpha. Connecting and queries using the text protocol work. The API and the value representation are subjects to change.
 
 Background: We are starting this project with the aim at overcoming the problems with Emysql (the currently most popular driver) and erlang-mysql-driver (the even older driver).
 

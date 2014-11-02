@@ -1,27 +1,27 @@
+%% A mysql connection implemented as a gen_server. This is a gen_server callback
+%% module only. The API functions are located in the mysql module.
 -module(mysql_connection).
 -behaviour(gen_server).
 
--export([start_link/1]).
-
-%% Gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
 
--include("records.hrl").
-
-start_link(Args) ->
-    gen_server:start_link(?MODULE, Args, []).
-
-%% --- Gen_server ballbacks ---
-
+%% Some defaults
 -define(default_host, "localhost").
 -define(default_port, 3306).
 -define(default_user, <<>>).
 -define(default_password, <<>>).
 -define(default_timeout, infinity).
 
+-include("records.hrl").
+
+%% Gen_server state
 -record(state, {socket, affected_rows = 0, status = 0, warning_count = 0,
                 insert_id = 0}).
+
+%% A tuple representing a MySQL server error, typically returned in the form
+%% {error, reason()}.
+-type reason() :: {Code :: integer(), SQLState :: binary(), Msg :: binary()}.
 
 init(Opts) ->
     %% Connect
@@ -29,41 +29,41 @@ init(Opts) ->
     Port     = proplists:get_value(port,     Opts, ?default_port),
     User     = proplists:get_value(user,     Opts, ?default_user),
     Password = proplists:get_value(password, Opts, ?default_password),
+    Database = proplists:get_value(database, Opts, undefined),
     Timeout  = proplists:get_value(timeout,  Opts, ?default_timeout),
 
     %% Connect socket
     SockOpts = [{active, false}, binary, {packet, raw}],
     {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
 
-    %% Receive handshake
-    {ok, HandshakeBin, 1} = recv(Socket, 0, Timeout),
-    Handshake = mysql_protocol:parse_handshake(HandshakeBin),
-
-    %% Reply to handshake
-    HandshakeResp =
-        mysql_protocol:build_handshake_response(Handshake, User, Password),
-    {ok, 2} = send(Socket, HandshakeResp, 1),
-
-    %% Receive connection ok or error
-    {ok, ContBin, 3} = recv(Socket, 2, Timeout),
-    case mysql_protocol:parse_handshake_confirm(ContBin) of
-        #ok_packet{status = Status} ->
+    %% Exchange handshake communication.
+    Result = mysql_protocol:handshake(User, Password, Database,
+                                      fun (Data) ->
+                                          gen_tcp:send(Socket, Data)
+                                      end,
+                                      fun (Size) ->
+                                          gen_tcp:recv(Socket, Size, Timeout)
+                                      end),
+    case Result of
+        #ok{status = Status} ->
             {ok, #state{status = Status, socket = Socket}};
-        #error_packet{msg = Reason} ->
-            {stop, Reason}
+        #error{} = E ->
+            {stop, error_to_reason(E)}
     end.
 
-handle_call({'query', Query}, _From, State) when is_binary(Query) ->
-    Req = mysql_protocol:build_query(Query),
-    Resp = call_db(State, Req),
-    Rec = mysql_protocol:parse_query_response(Resp),
+handle_call({query, Query}, _From, State) when is_binary(Query) ->
+    Rec = mysql_protocol:query_tcp(Query, State#state.socket,
+                                   infinity),
     State1 = update_state(State, Rec),
     case Rec of
-        #ok_packet{} ->
+        #ok{} ->
             {reply, ok, State1};
-        #error_packet{msg = Msg} ->
-            {reply, {error, Msg}, State1}
-        %% TODO: Add result set here.
+        #error{} = E ->
+            {reply, {error, error_to_reason(E)}, State1};
+        #text_resultset{column_definitions = ColDefs, rows = Rows} ->
+            Names = [Def#column_definition.name || Def <- ColDefs],
+            Rows1 = decode_text_rows(ColDefs, Rows),
+            {reply, {ok, Names, Rows1}, State1}
     end;
 handle_call(warning_count, _From, State) ->
     {reply, State#state.warning_count, State};
@@ -83,71 +83,34 @@ code_change(_, _, _) -> todo.
 
 %% --- Helpers ---
 
+%% @doc Produces a tuple to return when an error needs to be returned to in the
+%% public API.
+-spec error_to_reason(#error{}) -> reason().
+error_to_reason(#error{code = Code, state = State, msg = Msg}) ->
+    {Code, State, Msg}.
+
 %% @doc Updates a state with information from a response.
--spec update_state(#state{}, #ok_packet{} | #error_packet{} | #eof_packet{}) ->
-    #state{}.
-update_state(State, #ok_packet{status = S, affected_rows = R,
-                               insert_id = Id, warning_count = W}) ->
+-spec update_state(#state{}, #ok{} | #eof{} | any()) -> #state{}.
+update_state(State, #ok{status = S, affected_rows = R,
+                        insert_id = Id, warning_count = W}) ->
     State#state{status = S, affected_rows = R, insert_id = Id,
                 warning_count = W};
-update_state(State, #error_packet{}) ->
-    State;
-update_state(State, #eof_packet{status = S, warning_count = W}) ->
-    State#state{status = S, warning_count = W}.
+update_state(State, #eof{status = S, warning_count = W}) ->
+    State#state{status = S, warning_count = W, insert_id = 0,
+                affected_rows = 0};
+update_state(State, _Other) ->
+    %% This includes errors, resultsets, etc.
+    %% Reset warnings, etc. (Note: We don't reset 'status'.)
+    State#state{warning_count = 0, insert_id = 0, affected_rows = 0}.
 
-%% @doc Sends data to mysql and receives the response.
-call_db(State, PacketBody) ->
-    call_db(State, PacketBody, infinity).
+%% @doc Uses a list of column definitions to decode rows returned in the text
+%% protocol. Returns the rows with values as for their type their appropriate
+%% Erlang terms.
+decode_text_rows(ColDefs, Rows) ->
+    [decode_text_row_acc(ColDefs, Row, []) || Row <- Rows].
 
-%% @doc Sends data to mysql and receives the response.
-call_db(#state{socket = Socket}, PacketBody, Timeout) ->
-    {ok, SeqNum} = send(Socket, PacketBody, 0),
-    {ok, Response, _SeqNum} = recv(Socket, SeqNum, Timeout),
-    Response.
-
-%% @doc Sends data and returns {ok, SeqNum1} where SeqNum1 is the next sequence
-%% number.
--spec send(Socket :: gen_tcp:socket(), Data :: binary(), SeqNum :: integer()) ->
-    {ok, NextSeqNum :: integer()}.
-send(Socket, Data, SeqNum) ->
-    {WithHeaders, SeqNum1} = mysql_protocol:add_packet_headers(Data, SeqNum),
-    ok = gen_tcp:send(Socket, WithHeaders),
-    {ok, SeqNum1}.
-
-%% @doc Receives data from the server and removes packet headers. Returns the
-%% next packet sequence number.
--spec recv(Socket :: gen_tcp:socket(), SeqNum :: integer(),
-           Timeout :: timeout()) ->
-    {ok, Data :: binary(), NextSeqNum :: integer()}.
-recv(Socket, SeqNum, Timeout) ->
-    recv(Socket, SeqNum, Timeout, <<>>).
-
-%% @doc Receives data from the server and removes packet headers. Returns the
-%% next packet sequence number.
--spec recv(Socket :: gen_tcp:socket(), ExpectSeqNum :: integer(),
-           Timeout :: timeout(), Acc :: binary()) ->
-    {ok, Data :: binary(), NextSeqNum :: integer()}.
-recv(Socket, ExpectSeqNum, Timeout, Acc) ->
-    {ok, Header} = gen_tcp:recv(Socket, 4, Timeout),
-    {Size, ExpectSeqNum, More} = mysql_protocol:parse_packet_header(Header),
-    {ok, Body} = gen_tcp:recv(Socket, Size, Timeout),
-    Acc1 = <<Acc/binary, Body/binary>>,
-    NextSeqNum = (ExpectSeqNum + 1) band 16#ff,
-    case More of
-        false -> {ok, Acc1, NextSeqNum};
-        true  -> recv(Socket, NextSeqNum, Acc1)
-    end.
-
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
-
-connect_test() ->
-    {ok, Pid} = start_link([{user, "test"}, {password, "test"}]),
-    %ok = gen_server:call(Pid, {'query', <<"CREATE DATABASE foo">>}),
-    ok = gen_server:call(Pid, {'query', <<"USE foo">>}),
-    ok = gen_server:call(Pid, {'query', <<"DROP TABLE IF EXISTS foo">>}),
-    1 = gen_server:call(Pid, warning_count),
-    {error, <<"You h", _/binary>>} = gen_server:call(Pid, {'query', <<"FOO">>}),
-    ok.
-
--endif.
+decode_text_row_acc([#column_definition{type = T} | Defs], [V | Vs], Acc) ->
+    Term = mysql_text_protocol:text_to_term(T, V),
+    decode_text_row_acc(Defs, Vs, [Term | Acc]);
+decode_text_row_acc([], [], Acc) ->
+    lists:reverse(Acc).
