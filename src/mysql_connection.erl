@@ -16,8 +16,8 @@
 -include("records.hrl").
 
 %% Gen_server state
--record(state, {socket, affected_rows = 0, status = 0, warning_count = 0,
-                insert_id = 0}).
+-record(state, {socket, timeout = infinity, affected_rows = 0, status = 0,
+                warning_count = 0, insert_id = 0}).
 
 %% A tuple representing a MySQL server error, typically returned in the form
 %% {error, reason()}.
@@ -37,23 +37,25 @@ init(Opts) ->
     {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
 
     %% Exchange handshake communication.
-    Result = mysql_protocol:handshake(User, Password, Database,
-                                      fun (Data) ->
-                                          gen_tcp:send(Socket, Data)
-                                      end,
-                                      fun (Size) ->
-                                          gen_tcp:recv(Socket, Size, Timeout)
-                                      end),
+    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
+    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
+    Result = mysql_protocol:handshake(User, Password, Database, SendFun,
+                                      RecvFun),
     case Result of
-        #ok{status = Status} ->
-            {ok, #state{status = Status, socket = Socket}};
+        #ok{} = OK ->
+            State = #state{socket = Socket, timeout = Timeout},
+            State1 = update_state(State, OK),
+            {ok, State1};
         #error{} = E ->
             {stop, error_to_reason(E)}
     end.
 
-handle_call({query, Query}, _From, State) when is_binary(Query) ->
-    Rec = mysql_protocol:query_tcp(Query, State#state.socket,
-                                   infinity),
+handle_call({query, Query}, _From, State) when is_binary(Query);
+                                               is_list(Query) ->
+    #state{socket = Socket, timeout = Timeout} = State,
+    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
+    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
+    Rec = mysql_protocol:query(Query, SendFun, RecvFun),
     State1 = update_state(State, Rec),
     case Rec of
         #ok{} ->
