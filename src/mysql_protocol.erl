@@ -8,7 +8,8 @@
 -module(mysql_protocol).
 
 -export([handshake/5,
-         query/3]).
+         query/3,
+         prepare/3]).
 
 -export_type([sendfun/0, recvfun/0]).
 
@@ -184,10 +185,34 @@ query(Query, SendFun, RecvFun) ->
             fetch_resultset(RecvFun, FieldCount, SeqNum2)
     end.
 
+%% @doc Prepares a statement.
+-spec prepare(iodata(), sendfun(), recvfun()) -> #error{} | #prepared{}.
 prepare(Query, SendFun, RecvFun) ->
     Req = <<?COM_STMT_PREPARE, (iolist_to_binary(Query))/binary>>,
     {ok, SeqNum1} = send_packet(SendFun, Req, 0),
     {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
+    case Resp of
+        ?error_pattern ->
+            parse_error_packet(Resp);
+        <<?OK,
+          StmtId:32/little,
+          NumColumns:16/little,
+          NumParams:16/little,
+          0, %% reserved_1 -- [00] filler
+          WarningCount:16/little>> ->
+            %% This was the first packet.
+            %% If NumParams > 0 more packets will follow:
+            {ok, ParamDefs, SeqNum3} =
+                fetch_column_definitions(RecvFun, SeqNum2, NumParams, []),
+            {ok, ?eof_pattern, SeqNum4} = recv_packet(RecvFun, SeqNum3),
+            {ok, ColDefs, SeqNum5} =
+                fetch_column_definitions(RecvFun, SeqNum4, NumColumns, []),
+            {ok, ?eof_pattern, _SeqNum6} = recv_packet(RecvFun, SeqNum5),
+            #prepared{statement_id = StmtId,
+                      params = ParamDefs,
+                      columns = ColDefs,
+                      warning_count = WarningCount}
+    end.
 
 -spec fetch_resultset(recvfun(), integer(), integer()) ->
     #text_resultset{} | #error{}.
@@ -195,14 +220,12 @@ fetch_resultset(RecvFun, FieldCount, SeqNum) ->
     {ok, ColDefs, SeqNum1} = fetch_column_definitions(RecvFun, SeqNum,
                                                       FieldCount, []),
     {ok, DelimiterPacket, SeqNum2} = recv_packet(RecvFun, SeqNum1),
-    case DelimiterPacket of
-        ?eof_pattern ->
-            #eof{} = parse_eof_packet(DelimiterPacket),
-            {ok, Rows, _SeqNum3} = fetch_resultset_rows(RecvFun, ColDefs,
-                                                        SeqNum2, []),
+    #eof{} = parse_eof_packet(DelimiterPacket),
+    case fetch_resultset_rows(RecvFun, ColDefs, SeqNum2, []) of
+        {ok, Rows, _SeqNum3} ->
             #text_resultset{column_definitions = ColDefs, rows = Rows};
-        ?error_pattern ->
-            parse_error_packet(DelimiterPacket)
+        #error{} = E ->
+            E
     end.
 
 %% Receives NumLeft packets and parses them as column definitions.
@@ -216,9 +239,16 @@ fetch_column_definitions(RecvFun, SeqNum, NumLeft, Acc) when NumLeft > 0 ->
 fetch_column_definitions(_RecvFun, SeqNum, 0, Acc) ->
     {ok, lists:reverse(Acc), SeqNum}.
 
+-spec fetch_resultset_rows(recvfun(), ColumnDefinitions, integer(),
+                           Acc) -> {ok, Rows, integer()} | #error{}
+    when ColumnDefinitions :: [#column_definition{}],
+         Acc :: [[binary() | null]],
+         Rows :: [[binary() | null]].
 fetch_resultset_rows(RecvFun, ColDefs, SeqNum, Acc) ->
     {ok, Packet, SeqNum1} = recv_packet(RecvFun, SeqNum),
     case Packet of
+        ?error_pattern ->
+            parse_error_packet(Packet);
         ?eof_pattern ->
             {ok, lists:reverse(Acc), SeqNum1};
         _AnotherRow ->

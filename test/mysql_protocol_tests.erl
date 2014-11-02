@@ -1,5 +1,5 @@
 %% @doc Eunit test cases for the mysql_protocol module.
--module(protocol_tests).
+-module(mysql_protocol_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -68,6 +68,37 @@ resultset_error_test() ->
     ?assertMatch(#error{}, Result),
     fakesocket_close(Sock),
     ok.
+
+prepare_test() ->
+    %% Prepared statement. The example from "14.7.4 COM_STMT_PREPARE" in the
+    %% "MySQL Internals" guide.
+    Query = <<"SELECT CONCAT(?, ?) AS col1">>,
+    ExpectedReq = hexdump_to_bin(
+        "1c 00 00 00 16 53 45 4c    45 43 54 20 43 4f 4e 43    .....SELECT CONC"
+        "41 54 28 3f 2c 20 3f 29    20 41 53 20 63 6f 6c 31    AT(?, ?) AS col1"
+        ),
+    ExpectedResp = hexdump_to_bin(
+        "0c 00 00 01 00 01 00 00    00 01 00 02 00 00 00 00|   ................"
+        "17 00 00 02 03 64 65 66    00 00 00 01 3f 00 0c 3f    .....def....?..?"
+        "00 00 00 00 00 fd 80 00    00 00 00|17 00 00 03 03    ................"
+        "64 65 66 00 00 00 01 3f    00 0c 3f 00 00 00 00 00    def....?..?....."
+        "fd 80 00 00 00 00|05 00    00 04 fe 00 00 02 00|1a    ................"
+        "00 00 05 03 64 65 66 00    00 00 04 63 6f 6c 31 00    ....def....col1."
+        "0c 3f 00 00 00 00 00 fd    80 00 1f 00 00|05 00 00    .?.............."
+        "06 fe 00 00 02 00                                     ......"),
+    Sock = fakesocket_create([{send, ExpectedReq}, {recv, ExpectedResp}]),
+    SendFun = fun (Data) -> fakesocket_send(Sock, Data) end,
+    RecvFun = fun (Size) -> fakesocket_recv(Sock, Size) end,
+    Result = mysql_protocol:prepare(Query, SendFun, RecvFun),
+    fakesocket_close(Sock),
+    ?assertMatch(#prepared{statement_id = StmtId,
+                           params = [#column_definition{name = <<"?">>},
+                                     #column_definition{name = <<"?">>}],
+                           columns = [#column_definition{name = <<"col1">>}],
+                           warning_count = 0} when is_integer(StmtId),
+                 Result),
+    ok.
+    
 
 %% --- Helper functions for the above tests ---
 

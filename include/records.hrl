@@ -21,7 +21,6 @@
 %% EOF packet, commonly used in the protocol.
 -record(eof, {status, warning_count}).
 
-
 %% Column definition, used while parsing a result set.
 -record(column_definition, {name, type, charset}).
 
@@ -29,3 +28,9 @@
 %% All values are binary (SQL code) except NULL.
 -record(text_resultset, {column_definitions :: [#column_definition{}],
                          rows :: [[binary() | null]]}).
+
+%% Response of a successfull prepare call.
+-record(prepared, {statement_id :: integer(),
+                   params :: [#column_definition{}],
+                   columns :: [#column_definition{}],
+                   warning_count :: integer()}).
