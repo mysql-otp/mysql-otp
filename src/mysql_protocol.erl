@@ -3,24 +3,23 @@
 %% The protocol is described in the document "MySQL Internals" which can be
 %% found under "MySQL Documentation: Expert Guides" on http://dev.mysql.com/
 %%
-%% TCP communication is not handled in this module.
+%% TCP communication is not handled in this module. Most of the public functions
+%% take funs for data communitaction as parameters.
 -module(mysql_protocol).
 
--export([
-         %parse_packet_header/1, add_packet_headers/2,
-         %parse_handshake/1, build_handshake_response/3,
-         %parse_handshake_confirm/1,
-         handshake/5,
-         query_tcp/3, query/3]).
+-export([handshake/5,
+         query/3]).
 
--include("records.hrl").
--include("protocol.hrl").
+-export_type([sendfun/0, recvfun/0]).
 
 -type sendfun() :: fun((binary()) -> ok).
 -type recvfun() :: fun((integer()) -> {ok, binary()}).
 
 %% How much data do we want to send at most?
 -define(MAX_BYTES_PER_PACKET, 50000000).
+
+-include("records.hrl").
+-include("protocol.hrl").
 
 %% Macros for pattern matching on packets.
 -define(ok_pattern, <<?OK, _/binary>>).
@@ -58,7 +57,8 @@ add_packet_headers(PacketBody, SeqNum) ->
     end.
 
 %% @doc Performs a handshake using the supplied functions for communication.
-%% Returns an ok or an error record.
+%% Returns an ok or an error record. Raises errors when various unimplemented
+%% features are requested.
 %%
 %% TODO: Implement setting the database in the handshake. Currently an error
 %% occurs if Database is anything other than undefined.
@@ -66,7 +66,7 @@ add_packet_headers(PacketBody, SeqNum) ->
                 recvfun()) -> #ok{} | #error{}.
 handshake(Username, Password, Database, SendFun, RecvFun) ->
     SeqNum0 = 0,
-    Database == undefined orelse error(database_in_handshake_not_implemented),
+    Database == undefined orelse error(database_in_handshake),
     {ok, HandshakePacket, SeqNum1} = recv_packet(RecvFun, SeqNum0),
     Handshake = parse_handshake(HandshakePacket),
     Response = build_handshake_response(Handshake, Username, Password),
@@ -75,7 +75,7 @@ handshake(Username, Password, Database, SendFun, RecvFun) ->
     parse_handshake_confirm(ConfirmPacket).
 
 %% @doc Parses a handshake. This is the first thing that comes from the server
-%% when connecting. If an unsupported version of variant of the protocol is used
+%% when connecting. If an unsupported version or variant of the protocol is used
 %% an error is raised.
 -spec parse_handshake(binary()) -> #handshake{}.
 parse_handshake(<<10, Rest/binary>>) ->
@@ -125,7 +125,7 @@ build_handshake_response(Handshake, Username, Password) ->
                       ?CLIENT_TRANSACTIONS bor
                       ?CLIENT_SECURE_CONNECTION,
     Handshake#handshake.capabilities band CapabilityFlags == CapabilityFlags
-        orelse error({not_implemented, old_server_version}),
+        orelse error(old_server_version),
     Hash = hash_password(Password,
                          Handshake#handshake.auth_plugin_name,
                          Handshake#handshake.auth_plugin_data),
@@ -158,19 +158,13 @@ parse_handshake_confirm(Packet) ->
             %% single 0xfe byte. It is sent by server to request client to
             %% switch to Old Password Authentication if CLIENT_PLUGIN_AUTH
             %% capability is not supported (by either the client or the server)"
-            error({not_implemented, old_auth});
+            error(old_auth);
         <<?EOF, _/binary>> ->
             %% "Authentication Method Switch Request Packet. If both server and
             %% client support CLIENT_PLUGIN_AUTH capability, server can send
             %% this packet to ask client to use another authentication method."
-            error({not_implemented, auth_method_switch})
+            error(auth_method_switch)
     end.
-
-%% @doc Query on a tcp socket.
-query_tcp(Query, Socket, Timeout) ->
-    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
-    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
-    query(Query, SendFun, RecvFun).
 
 %% @doc Normally fun gen_tcp:send/2 and fun gen_tcp:recv/3 are used, except in
 %% unit testing.
@@ -189,6 +183,11 @@ query(Query, SendFun, RecvFun) ->
             {FieldCount, <<>>} = lenenc_int(Resp),
             fetch_resultset(RecvFun, FieldCount, SeqNum2)
     end.
+
+prepare(Query, SendFun, RecvFun) ->
+    Req = <<?COM_STMT_PREPARE, (iolist_to_binary(Query))/binary>>,
+    {ok, SeqNum1} = send_packet(SendFun, Req, 0),
+    {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
 
 -spec fetch_resultset(recvfun(), integer(), integer()) ->
     #text_resultset{} | #error{}.
@@ -304,8 +303,8 @@ parse_ok_packet(<<?OK:8, Rest/binary>>) ->
     {AffectedRows, Rest1} = lenenc_int(Rest),
     {InsertId, Rest2} = lenenc_int(Rest1),
     <<StatusFlags:16/little, WarningCount:16/little, Msg/binary>> = Rest2,
-    %% We have enabled CLIENT_PROTOCOL_41 but not CLIENT_SESSION_TRACK in the
-    %% conditional protocol:
+    %% We have CLIENT_PROTOCOL_41 but not CLIENT_SESSION_TRACK enabled. The
+    %% protocol is conditional. This is from the protocol documentation:
     %%
     %% if capabilities & CLIENT_PROTOCOL_41 {
     %%   int<2> status_flags
@@ -343,7 +342,7 @@ parse_eof_packet(<<?EOF:8, NumWarnings:16/little, StatusFlags:16/little>>) ->
 -spec hash_password(Password :: iodata(), AuthPluginName :: binary(),
                     AuthPluginData :: binary()) -> binary().
 hash_password(_Password, <<"mysql_old_password">>, _Salt) ->
-    error({incompatible, <<"Old auth method not implemented">>});
+    error(old_auth);
 hash_password(Password, <<"mysql_native_password">>, AuthData) ->
     %% From the "MySQL Internals" manual:
     %% SHA1( password ) XOR SHA1( "20-bytes random data from server" <concat>
@@ -363,7 +362,7 @@ hash_password(Password, <<"mysql_native_password">>, AuthData) ->
     <<Hash3Num:160>> = crypto:hash(sha, <<Salt/binary, Hash2/binary>>),
     <<(Hash1Num bxor Hash3Num):160>>;
 hash_password(_, AuthPlugin, _) ->
-    error({unsupported_auth_method, AuthPlugin}).
+    error({auth_method, AuthPlugin}).
 
 %% lenenc_int/1 decodes length-encoded-integer values
 -spec lenenc_int(Input :: binary()) -> {Value :: integer(), Rest :: binary()}.
