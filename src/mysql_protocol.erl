@@ -167,8 +167,8 @@ parse_handshake_confirm(Packet) ->
             error(auth_method_switch)
     end.
 
-%% @doc Normally fun gen_tcp:send/2 and fun gen_tcp:recv/3 are used, except in
-%% unit testing.
+-spec query(Query :: iodata(), sendfun(), recvfun()) ->
+    #ok{} | #error{} | #text_resultset{}.
 query(Query, SendFun, RecvFun) ->
     Req = <<?COM_QUERY, (iolist_to_binary(Query))/binary>>,
     SeqNum0 = 0,
@@ -469,5 +469,15 @@ parse_eof_test() ->
                  parse_eof_packet(Body)),
     ok.
 
+hash_password_test() ->
+    ?assertEqual(<<222,207,222,139,41,181,202,13,191,241,
+                   234,234,73,127,244,101,205,3,28,251>>,
+                 hash_password(<<"foo">>, <<"mysql_native_password">>,
+                               <<"abcdefghijklmnopqrst">>)),
+    ?assertError(old_auth,
+                 hash_password(<<"foo">>, <<"mysql_old_password">>, <<"abc">>)),
+    ?assertError({auth_method, <<"dummy">>},
+                 hash_password(<<"foo">>, <<"dummy">>, <<"dummy_salt">>)),
+    ok.
 
 -endif.
