@@ -17,7 +17,7 @@
 
 %% Gen_server state
 -record(state, {socket, timeout = infinity, affected_rows = 0, status = 0,
-                warning_count = 0, insert_id = 0}).
+                warning_count = 0, insert_id = 0, stmts = dict:new()}).
 
 %% A tuple representing a MySQL server error, typically returned in the form
 %% {error, reason()}.
@@ -62,18 +62,48 @@ handle_call({query, Query}, _From, State) when is_binary(Query);
             {reply, ok, State1};
         #error{} = E ->
             {reply, {error, error_to_reason(E)}, State1};
-        #text_resultset{column_definitions = ColDefs, rows = Rows} ->
+        #resultset{column_definitions = ColDefs, rows = Rows} ->
             Names = [Def#column_definition.name || Def <- ColDefs],
             Rows1 = decode_text_rows(ColDefs, Rows),
             {reply, {ok, Names, Rows1}, State1}
+    end;
+handle_call({query, Stmt, Args}, _From, State) when is_integer(Stmt);
+                                                    is_atom(Stmt) ->
+    StmtRec = dict:fetch(Stmt, State#state.stmts),
+    #state{socket = Socket, timeout = Timeout} = State,
+    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
+    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
+    Rec = mysql_protocol:execute(StmtRec, Args, SendFun, RecvFun),
+    State1 = update_state(State, Rec),
+    case Rec of
+        #ok{} ->
+            {reply, ok, State1};
+        #error{} = E ->
+            {reply, {error, error_to_reason(E)}, State1};
+        #resultset{column_definitions = ColDefs, rows = Rows} ->
+            Names = [Def#column_definition.name || Def <- ColDefs],
+            {reply, {ok, Names, Rows}, State1}
+    end;
+handle_call({prepare, Query}, _From, State) ->
+    #state{socket = Socket, timeout = Timeout} = State,
+    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
+    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
+    Rec = mysql_protocol:prepare(Query, SendFun, RecvFun),
+    State1 = update_state(State, Rec),
+    case Rec of
+        #error{} = E ->
+            {reply, {error, error_to_reason(E)}, State1};
+        #prepared{statement_id = Id} = Stmt ->
+            Stmts1 = dict:store(Id, Stmt, State1#state.stmts),
+            State2 = State#state{stmts = Stmts1},
+            {reply, {ok, Id}, State2}
     end;
 handle_call(warning_count, _From, State) ->
     {reply, State#state.warning_count, State};
 handle_call(insert_id, _From, State) ->
     {reply, State#state.insert_id, State};
-handle_call(status_flags, _From, State) ->
-    %% Bitmask of status flags from the last ok packet, etc.
-    {reply, State#state.status, State}.
+handle_call(affected_rows, _From, State) ->
+    {reply, State#state.affected_rows, State}.
 
 handle_cast(_, _) -> todo.
 

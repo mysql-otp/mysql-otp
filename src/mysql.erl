@@ -1,8 +1,12 @@
 %% @doc MySQL/OTP
 -module(mysql).
 
--export([connect/1, disconnect/1, query/2, warning_count/1, affected_rows/1,
-         insert_id/1]).
+-export([connect/1, disconnect/1, query/2, query/3, prepare/2, warning_count/1,
+         affected_rows/1, insert_id/1]).
+
+%% @doc A MySQL error with the codes and message returned from the server.
+-type reason() :: {Code :: integer(), SQLState :: binary(),
+                   Message :: binary()}.
 
 -spec connect(list()) -> {ok, pid()} | ignore | {error, term()}.
 connect(Opts) ->
@@ -18,10 +22,18 @@ disconnect(Conn) ->
          Query :: iodata(),
          Fields :: [binary()],
          Rows :: [[term()]],
-         Reason :: {Code :: integer(), SQLState :: binary(),
-                    Message :: binary()}.
+         Reason :: reason().
 query(Conn, Query) ->
     gen_server:call(Conn, {query, Query}).
+
+%% @doc Executes a prepared statement.
+query(Conn, StatementId, Args) ->
+    gen_server:call(Conn, {query, StatementId, Args}).
+
+-spec prepare(Conn :: pid(), Query :: iodata()) ->
+    {ok, StatementId :: integer()} | {error, Reason :: reason()}.
+prepare(Conn, Query) ->
+    gen_server:call(Conn, {prepare, Query}).
 
 -spec warning_count(pid()) -> integer().
 warning_count(Conn) ->

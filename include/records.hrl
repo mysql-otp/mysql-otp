@@ -25,9 +25,9 @@
 -record(column_definition, {name, type, charset}).
 
 %% A resultset as received from the server using the text protocol.
-%% All values are binary (SQL code) except NULL.
--record(text_resultset, {column_definitions :: [#column_definition{}],
-                         rows :: [[binary() | null]]}).
+%% For text protocol resultsets, rows :: [[binary() | null]].
+-record(resultset, {column_definitions :: [#column_definition{}],
+                    rows :: [[term()]]}).
 
 %% Response of a successfull prepare call.
 -record(prepared, {statement_id :: integer(),

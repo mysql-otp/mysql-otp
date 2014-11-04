@@ -9,7 +9,7 @@
 
 -export([handshake/5,
          query/3,
-         prepare/3]).
+         prepare/3, execute/4]).
 
 -export_type([sendfun/0, recvfun/0]).
 
@@ -26,36 +26,6 @@
 -define(ok_pattern, <<?OK, _/binary>>).
 -define(error_pattern, <<?ERROR, _/binary>>).
 -define(eof_pattern, <<?EOF, _:4/binary>>).
-
-%% @doc Parses a packet header (32 bits) and returns a tuple.
-%%
-%% The client should first read a header and parse it. Then read PacketLength
-%% bytes. If there are more packets, read another header and read a new packet
-%% length of payload until there are no more packets. The seq num should
-%% increment from 0 and may wrap around at 255 back to 0.
-%%
-%% When all packets are read and the payload of all packets are concatenated, it
-%% can be parsed using parse_response/1, etc. depending on what type of response
-%% is expected.
--spec parse_packet_header(PackerHeader :: binary()) ->
-    {PacketLength :: integer(),
-     SeqNum :: integer(),
-     MorePacketsExist :: boolean()}.
-parse_packet_header(<<PacketLength:24/little-integer, SeqNum:8/integer>>) ->
-    {PacketLength, SeqNum, PacketLength == 16#ffffff}.
-
-%% @doc Splits a packet body into chunks and wraps them in headers. The
-%% resulting list is ready to sent to the socket.
--spec add_packet_headers(PacketBody :: iodata(), SeqNum :: integer()) ->
-    {PacketWithHeaders :: iodata(), NextSeqNum :: integer()}.
-add_packet_headers(PacketBody, SeqNum) ->
-    Bin = iolist_to_binary(PacketBody),
-    Size = size(Bin),
-    SeqNum1 = (SeqNum + 1) rem 16#100,
-    %% Todo: implement the case when Size >= 16#ffffff.
-    if Size < 16#ffffff ->
-        {[<<Size:24/little, SeqNum:8>>, Bin], SeqNum1}
-    end.
 
 %% @doc Performs a handshake using the supplied functions for communication.
 %% Returns an ok or an error record. Raises errors when various unimplemented
@@ -74,6 +44,109 @@ handshake(Username, Password, Database, SendFun, RecvFun) ->
     {ok, SeqNum2} = send_packet(SendFun, Response, SeqNum1),
     {ok, ConfirmPacket, _SeqNum3} = recv_packet(RecvFun, SeqNum2),
     parse_handshake_confirm(ConfirmPacket).
+
+-spec query(Query :: iodata(), sendfun(), recvfun()) ->
+    #ok{} | #error{} | #resultset{}.
+query(Query, SendFun, RecvFun) ->
+    Req = <<?COM_QUERY, (iolist_to_binary(Query))/binary>>,
+    SeqNum0 = 0,
+    {ok, SeqNum1} = send_packet(SendFun, Req, SeqNum0),
+    {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
+    case Resp of
+        ?ok_pattern ->
+            parse_ok_packet(Resp);
+        ?error_pattern ->
+            parse_error_packet(Resp);
+        _ResultSet ->
+            %% The first packet in a resultset is only the column count.
+            {ColumnCount, <<>>} = lenenc_int(Resp),
+            ResultSet = fetch_resultset(RecvFun, ColumnCount, SeqNum2),
+            %% TODO: Factor out parsing the rows from fetch_resultset/3 and do
+            %% that here instead.
+            ResultSet
+    end.
+
+%% @doc Prepares a statement.
+-spec prepare(iodata(), sendfun(), recvfun()) -> #error{} | #prepared{}.
+prepare(Query, SendFun, RecvFun) ->
+    Req = <<?COM_STMT_PREPARE, (iolist_to_binary(Query))/binary>>,
+    {ok, SeqNum1} = send_packet(SendFun, Req, 0),
+    {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
+    case Resp of
+        ?error_pattern ->
+            parse_error_packet(Resp);
+        <<?OK,
+          StmtId:32/little,
+          NumColumns:16/little,
+          NumParams:16/little,
+          0, %% reserved_1 -- [00] filler
+          WarningCount:16/little>> ->
+            %% This was the first packet.
+            %% If NumParams > 0 more packets will follow:
+            {ok, ParamDefs, SeqNum3} =
+                fetch_column_definitions(RecvFun, SeqNum2, NumParams, []),
+            %% The eof packet is not here in mysql 5.6 but it's in the examples.
+            SeqNum4 = case NumParams of
+                0 ->
+                    SeqNum3;
+                _ ->
+                    {ok, ?eof_pattern, SeqNum3x} = recv_packet(RecvFun, SeqNum3),
+                    SeqNum3x
+            end,
+            {ok, ColDefs, SeqNum5} =
+                fetch_column_definitions(RecvFun, SeqNum4, NumColumns, []),
+            {ok, ?eof_pattern, _SeqNum6} = recv_packet(RecvFun, SeqNum5),
+            #prepared{statement_id = StmtId,
+                      params = ParamDefs,
+                      columns = ColDefs,
+                      warning_count = WarningCount}
+    end.
+
+%% @doc Executes a prepared statement.
+-spec execute(#prepared{}, [term()], sendfun(), recvfun()) -> #resultset{}.
+execute(#prepared{statement_id = Id, params = ParamDefs}, ParamValues,
+        SendFun, RecvFun) ->
+    %% Flags Constant Name
+    %% 0x00 CURSOR_TYPE_NO_CURSOR
+    %% 0x01 CURSOR_TYPE_READ_ONLY
+    %% 0x02 CURSOR_TYPE_FOR_UPDATE
+    %% 0x04 CURSOR_TYPE_SCROLLABLE
+    Flags = 0,
+    Req0 = <<?COM_STMT_EXECUTE, Id:32/little, Flags, 1:32/little>>,
+    Req = case ParamDefs of
+        [] ->
+            Req0;
+        _ ->
+            Types = [Def#column_definition.type || Def <- ParamDefs],
+            NullBitMap = build_null_bitmap(Types, ParamValues),
+            NewParamsBoundFlag = 1,
+            Req1 = <<Req0/binary, NullBitMap/binary, NewParamsBoundFlag>>,
+            %% Append type and signedness (16#80 signed or 00 unsigned)
+            %% for each value
+            lists:foldl(
+                fun ({Type, Value}, Acc) ->
+                    BinValue = binary_encode(Type, Value),
+                    Signedness = 0, %% Hmm.....
+                    <<Acc/binary, Type, Signedness, BinValue/binary>>
+                end,
+                Req1,
+                lists:zip(Types, ParamValues)
+            )
+    end,
+    {ok, SeqNum1} = send_packet(SendFun, Req, 0),
+    {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
+    case Resp of
+        ?ok_pattern ->
+            parse_ok_packet(Resp);
+        ?error_pattern ->
+            parse_error_packet(Resp);
+        _ResultSet ->
+            %% The first packet in a resultset is only the column count.
+            {ColumnCount, <<>>} = lenenc_int(Resp),
+            fetch_resultset_bin(RecvFun, ColumnCount, SeqNum2)
+    end.
+
+%% --- internal ---
 
 %% @doc Parses a handshake. This is the first thing that comes from the server
 %% when connecting. If an unsupported version or variant of the protocol is used
@@ -167,55 +240,8 @@ parse_handshake_confirm(Packet) ->
             error(auth_method_switch)
     end.
 
--spec query(Query :: iodata(), sendfun(), recvfun()) ->
-    #ok{} | #error{} | #text_resultset{}.
-query(Query, SendFun, RecvFun) ->
-    Req = <<?COM_QUERY, (iolist_to_binary(Query))/binary>>,
-    SeqNum0 = 0,
-    {ok, SeqNum1} = send_packet(SendFun, Req, SeqNum0),
-    {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
-    case Resp of
-        ?ok_pattern ->
-            parse_ok_packet(Resp);
-        ?error_pattern ->
-            parse_error_packet(Resp);
-        _ResultSet ->
-            %% The first packet in a resultset is just the field count.
-            {FieldCount, <<>>} = lenenc_int(Resp),
-            fetch_resultset(RecvFun, FieldCount, SeqNum2)
-    end.
-
-%% @doc Prepares a statement.
--spec prepare(iodata(), sendfun(), recvfun()) -> #error{} | #prepared{}.
-prepare(Query, SendFun, RecvFun) ->
-    Req = <<?COM_STMT_PREPARE, (iolist_to_binary(Query))/binary>>,
-    {ok, SeqNum1} = send_packet(SendFun, Req, 0),
-    {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
-    case Resp of
-        ?error_pattern ->
-            parse_error_packet(Resp);
-        <<?OK,
-          StmtId:32/little,
-          NumColumns:16/little,
-          NumParams:16/little,
-          0, %% reserved_1 -- [00] filler
-          WarningCount:16/little>> ->
-            %% This was the first packet.
-            %% If NumParams > 0 more packets will follow:
-            {ok, ParamDefs, SeqNum3} =
-                fetch_column_definitions(RecvFun, SeqNum2, NumParams, []),
-            {ok, ?eof_pattern, SeqNum4} = recv_packet(RecvFun, SeqNum3),
-            {ok, ColDefs, SeqNum5} =
-                fetch_column_definitions(RecvFun, SeqNum4, NumColumns, []),
-            {ok, ?eof_pattern, _SeqNum6} = recv_packet(RecvFun, SeqNum5),
-            #prepared{statement_id = StmtId,
-                      params = ParamDefs,
-                      columns = ColDefs,
-                      warning_count = WarningCount}
-    end.
-
 -spec fetch_resultset(recvfun(), integer(), integer()) ->
-    #text_resultset{} | #error{}.
+    #resultset{} | #error{}.
 fetch_resultset(RecvFun, FieldCount, SeqNum) ->
     {ok, ColDefs, SeqNum1} = fetch_column_definitions(RecvFun, SeqNum,
                                                       FieldCount, []),
@@ -223,7 +249,7 @@ fetch_resultset(RecvFun, FieldCount, SeqNum) ->
     #eof{} = parse_eof_packet(DelimiterPacket),
     case fetch_resultset_rows(RecvFun, ColDefs, SeqNum2, []) of
         {ok, Rows, _SeqNum3} ->
-            #text_resultset{column_definitions = ColDefs, rows = Rows};
+            #resultset{column_definitions = ColDefs, rows = Rows};
         #error{} = E ->
             E
     end.
@@ -270,6 +296,123 @@ parse_resultset_row([_ColDef | ColDefs], Data, Acc) ->
 parse_resultset_row([], <<>>, Acc) ->
     lists:reverse(Acc).
 
+%% -- binary protocol --
+%% TODO: move this to mysql_binary.
+
+build_null_bitmap(_Types, _Values) -> todo.
+
+binary_encode(_Type, _Value) -> todo.
+
+%% @doc Fetches a result set and parses it in the binary protocol
+%%
+%% TODO: Merge this with fetch_resultset/3 and don't parse the rows.
+-spec fetch_resultset_bin(recvfun(), integer(), integer()) ->
+    #resultset{} | #error{}.
+fetch_resultset_bin(RecvFun, ColumnCount, SeqNum) ->
+    {ok, ColDefs, SeqNum1} = fetch_column_definitions(RecvFun, SeqNum,
+                                                      ColumnCount, []),
+    {ok, ?eof_pattern, SeqNum2} = recv_packet(RecvFun, SeqNum1),
+    case fetch_resultset_bin_rows(RecvFun, ColumnCount, ColDefs, SeqNum2, []) of
+        {ok, Rows, _SeqNum3} ->
+            #resultset{column_definitions = ColDefs, rows = Rows};
+        #error{} = E ->
+            E
+    end.
+
+%% @doc For the binary protocol. Almost identical to fetch_resultset_rows/4.
+fetch_resultset_bin_rows(RecvFun, NumColumns, ColDefs, SeqNum, Acc) ->
+    {ok, Packet, SeqNum1} = recv_packet(RecvFun, SeqNum),
+    case Packet of
+        ?error_pattern ->
+            parse_error_packet(Packet);
+        ?eof_pattern ->
+            {ok, lists:reverse(Acc), SeqNum1};
+        _AnotherRow ->
+            Row = parse_resultset_bin_row(NumColumns, ColDefs, Packet),
+            fetch_resultset_bin_rows(RecvFun, NumColumns, ColDefs, SeqNum1,
+                                     [Row | Acc])
+    end.
+
+parse_resultset_bin_row(NumColumns, ColDefs, <<0, Data/binary>>) ->
+    {NullBitMap, Rest} = mysql_binary:null_bitmap_decode(NumColumns, Data, 2),
+    parse_resultset_bin_values(ColDefs, NullBitMap, Rest, []).
+
+parse_resultset_bin_values([_ | ColDefs], <<1:1, NullBitMap/bitstring>>, Data,
+                           Acc) ->
+    %% NULL
+    parse_resultset_bin_values(ColDefs, NullBitMap, Data, [null | Acc]);
+parse_resultset_bin_values([ColDef | ColDefs], <<0:1, NullBitMap/bitstring>>,
+                           Data, Acc) ->
+   %% Not NULL
+   {Term, Rest} = bin_protocol_decode(ColDef#column_definition.type, Data),
+   parse_resultset_bin_values(ColDefs, NullBitMap, Rest, [Term | Acc]);
+parse_resultset_bin_values([], _, <<>>, Acc) ->
+    lists:reverse(Acc).
+
+%% The types are type constants for the binary protocol, such as
+%% ProtocolBinary::MYSQL_TYPE_STRING. We assume that these are the same as for
+%% the text protocol.
+-spec bin_protocol_decode(Type :: integer(), Data :: binary()) ->
+    {Term :: term(), Rest :: binary()}.
+bin_protocol_decode(T, Data)
+  when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
+       T == ?TYPE_ENUM; T == ?TYPE_SET; T == ?TYPE_LONG_BLOB;
+       T == ?TYPE_MEDIUM_BLOB; T == ?TYPE_BLOB; T == ?TYPE_TINY_BLOB;
+       T == ?TYPE_GEOMETRY; T == ?TYPE_BIT; T == ?TYPE_DECIMAL;
+       T == ?TYPE_NEWDECIMAL ->
+    lenenc_str(Data);
+bin_protocol_decode(?TYPE_LONGLONG, <<Value:64/little, Rest/binary>>) ->
+    {Value, Rest};
+bin_protocol_decode(T, <<Value:32/little, Rest/binary>>)
+  when T == ?TYPE_LONG; T == ?TYPE_INT24 ->
+    {Value, Rest};
+bin_protocol_decode(T, <<Value:16/little, Rest/binary>>)
+  when T == ?TYPE_SHORT; T == ?TYPE_YEAR ->
+    {Value, Rest};
+bin_protocol_decode(?TYPE_TINY, <<Value:8, Rest/binary>>) ->
+    {Value, Rest};
+bin_protocol_decode(?TYPE_DOUBLE, <<Value:64/float-little, Rest/binary>>) ->
+    {Value, Rest};
+bin_protocol_decode(?TYPE_FLOAT, <<Value:32/float-little, Rest/binary>>) ->
+    {Value, Rest};
+bin_protocol_decode(?TYPE_DATE, <<Length, Data/binary>>) ->
+    %% Coded in the same way as DATETIME and TIMESTAMP below, but returned in
+    %% a simple triple.
+    case {Length, Data} of
+        {0, _} -> {{0, 0, 0}, Data};
+        {4, <<Y:16/little, M, D, Rest/binary>>} -> {{Y, M, D}, Rest}
+    end;
+bin_protocol_decode(T, <<Length, Data/binary>>)
+  when T == ?TYPE_DATETIME; T == ?TYPE_TIMESTAMP ->
+    %% length (1) -- number of bytes following (valid values: 0, 4, 7, 11)
+    case {Length, Data} of
+        {0, _} ->
+            {{{0,0,0},{0,0,0}}, Data};
+        {4, <<Y:16/little, M, D, Rest/binary>>} ->
+            {{{Y, M, D}, {0, 0, 0}}, Rest};
+        {7, <<Y:16/little, M, D, H, Mi, S, Rest/binary>>} ->
+            {{{Y, M, D}, {H, Mi, S}}, Rest};
+        {11, <<Y:16/little, M, D, H, Mi, S, Micro:32/little, Rest/binary>>} ->
+            {{{Y, M, D}, {H, Mi, S + 0.000001 * Micro}}, Rest}
+    end;
+bin_protocol_decode(?TYPE_TIME, <<Length, Data/binary>>) ->
+    %% length (1) -- number of bytes following (valid values: 0, 8, 12)
+    %% is_negative (1) -- (1 if minus, 0 for plus)
+    %% days (4) -- days
+    %% hours (1) -- hours
+    %% minutes (1) -- minutes
+    %% seconds (1) -- seconds
+    %% micro_seconds (4) -- micro-seconds
+    case {Length, Data} of
+        {0, _} ->
+            {{0, 0, 0}, Data};
+        {8, <<IsNeg, D:32/little, H, M, S, Rest/binary>>} ->
+            {{(-IsNeg bsl 1 + 1) * (D * 24 + H), M, S}, Rest};
+        {8, <<IsNeg, D:32/little, H, M, S, Micro:32/little, Rest/binary>>} ->
+            {{(-IsNeg bsl 1 + 1) * (D * 24 + H), M, S + 0.000001 * Micro},
+             Rest}
+    end.
+
 %% Parses a packet containing a column definition (part of a result set)
 parse_column_definition(Data) ->
     {<<"def">>, Rest1} = lenenc_str(Data),   %% catalog (always "def")
@@ -293,8 +436,6 @@ parse_column_definition(Data) ->
     %% }
     <<>> = Rest8,
     #column_definition{name = Name, type = ColumnType, charset = Charset}.
-
-%% --- internal ---
 
 %% @doc Wraps Data in packet headers, sends it by calling SendFun and returns
 %% {ok, SeqNum1} where SeqNum1 is the next sequence number.
@@ -326,6 +467,36 @@ recv_packet(RecvFun, ExpectSeqNum, Acc) ->
     case More of
         false -> {ok, Acc1, NextSeqNum};
         true  -> recv_packet(RecvFun, NextSeqNum, Acc1)
+    end.
+
+%% @doc Parses a packet header (32 bits) and returns a tuple.
+%%
+%% The client should first read a header and parse it. Then read PacketLength
+%% bytes. If there are more packets, read another header and read a new packet
+%% length of payload until there are no more packets. The seq num should
+%% increment from 0 and may wrap around at 255 back to 0.
+%%
+%% When all packets are read and the payload of all packets are concatenated, it
+%% can be parsed using parse_response/1, etc. depending on what type of response
+%% is expected.
+-spec parse_packet_header(PackerHeader :: binary()) ->
+    {PacketLength :: integer(),
+     SeqNum :: integer(),
+     MorePacketsExist :: boolean()}.
+parse_packet_header(<<PacketLength:24/little-integer, SeqNum:8/integer>>) ->
+    {PacketLength, SeqNum, PacketLength == 16#ffffff}.
+
+%% @doc Splits a packet body into chunks and wraps them in headers. The
+%% resulting list is ready to sent to the socket.
+-spec add_packet_headers(PacketBody :: iodata(), SeqNum :: integer()) ->
+    {PacketWithHeaders :: iodata(), NextSeqNum :: integer()}.
+add_packet_headers(PacketBody, SeqNum) ->
+    Bin = iolist_to_binary(PacketBody),
+    Size = size(Bin),
+    SeqNum1 = (SeqNum + 1) rem 16#100,
+    %% Todo: implement the case when Size >= 16#ffffff.
+    if Size < 16#ffffff ->
+        {[<<Size:24/little, SeqNum:8>>, Bin], SeqNum1}
     end.
 
 -spec parse_ok_packet(binary()) -> #ok{}.
@@ -394,6 +565,8 @@ hash_password(Password, <<"mysql_native_password">>, AuthData) ->
 hash_password(_, AuthPlugin, _) ->
     error({auth_method, AuthPlugin}).
 
+%% --- Lowlevel: decoding variable length integers and strings ---
+
 %% lenenc_int/1 decodes length-encoded-integer values
 -spec lenenc_int(Input :: binary()) -> {Value :: integer(), Rest :: binary()}.
 lenenc_int(<<Value:8, Rest/bits>>) when Value < 251 -> {Value, Rest};
@@ -416,6 +589,9 @@ nulterm_str(Bin) ->
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+%% Testing some of the internal functions, mostly the cases we don't cover in
+%% other tests.
 
 lenenc_int_test() ->
     ?assertEqual({40, <<>>}, lenenc_int(<<40>>)),
