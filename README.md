@@ -33,3 +33,8 @@ From the Emysql README:
 > * The API could be better
 >
 >However, this is probably the best MySQL driver out there for Erlang. The erlang-mysql-driver uses a problematic connection pool design for many use cases and is not suitable for general purpose use. This driver is.
+
+Licence
+-------
+
+GNU General Public License (GPL) version 3 or any later version. See the LICENCE file.
