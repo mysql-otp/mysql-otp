@@ -80,8 +80,7 @@ handle_call({query, Query}, _From, State) when is_binary(Query);
             {reply, {error, error_to_reason(E)}, State1};
         #resultset{column_definitions = ColDefs, rows = Rows} ->
             Names = [Def#column_definition.name || Def <- ColDefs],
-            Rows1 = decode_text_rows(ColDefs, Rows),
-            {reply, {ok, Names, Rows1}, State1}
+            {reply, {ok, Names, Rows}, State1}
     end;
 handle_call({query, Stmt, Args}, _From, State) when is_integer(Stmt);
                                                     is_atom(Stmt) ->

@@ -80,11 +80,12 @@ text_protocol(Pid) ->
     ?assertEqual(1, mysql:affected_rows(Pid)),
 
     %% select
-    ?assertEqual({ok, [<<"id">>, <<"bl">>, <<"tx">>, <<"f">>, <<"dc">>,
-                       <<"ti">>, <<"ts">>, <<"da">>, <<"c">>],
-                      [[1, <<"blob">>, <<>>, 3.14, 3.14, {0, 22, 11},
-                        {{2014, 11, 03}, {00, 22, 24}}, {2014, 11, 03}, null]]},
-                 mysql:query(Pid, <<"SELECT * FROM t">>)),
+    {ok, Columns, Rows} = mysql:query(Pid, <<"SELECT * FROM t">>),
+    ?assertEqual([<<"id">>, <<"bl">>, <<"tx">>, <<"f">>, <<"dc">>, <<"ti">>,
+                  <<"ts">>, <<"da">>, <<"c">>], Columns),
+    ?assertEqual([[1, <<"blob">>, <<>>, 3.14, <<"3.140">>, {0, 22, 11},
+                   {{2014, 11, 03}, {00, 22, 24}}, {2014, 11, 03}, null]],
+                 Rows),
     ok.
 
 binary_protocol(Pid) ->

@@ -40,10 +40,11 @@
 %% Column definition, used while parsing a result set.
 -record(column_definition, {name, type, charset}).
 
-%% A resultset as received from the server using the text protocol.
-%% For text protocol resultsets, rows :: [[binary() | null]].
+%% A resultset. The rows can be either lists of terms or unparsed binaries as
+%% received from the server using either the text protocol or the binary
+%% protocol.
 -record(resultset, {column_definitions :: [#column_definition{}],
-                    rows :: [[term()]]}).
+                    rows :: [[term()] | binary()]}).
 
 %% Response of a successfull prepare call.
 -record(prepared, {statement_id :: integer(),

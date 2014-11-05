@@ -76,10 +76,18 @@ query(Query, SendFun, RecvFun) ->
         _ResultSet ->
             %% The first packet in a resultset is only the column count.
             {ColumnCount, <<>>} = lenenc_int(Resp),
-            ResultSet = fetch_resultset(RecvFun, ColumnCount, SeqNum2),
-            %% TODO: Factor out parsing the rows from fetch_resultset/3 and do
-            %% that here instead.
-            ResultSet
+            case fetch_resultset(RecvFun, ColumnCount, SeqNum2) of
+                #error{} = E ->
+                    E;
+                #resultset{column_definitions = ColDefs, rows = Rows} = R ->
+                    %% Parse the rows according to the 'text protocol'
+                    %% representation.
+                    ColumnTypes = [ColDef#column_definition.type
+                                   || ColDef <- ColDefs],
+                    Rows1 = [decode_text_row(ColumnCount, ColumnTypes, Row)
+                             || Row <- Rows],
+                    R#resultset{rows = Rows1}
+            end
     end.
 
 %% @doc Prepares a statement.
@@ -106,7 +114,8 @@ prepare(Query, SendFun, RecvFun) ->
                 0 ->
                     SeqNum3;
                 _ ->
-                    {ok, ?eof_pattern, SeqNum3x} = recv_packet(RecvFun, SeqNum3),
+                    {ok, ?eof_pattern, SeqNum3x} = recv_packet(RecvFun,
+                                                               SeqNum3),
                     SeqNum3x
             end,
             {ok, ColDefs, SeqNum5} =
@@ -121,7 +130,7 @@ prepare(Query, SendFun, RecvFun) ->
 %% @doc Executes a prepared statement.
 -spec execute(#prepared{}, [term()], sendfun(), recvfun()) -> #resultset{}.
 execute(#prepared{statement_id = Id, params = ParamDefs}, ParamValues,
-        SendFun, RecvFun) ->
+        SendFun, RecvFun) when length(ParamDefs) == length(ParamValues) ->
     %% Flags Constant Name
     %% 0x00 CURSOR_TYPE_NO_CURSOR
     %% 0x01 CURSOR_TYPE_READ_ONLY
@@ -133,20 +142,21 @@ execute(#prepared{statement_id = Id, params = ParamDefs}, ParamValues,
         [] ->
             Req0;
         _ ->
-            Types = [Def#column_definition.type || Def <- ParamDefs],
-            NullBitMap = build_null_bitmap(Types, ParamValues),
+            ParamTypes = [Def#column_definition.type || Def <- ParamDefs],
+            NullBitMap = build_null_bitmap(ParamValues),
+            %% TODO: Find out when would you use NewParamsBoundFlag = 0?
             NewParamsBoundFlag = 1,
             Req1 = <<Req0/binary, NullBitMap/binary, NewParamsBoundFlag>>,
             %% Append type and signedness (16#80 signed or 00 unsigned)
             %% for each value
             lists:foldl(
                 fun ({Type, Value}, Acc) ->
-                    BinValue = binary_encode(Type, Value),
+                    BinValue = encode_binary(Type, Value),
                     Signedness = 0, %% Hmm.....
                     <<Acc/binary, Type, Signedness, BinValue/binary>>
                 end,
                 Req1,
-                lists:zip(Types, ParamValues)
+                lists:zip(ParamTypes, ParamValues)
             )
     end,
     {ok, SeqNum1} = send_packet(SendFun, Req, 0),
@@ -156,10 +166,24 @@ execute(#prepared{statement_id = Id, params = ParamDefs}, ParamValues,
             parse_ok_packet(Resp);
         ?error_pattern ->
             parse_error_packet(Resp);
-        _ResultSet ->
+        _ResultPacket ->
             %% The first packet in a resultset is only the column count.
             {ColumnCount, <<>>} = lenenc_int(Resp),
-            fetch_resultset_bin(RecvFun, ColumnCount, SeqNum2)
+            case fetch_resultset(RecvFun, ColumnCount, SeqNum2) of
+                #error{} = E ->
+                    %% TODO: Find a way to get here and write a testcase.
+                    %% This can happen for the text protocol but maybe not for
+                    %% the binary protocol.
+                    E;
+                #resultset{column_definitions = ColDefs, rows = Rows} = R ->
+                    %% Parse the rows according to the 'binary protocol'
+                    %% representation.
+                    ColumnTypes = [ColDef#column_definition.type
+                                   || ColDef <- ColDefs],
+                    Rows1 = [decode_binary_row(ColumnCount, ColumnTypes, Row)
+                             || Row <- Rows],
+                    R#resultset{rows = Rows1}
+            end
     end.
 
 %% --- internal ---
@@ -256,6 +280,7 @@ parse_handshake_confirm(Packet) ->
             error(auth_method_switch)
     end.
 
+%% Fetches packets until a
 -spec fetch_resultset(recvfun(), integer(), integer()) ->
     #resultset{} | #error{}.
 fetch_resultset(RecvFun, FieldCount, SeqNum) ->
@@ -263,7 +288,7 @@ fetch_resultset(RecvFun, FieldCount, SeqNum) ->
                                                       FieldCount, []),
     {ok, DelimiterPacket, SeqNum2} = recv_packet(RecvFun, SeqNum1),
     #eof{} = parse_eof_packet(DelimiterPacket),
-    case fetch_resultset_rows(RecvFun, ColDefs, SeqNum2, []) of
+    case fetch_resultset_rows(RecvFun, SeqNum2, []) of
         {ok, Rows, _SeqNum3} ->
             #resultset{column_definitions = ColDefs, rows = Rows};
         #error{} = E ->
@@ -281,153 +306,25 @@ fetch_column_definitions(RecvFun, SeqNum, NumLeft, Acc) when NumLeft > 0 ->
 fetch_column_definitions(_RecvFun, SeqNum, 0, Acc) ->
     {ok, lists:reverse(Acc), SeqNum}.
 
--spec fetch_resultset_rows(recvfun(), ColumnDefinitions, integer(),
-                           Acc) -> {ok, Rows, integer()} | #error{}
-    when ColumnDefinitions :: [#column_definition{}],
-         Acc :: [[binary() | null]],
-         Rows :: [[binary() | null]].
-fetch_resultset_rows(RecvFun, ColDefs, SeqNum, Acc) ->
+%% @doc Fetches rows in a result set. There is a packet per row. The row packets
+%% are not decoded. This function can be used for both the binary and the text
+%% protocol result sets.
+-spec fetch_resultset_rows(recvfun(), SeqNum :: integer(), Acc) ->
+    {ok, Rows, integer()} | #error{}
+    when Acc :: [binary()],
+         Rows :: [binary()].
+fetch_resultset_rows(RecvFun, SeqNum, Acc) ->
     {ok, Packet, SeqNum1} = recv_packet(RecvFun, SeqNum),
     case Packet of
         ?error_pattern ->
             parse_error_packet(Packet);
         ?eof_pattern ->
             {ok, lists:reverse(Acc), SeqNum1};
-        _AnotherRow ->
-            Row = parse_resultset_row(ColDefs, Packet, []),
-            fetch_resultset_rows(RecvFun, ColDefs, SeqNum1, [Row | Acc])
+        Row ->
+            fetch_resultset_rows(RecvFun, SeqNum1, [Row | Acc])
     end.
 
-%% parses Data using ColDefs and builds the values Acc.
-parse_resultset_row([_ColDef | ColDefs], Data, Acc) ->
-    case Data of
-        <<16#fb, Rest/binary>> ->
-            %% NULL
-            parse_resultset_row(ColDefs, Rest, [null | Acc]);
-        _ ->
-            %% Every thing except NULL
-            {Str, Rest} = lenenc_str(Data),
-            parse_resultset_row(ColDefs, Rest, [Str | Acc])
-    end;
-parse_resultset_row([], <<>>, Acc) ->
-    lists:reverse(Acc).
-
-%% -- binary protocol --
-%% TODO: move this to mysql_binary.
-
-build_null_bitmap(_Types, _Values) -> todo.
-
-binary_encode(_Type, _Value) -> todo.
-
-%% @doc Fetches a result set and parses it in the binary protocol
-%%
-%% TODO: Merge this with fetch_resultset/3 and don't parse the rows.
--spec fetch_resultset_bin(recvfun(), integer(), integer()) ->
-    #resultset{} | #error{}.
-fetch_resultset_bin(RecvFun, ColumnCount, SeqNum) ->
-    {ok, ColDefs, SeqNum1} = fetch_column_definitions(RecvFun, SeqNum,
-                                                      ColumnCount, []),
-    {ok, ?eof_pattern, SeqNum2} = recv_packet(RecvFun, SeqNum1),
-    case fetch_resultset_bin_rows(RecvFun, ColumnCount, ColDefs, SeqNum2, []) of
-        {ok, Rows, _SeqNum3} ->
-            #resultset{column_definitions = ColDefs, rows = Rows};
-        #error{} = E ->
-            E
-    end.
-
-%% @doc For the binary protocol. Almost identical to fetch_resultset_rows/4.
-fetch_resultset_bin_rows(RecvFun, NumColumns, ColDefs, SeqNum, Acc) ->
-    {ok, Packet, SeqNum1} = recv_packet(RecvFun, SeqNum),
-    case Packet of
-        ?error_pattern ->
-            parse_error_packet(Packet);
-        ?eof_pattern ->
-            {ok, lists:reverse(Acc), SeqNum1};
-        _AnotherRow ->
-            Row = parse_resultset_bin_row(NumColumns, ColDefs, Packet),
-            fetch_resultset_bin_rows(RecvFun, NumColumns, ColDefs, SeqNum1,
-                                     [Row | Acc])
-    end.
-
-parse_resultset_bin_row(NumColumns, ColDefs, <<0, Data/binary>>) ->
-    {NullBitMap, Rest} = mysql_binary:null_bitmap_decode(NumColumns, Data, 2),
-    parse_resultset_bin_values(ColDefs, NullBitMap, Rest, []).
-
-parse_resultset_bin_values([_ | ColDefs], <<1:1, NullBitMap/bitstring>>, Data,
-                           Acc) ->
-    %% NULL
-    parse_resultset_bin_values(ColDefs, NullBitMap, Data, [null | Acc]);
-parse_resultset_bin_values([ColDef | ColDefs], <<0:1, NullBitMap/bitstring>>,
-                           Data, Acc) ->
-   %% Not NULL
-   {Term, Rest} = bin_protocol_decode(ColDef#column_definition.type, Data),
-   parse_resultset_bin_values(ColDefs, NullBitMap, Rest, [Term | Acc]);
-parse_resultset_bin_values([], _, <<>>, Acc) ->
-    lists:reverse(Acc).
-
-%% The types are type constants for the binary protocol, such as
-%% ProtocolBinary::MYSQL_TYPE_STRING. We assume that these are the same as for
-%% the text protocol.
--spec bin_protocol_decode(Type :: integer(), Data :: binary()) ->
-    {Term :: term(), Rest :: binary()}.
-bin_protocol_decode(T, Data)
-  when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
-       T == ?TYPE_ENUM; T == ?TYPE_SET; T == ?TYPE_LONG_BLOB;
-       T == ?TYPE_MEDIUM_BLOB; T == ?TYPE_BLOB; T == ?TYPE_TINY_BLOB;
-       T == ?TYPE_GEOMETRY; T == ?TYPE_BIT; T == ?TYPE_DECIMAL;
-       T == ?TYPE_NEWDECIMAL ->
-    lenenc_str(Data);
-bin_protocol_decode(?TYPE_LONGLONG, <<Value:64/little, Rest/binary>>) ->
-    {Value, Rest};
-bin_protocol_decode(T, <<Value:32/little, Rest/binary>>)
-  when T == ?TYPE_LONG; T == ?TYPE_INT24 ->
-    {Value, Rest};
-bin_protocol_decode(T, <<Value:16/little, Rest/binary>>)
-  when T == ?TYPE_SHORT; T == ?TYPE_YEAR ->
-    {Value, Rest};
-bin_protocol_decode(?TYPE_TINY, <<Value:8, Rest/binary>>) ->
-    {Value, Rest};
-bin_protocol_decode(?TYPE_DOUBLE, <<Value:64/float-little, Rest/binary>>) ->
-    {Value, Rest};
-bin_protocol_decode(?TYPE_FLOAT, <<Value:32/float-little, Rest/binary>>) ->
-    {Value, Rest};
-bin_protocol_decode(?TYPE_DATE, <<Length, Data/binary>>) ->
-    %% Coded in the same way as DATETIME and TIMESTAMP below, but returned in
-    %% a simple triple.
-    case {Length, Data} of
-        {0, _} -> {{0, 0, 0}, Data};
-        {4, <<Y:16/little, M, D, Rest/binary>>} -> {{Y, M, D}, Rest}
-    end;
-bin_protocol_decode(T, <<Length, Data/binary>>)
-  when T == ?TYPE_DATETIME; T == ?TYPE_TIMESTAMP ->
-    %% length (1) -- number of bytes following (valid values: 0, 4, 7, 11)
-    case {Length, Data} of
-        {0, _} ->
-            {{{0,0,0},{0,0,0}}, Data};
-        {4, <<Y:16/little, M, D, Rest/binary>>} ->
-            {{{Y, M, D}, {0, 0, 0}}, Rest};
-        {7, <<Y:16/little, M, D, H, Mi, S, Rest/binary>>} ->
-            {{{Y, M, D}, {H, Mi, S}}, Rest};
-        {11, <<Y:16/little, M, D, H, Mi, S, Micro:32/little, Rest/binary>>} ->
-            {{{Y, M, D}, {H, Mi, S + 0.000001 * Micro}}, Rest}
-    end;
-bin_protocol_decode(?TYPE_TIME, <<Length, Data/binary>>) ->
-    %% length (1) -- number of bytes following (valid values: 0, 8, 12)
-    %% is_negative (1) -- (1 if minus, 0 for plus)
-    %% days (4) -- days
-    %% hours (1) -- hours
-    %% minutes (1) -- minutes
-    %% seconds (1) -- seconds
-    %% micro_seconds (4) -- micro-seconds
-    case {Length, Data} of
-        {0, _} ->
-            {{0, 0, 0}, Data};
-        {8, <<IsNeg, D:32/little, H, M, S, Rest/binary>>} ->
-            {{(-IsNeg bsl 1 + 1) * (D * 24 + H), M, S}, Rest};
-        {8, <<IsNeg, D:32/little, H, M, S, Micro:32/little, Rest/binary>>} ->
-            {{(-IsNeg bsl 1 + 1) * (D * 24 + H), M, S + 0.000001 * Micro},
-             Rest}
-    end.
+%% -- both text and binary protocol --
 
 %% Parses a packet containing a column definition (part of a result set)
 parse_column_definition(Data) ->
@@ -452,6 +349,221 @@ parse_column_definition(Data) ->
     %% }
     <<>> = Rest8,
     #column_definition{name = Name, type = ColumnType, charset = Charset}.
+
+%% -- text protocol --
+
+-spec decode_text_row(NumColumns :: integer(), ColumnTypes :: integer(),
+                      Data :: binary()) -> [term()].
+decode_text_row(_NumColumns, ColumnTypes, Data) ->
+    decode_text_row_acc(ColumnTypes, Data, []).
+
+%% parses Data using ColDefs and builds the values Acc.
+decode_text_row_acc([Type | Types], Data, Acc) ->
+    case Data of
+        <<16#fb, Rest/binary>> ->
+            %% NULL
+            decode_text_row_acc(Types, Rest, [null | Acc]);
+        _ ->
+            %% Every thing except NULL
+            {Text, Rest} = lenenc_str(Data),
+            Term = decode_text(Type, Text),
+            decode_text_row_acc(Types, Rest, [Term | Acc])
+    end;
+decode_text_row_acc([], <<>>, Acc) ->
+    lists:reverse(Acc).
+
+%% @doc When receiving data in the text protocol, we get everything as binaries
+%% (except NULL). This function is used to parse these strings values.
+decode_text(_, null) ->
+    %% NULL is the only value not represented as a binary.
+    null;
+decode_text(T, Text)
+  when T == ?TYPE_TINY; T == ?TYPE_SHORT; T == ?TYPE_LONG; T == ?TYPE_LONGLONG;
+       T == ?TYPE_INT24; T == ?TYPE_YEAR; T == ?TYPE_BIT ->
+    %% For BIT, do we want bitstring, int or binary?
+    binary_to_integer(Text);
+decode_text(T, Text)
+  when T == ?TYPE_DECIMAL; T == ?TYPE_NEWDECIMAL; T == ?TYPE_VARCHAR;
+       T == ?TYPE_ENUM; T == ?TYPE_TINY_BLOB; T == ?TYPE_MEDIUM_BLOB;
+       T == ?TYPE_LONG_BLOB; T == ?TYPE_BLOB; T == ?TYPE_VAR_STRING;
+       T == ?TYPE_STRING; T == ?TYPE_GEOMETRY ->
+    Text;
+decode_text(?TYPE_DATE, <<Y:4/binary, "-", M:2/binary, "-", D:2/binary>>) ->
+    {binary_to_integer(Y), binary_to_integer(M), binary_to_integer(D)};
+decode_text(?TYPE_TIME, <<H:2/binary, ":", Mi:2/binary, ":", S:2/binary>>) ->
+    %% FIXME: Hours can be negative + more digits. Seconds can have fractions.
+    %% Add tests for these cases.
+    {binary_to_integer(H), binary_to_integer(Mi), binary_to_integer(S)};
+decode_text(T, <<Y:4/binary, "-", M:2/binary, "-", D:2/binary, " ",
+                 H:2/binary, ":", Mi:2/binary, ":", S:2/binary>>)
+  when T == ?TYPE_TIMESTAMP; T == ?TYPE_DATETIME ->
+    {{binary_to_integer(Y), binary_to_integer(M), binary_to_integer(D)},
+     {binary_to_integer(H), binary_to_integer(Mi), binary_to_integer(S)}};
+decode_text(T, Text) when T == ?TYPE_FLOAT; T == ?TYPE_DOUBLE ->
+    try binary_to_float(Text)
+    catch error:badarg ->
+        try binary_to_integer(Text) of
+            Int -> float(Int)
+        catch error:badarg ->
+            %% It is something like "4e75" that must be turned into "4.0e75"
+            binary_to_float(binary:replace(Text, <<"e">>, <<".0e">>))
+        end
+    end;
+decode_text(?TYPE_SET, <<>>) ->
+    sets:new();
+decode_text(?TYPE_SET, Text) ->
+    sets:from_list(binary:split(Text, <<",">>, [global])).
+
+%% -- binary protocol --
+
+%% @doc Decodes a packet representing a row in a binary result set.
+%% It consists of a 0 byte, then a null bitmap, then the values.
+%% Returns a list of length NumColumns with terms of appropriate types for each
+%% MySQL type in ColumnTypes.
+-spec decode_binary_row(NumColumns :: integer(), ColumnTypes :: [integer()],
+                 Data :: binary()) -> [term()].
+decode_binary_row(NumColumns, ColumnTypes, <<0, Data/binary>>) ->
+    {NullBitMap, Rest} = null_bitmap_decode(NumColumns, Data, 2),
+    decode_binary_row_acc(ColumnTypes, NullBitMap, Rest, []).
+
+%% @doc Accumulating helper for decode_binary_row/3.
+decode_binary_row_acc([_ | Types], <<1:1, NullBitMap/bitstring>>, Data, Acc) ->
+    %% NULL
+    decode_binary_row_acc(Types, NullBitMap, Data, [null | Acc]);
+decode_binary_row_acc([Type | Types], <<0:1, NullBitMap/bitstring>>, Data,
+                      Acc) ->
+   %% Not NULL
+   {Term, Rest} = decode_binary(Type, Data),
+   decode_binary_row_acc(Types, NullBitMap, Rest, [Term | Acc]);
+decode_binary_row_acc([], _, <<>>, Acc) ->
+    lists:reverse(Acc).
+
+%% @doc Decodes a null bitmap as stored by MySQL and returns it in a strait
+%% bitstring counting bits from left to right in a tuple with remaining data.
+%%
+%% In the MySQL null bitmap the bits are stored counting bytes from the left and
+%% bits within each byte from the right. (Sort of little endian.)
+-spec null_bitmap_decode(NumColumns :: integer(), BitOffset :: integer(),
+                         Data :: binary()) ->
+    {NullBitstring :: bitstring(), Rest :: binary()}.
+null_bitmap_decode(NumColumns, Data, BitOffset) ->
+    %% Binary shift right by 3 is equivallent to integer division by 8.
+    BitMapLength = (NumColumns + BitOffset + 7) bsr 3,
+    <<NullBitstring0:BitMapLength/binary, Rest/binary>> = Data,
+    <<_:BitOffset, NullBitstring:NumColumns/bitstring, _/bitstring>> =
+        << <<(reverse_byte(B))/binary>> || <<B:1/binary>> <= NullBitstring0 >>,
+    {NullBitstring, Rest}.
+
+%% @doc The reverse of null_bitmap_decode/3. The number of columns is taken to
+%% be the number of bits in NullBitstring. Returns the MySQL null bitmap as a
+%% binary (i.e. full bytes). BitOffset is the number of unused bits that should
+%% be inserted before the other bits.
+-spec null_bitmap_encode(bitstring(), integer()) -> binary().
+null_bitmap_encode(NullBitstring, BitOffset) ->
+    PayloadLength = bit_size(NullBitstring) + BitOffset,
+    %% Round up to a multiple of 8.
+    BitMapLength = (PayloadLength + 7) band bnot 7,
+    PadBitsLength = BitMapLength - PayloadLength,
+    PaddedBitstring = <<0:BitOffset, NullBitstring/bitstring, 0:PadBitsLength>>,
+    << <<(reverse_byte(B))/binary>> || <<B:1/binary>> <= PaddedBitstring >>.
+
+%% Reverses the bits in a byte.
+reverse_byte(<<A:1, B:1, C:1, D:1, E:1, F:1, G:1, H:1>>) ->
+    <<H:1, G:1, F:1, E:1, D:1, C:1, B:1, A:1>>.
+
+%% @doc Used for executing prepared statements. The bit offset whould be 0 in
+%% this case.
+-spec build_null_bitmap([any()]) -> binary().
+build_null_bitmap(Values) ->
+    Bits = << <<(case V of null -> 1; _ -> 0 end):1/bits>> || V <- Values >>,
+    null_bitmap_encode(Bits, 0).
+
+%% Decodes a value as received in the 'binary protocol' result set.
+%%
+%% The types are type constants for the binary protocol, such as
+%% ProtocolBinary::MYSQL_TYPE_STRING. In the guide "MySQL Internals" these are
+%% not listed, but we assume that are the same as for the text protocol.
+-spec decode_binary(Type :: integer(), Data :: binary()) ->
+    {Term :: term(), Rest :: binary()}.
+decode_binary(T, Data)
+  when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
+       T == ?TYPE_ENUM; T == ?TYPE_SET; T == ?TYPE_LONG_BLOB;
+       T == ?TYPE_MEDIUM_BLOB; T == ?TYPE_BLOB; T == ?TYPE_TINY_BLOB;
+       T == ?TYPE_GEOMETRY; T == ?TYPE_BIT; T == ?TYPE_DECIMAL;
+       T == ?TYPE_NEWDECIMAL ->
+    lenenc_str(Data);
+decode_binary(?TYPE_LONGLONG, <<Value:64/little, Rest/binary>>) ->
+    {Value, Rest};
+decode_binary(T, <<Value:32/little, Rest/binary>>)
+  when T == ?TYPE_LONG; T == ?TYPE_INT24 ->
+    {Value, Rest};
+decode_binary(T, <<Value:16/little, Rest/binary>>)
+  when T == ?TYPE_SHORT; T == ?TYPE_YEAR ->
+    {Value, Rest};
+decode_binary(?TYPE_TINY, <<Value:8, Rest/binary>>) ->
+    {Value, Rest};
+decode_binary(?TYPE_DOUBLE, <<Value:64/float-little, Rest/binary>>) ->
+    {Value, Rest};
+decode_binary(?TYPE_FLOAT, <<Value:32/float-little, Rest/binary>>) ->
+    {Value, Rest};
+decode_binary(?TYPE_DATE, <<Length, Data/binary>>) ->
+    %% Coded in the same way as DATETIME and TIMESTAMP below, but returned in
+    %% a simple triple.
+    case {Length, Data} of
+        {0, _} -> {{0, 0, 0}, Data};
+        {4, <<Y:16/little, M, D, Rest/binary>>} -> {{Y, M, D}, Rest}
+    end;
+decode_binary(T, <<Length, Data/binary>>)
+  when T == ?TYPE_DATETIME; T == ?TYPE_TIMESTAMP ->
+    %% length (1) -- number of bytes following (valid values: 0, 4, 7, 11)
+    case {Length, Data} of
+        {0, _} ->
+            {{{0,0,0},{0,0,0}}, Data};
+        {4, <<Y:16/little, M, D, Rest/binary>>} ->
+            {{{Y, M, D}, {0, 0, 0}}, Rest};
+        {7, <<Y:16/little, M, D, H, Mi, S, Rest/binary>>} ->
+            {{{Y, M, D}, {H, Mi, S}}, Rest};
+        {11, <<Y:16/little, M, D, H, Mi, S, Micro:32/little, Rest/binary>>} ->
+            {{{Y, M, D}, {H, Mi, S + 0.000001 * Micro}}, Rest}
+    end;
+decode_binary(?TYPE_TIME, <<Length, Data/binary>>) ->
+    %% length (1) -- number of bytes following (valid values: 0, 8, 12)
+    %% is_negative (1) -- (1 if minus, 0 for plus)
+    %% days (4) -- days
+    %% hours (1) -- hours
+    %% minutes (1) -- minutes
+    %% seconds (1) -- seconds
+    %% micro_seconds (4) -- micro-seconds
+    case {Length, Data} of
+        {0, _} ->
+            {{0, 0, 0}, Data};
+        {8, <<IsNeg, D:32/little, H, M, S, Rest/binary>>} ->
+            {{(-IsNeg bsl 1 + 1) * (D * 24 + H), M, S}, Rest};
+        {8, <<IsNeg, D:32/little, H, M, S, Micro:32/little, Rest/binary>>} ->
+            {{(-IsNeg bsl 1 + 1) * (D * 24 + H), M, S + 0.000001 * Micro},
+             Rest}
+    end.
+
+%% @doc Encodes a term reprenting av value of type Type as a binary for use in
+%% the binary protocol.
+-spec encode_binary(Type :: integer(), Value :: term()) -> binary().
+encode_binary(_Type, null) ->
+    <<>>;
+encode_binary(T, Value)
+  when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
+       T == ?TYPE_ENUM; T == ?TYPE_SET; T == ?TYPE_LONG_BLOB;
+       T == ?TYPE_MEDIUM_BLOB; T == ?TYPE_BLOB; T == ?TYPE_TINY_BLOB;
+       T == ?TYPE_GEOMETRY; T == ?TYPE_BIT; T == ?TYPE_DECIMAL;
+       T == ?TYPE_NEWDECIMAL ->
+    build_lenenc_str(Value);
+encode_binary(_T, _Value) ->
+    fixme = todo.
+
+%% Rename this and lenenc_str (the decode function)
+build_lenenc_str(_Value) ->
+    ok = fixme.
+
+%% -- Protocol basics: packets --
 
 %% @doc Wraps Data in packet headers, sends it by calling SendFun and returns
 %% {ok, SeqNum1} where SeqNum1 is the next sequence number.
@@ -608,6 +720,54 @@ nulterm_str(Bin) ->
 
 %% Testing some of the internal functions, mostly the cases we don't cover in
 %% other tests.
+
+decode_text_test() ->
+    %% Int types
+    lists:foreach(fun (T) -> ?assertEqual(1, decode_text(T, <<"1">>)) end,
+                  [?TYPE_TINY, ?TYPE_SHORT, ?TYPE_LONG, ?TYPE_LONGLONG,
+                   ?TYPE_INT24, ?TYPE_YEAR, ?TYPE_BIT]),
+
+    %% Floating point and decimal numbers
+    lists:foreach(fun (T) -> ?assertEqual(3.0, decode_text(T, <<"3.0">>)) end,
+                  [?TYPE_FLOAT, ?TYPE_DOUBLE]),
+    %% Decimal types
+    lists:foreach(fun (T) ->
+                      ?assertEqual(<<"3.0">>, decode_text(T, <<"3.0">>))
+                  end,
+                  [?TYPE_DECIMAL, ?TYPE_NEWDECIMAL]),
+    ?assertEqual(3.0,  decode_text(?TYPE_FLOAT, <<"3">>)),
+    ?assertEqual(30.0, decode_text(?TYPE_FLOAT, <<"3e1">>)),
+    ?assertEqual(3,    decode_text(?TYPE_LONG, <<"3">>)),
+
+    %% Date and time
+    ?assertEqual({2014, 11, 01}, decode_text(?TYPE_DATE, <<"2014-11-01">>)),
+    ?assertEqual({23, 59, 01}, decode_text(?TYPE_TIME, <<"23:59:01">>)),
+    ?assertEqual({{2014, 11, 01}, {23, 59, 01}},
+                 decode_text(?TYPE_DATETIME, <<"2014-11-01 23:59:01">>)),
+    ?assertEqual({{2014, 11, 01}, {23, 59, 01}},
+                 decode_text(?TYPE_TIMESTAMP, <<"2014-11-01 23:59:01">>)),
+
+    %% Strings and blobs
+    lists:foreach(fun (T) ->
+                      ?assertEqual(<<"x">>, decode_text(T, <<"x">>))
+                  end,
+                  [?TYPE_VARCHAR, ?TYPE_ENUM, ?TYPE_TINY_BLOB,
+                   ?TYPE_MEDIUM_BLOB, ?TYPE_LONG_BLOB, ?TYPE_BLOB,
+                   ?TYPE_VAR_STRING, ?TYPE_STRING, ?TYPE_GEOMETRY]),
+
+    %% Set
+    ?assertEqual(sets:from_list([<<"b">>, <<"a">>]),
+                 decode_text(?TYPE_SET, <<"a,b">>)),
+    ?assertEqual(sets:from_list([]), decode_text(?TYPE_SET, <<>>)),
+
+    %% NULL
+    ?assertEqual(null, decode_text(?TYPE_FLOAT, null)),
+    ok.
+
+null_bitmap_test() ->
+    ?assertEqual({<<0, 1:1>>, <<>>}, null_bitmap_decode(9, <<0, 4>>, 2)),
+    ?assertEqual(<<0, 4>>, null_bitmap_encode(<<0, 1:1>>, 2)),
+    ok.
 
 lenenc_int_test() ->
     ?assertEqual({40, <<>>}, lenenc_int(<<40>>)),
