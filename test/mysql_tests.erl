@@ -86,10 +86,32 @@ text_protocol(Pid) ->
     ?assertEqual([[1, <<"blob">>, <<>>, 3.14, <<"3.140">>, {0, 22, 11},
                    {{2014, 11, 03}, {00, 22, 24}}, {2014, 11, 03}, null]],
                  Rows),
+
+    %% TODO:
+    %% * More types: BIT, SET, ENUM, GEOMETRY
+    %% * TIME with negative hours
+    %% * TIME with more than 2 digits in hour.
+    %% * TIME with microseconds
+
     ok.
 
 binary_protocol(Pid) ->
+    %% The same query as in the text protocol. Expect the same result.
+    %% TODO: Put the expected result in a macro to make sure they are identical.
     {ok, Stmt} = mysql:prepare(Pid, <<"SELECT * FROM t">>),
-    {ok, Cols, Rows} = mysql:query(Pid, Stmt, []),
-    io:format("Cols: ~p~nRows: ~p~n", [Cols, Rows]),
+    {ok, Columns, Rows} = mysql:query(Pid, Stmt, []),
+    ?assertEqual([<<"id">>, <<"bl">>, <<"tx">>, <<"f">>, <<"dc">>, <<"ti">>,
+                  <<"ts">>, <<"da">>, <<"c">>], Columns),
+    ?assertEqual([[1, <<"blob">>, <<>>, 3.14, <<"3.140">>, {0, 22, 11},
+                   {{2014, 11, 03}, {00, 22, 24}}, {2014, 11, 03}, null]],
+                 Rows),
+
+    %% TODO: Both send and receive the following values:
+    %% * Values for all types
+    %% * Negative numbers for all integer types (even the unsigned ones)
+    %% * Integer overflow
+    %% * TIME with negative hours
+    %% * TIME with more than 2 digits in hour.
+    %% * TIME with microseconds
+
     todo.
