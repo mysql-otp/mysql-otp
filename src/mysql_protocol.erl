@@ -106,31 +106,26 @@ prepare(Query, SendFun, RecvFun) ->
           0, %% reserved_1 -- [00] filler
           WarningCount:16/little>> ->
             %% This was the first packet.
-            %% If NumParams > 0 more packets will follow:
-            {ok, ParamDefs, SeqNum3} =
-                fetch_column_definitions(RecvFun, SeqNum2, NumParams, []),
-            %% The eof packet is not here in mysql 5.6 but it's in the examples.
-            SeqNum4 = case NumParams of
-                0 ->
-                    SeqNum3;
-                _ ->
-                    {ok, ?eof_pattern, SeqNum3x} = recv_packet(RecvFun,
-                                                               SeqNum3),
-                    SeqNum3x
-            end,
-            {ok, ColDefs, SeqNum5} =
-                fetch_column_definitions(RecvFun, SeqNum4, NumColumns, []),
-            {ok, ?eof_pattern, _SeqNum6} = recv_packet(RecvFun, SeqNum5),
+            %% Now: Parameter Definition Block. The parameter definitions don't
+            %% contain any useful data at all. They are always TYPE_VAR_STRING
+            %% with charset 'binary' so we have to select a type ourselves for
+            %% the parameters we have in execute/4.
+            {_ParamDefs, SeqNum3} =
+                fetch_column_definitions_if_any(NumParams, RecvFun, SeqNum2),
+            %% Column Definition Block. We get column definitions in execute
+            %% too, so we don't need them here. We *could* store them to be able
+            %% to provide the user with some info about a prepared statement.
+            {_ColDefs, _SeqNum4} =
+                fetch_column_definitions_if_any(NumColumns, RecvFun, SeqNum3),
             #prepared{statement_id = StmtId,
-                      params = ParamDefs,
-                      columns = ColDefs,
+                      param_count = NumParams,
                       warning_count = WarningCount}
     end.
 
 %% @doc Executes a prepared statement.
 -spec execute(#prepared{}, [term()], sendfun(), recvfun()) -> #resultset{}.
-execute(#prepared{statement_id = Id, params = ParamDefs}, ParamValues,
-        SendFun, RecvFun) when length(ParamDefs) == length(ParamValues) ->
+execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
+        SendFun, RecvFun) when ParamCount == length(ParamValues) ->
     %% Flags Constant Name
     %% 0x00 CURSOR_TYPE_NO_CURSOR
     %% 0x01 CURSOR_TYPE_READ_ONLY
@@ -138,26 +133,23 @@ execute(#prepared{statement_id = Id, params = ParamDefs}, ParamValues,
     %% 0x04 CURSOR_TYPE_SCROLLABLE
     Flags = 0,
     Req0 = <<?COM_STMT_EXECUTE, Id:32/little, Flags, 1:32/little>>,
-    Req = case ParamDefs of
-        [] ->
+    Req = case ParamCount of
+        0 ->
             Req0;
         _ ->
-            ParamTypes = [Def#column_definition.type || Def <- ParamDefs],
+            %% We can't use the parameter types returned by the prepare call.
+            %% They are all reported as ?TYPE_VAR_STRING with character
+            %% set 'binary'.
             NullBitMap = build_null_bitmap(ParamValues),
-            %% TODO: Find out when would you use NewParamsBoundFlag = 0?
+            %% What does it mean to *not* bind new params? To use the same
+            %% params as last time? Right now we always bind params each time.
             NewParamsBoundFlag = 1,
             Req1 = <<Req0/binary, NullBitMap/binary, NewParamsBoundFlag>>,
-            %% Append type and signedness (16#80 signed or 00 unsigned)
-            %% for each value
-            lists:foldl(
-                fun ({Type, Value}, Acc) ->
-                    BinValue = encode_binary(Type, Value),
-                    Signedness = 0, %% Hmm.....
-                    <<Acc/binary, Type, Signedness, BinValue/binary>>
-                end,
-                Req1,
-                lists:zip(ParamTypes, ParamValues)
-            )
+            %% For each value, first append type and signedness (16#80 signed or
+            %% 00 unsigned) for all values and then the binary encoded values.
+            EncodedParams = lists:map(fun encode_param/1, ParamValues),
+            {TypesAndSigns, EncValues} = lists:unzip(EncodedParams),
+            iolist_to_binary([Req1, TypesAndSigns, EncValues])
     end,
     {ok, SeqNum1} = send_packet(SendFun, Req, 0),
     {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
@@ -295,7 +287,9 @@ fetch_resultset(RecvFun, FieldCount, SeqNum) ->
             E
     end.
 
-%% Receives NumLeft packets and parses them as column definitions.
+%% @doc Receives NumLeft packets and parses them as column definitions.
+%% TODO: Don't parse them here. That's a sepatate thing we not always need to
+%% do.
 -spec fetch_column_definitions(recvfun(), SeqNum :: integer(),
                                NumLeft :: integer(), Acc :: [tuple()]) ->
     {ok, [tuple()], NextSeqNum :: integer()}.
@@ -393,10 +387,12 @@ decode_text(?TYPE_DATE, <<Y:4/binary, "-", M:2/binary, "-", D:2/binary>>) ->
 decode_text(?TYPE_TIME, <<H:2/binary, ":", Mi:2/binary, ":", S:2/binary>>) ->
     %% FIXME: Hours can be negative + more digits. Seconds can have fractions.
     %% Add tests for these cases.
-    {binary_to_integer(H), binary_to_integer(Mi), binary_to_integer(S)};
+    Time = {binary_to_integer(H), binary_to_integer(Mi), binary_to_integer(S)},
+    {time, Time};
 decode_text(T, <<Y:4/binary, "-", M:2/binary, "-", D:2/binary, " ",
                  H:2/binary, ":", Mi:2/binary, ":", S:2/binary>>)
   when T == ?TYPE_TIMESTAMP; T == ?TYPE_DATETIME ->
+    %% FIXME: Fractions of seconds.
     {{binary_to_integer(Y), binary_to_integer(M), binary_to_integer(D)},
      {binary_to_integer(H), binary_to_integer(Mi), binary_to_integer(S)}};
 decode_text(T, Text) when T == ?TYPE_FLOAT; T == ?TYPE_DOUBLE ->
@@ -415,6 +411,15 @@ decode_text(?TYPE_SET, Text) ->
     sets:from_list(binary:split(Text, <<",">>, [global])).
 
 %% -- binary protocol --
+
+%% @doc If NumColumns is non-zero, fetches this number of column definitions
+%% and an EOF packet. Used by prepare/3.
+fetch_column_definitions_if_any(0, _RecvFun, SeqNum) ->
+    {[], SeqNum};
+fetch_column_definitions_if_any(N, RecvFun, SeqNum) ->
+    {ok, Defs, SeqNum1} = fetch_column_definitions(RecvFun, SeqNum, N, []),
+    {ok, ?eof_pattern, SeqNum2} = recv_packet(RecvFun, SeqNum1),
+    {Defs, SeqNum2}.
 
 %% @doc Decodes a packet representing a row in a binary result set.
 %% It consists of a 0 byte, then a null bitmap, then the values.
@@ -475,7 +480,7 @@ reverse_byte(<<A:1, B:1, C:1, D:1, E:1, F:1, G:1, H:1>>) ->
 %% this case.
 -spec build_null_bitmap([any()]) -> binary().
 build_null_bitmap(Values) ->
-    Bits = << <<(case V of null -> 1; _ -> 0 end):1/bits>> || V <- Values >>,
+    Bits = << <<(case V of null -> 1; _ -> 0 end):1>> || V <- Values >>,
     null_bitmap_encode(Bits, 0).
 
 %% Decodes a value as received in the 'binary protocol' result set.
@@ -492,12 +497,12 @@ decode_binary(T, Data)
        T == ?TYPE_GEOMETRY; T == ?TYPE_BIT; T == ?TYPE_DECIMAL;
        T == ?TYPE_NEWDECIMAL ->
     lenenc_str(Data);
-decode_binary(?TYPE_LONGLONG, <<Value:64/little, Rest/binary>>) ->
+decode_binary(?TYPE_LONGLONG, <<Value:64/signed-little, Rest/binary>>) ->
     {Value, Rest};
-decode_binary(T, <<Value:32/little, Rest/binary>>)
+decode_binary(T, <<Value:32/signed-little, Rest/binary>>)
   when T == ?TYPE_LONG; T == ?TYPE_INT24 ->
     {Value, Rest};
-decode_binary(T, <<Value:16/little, Rest/binary>>)
+decode_binary(T, <<Value:16/signed-little, Rest/binary>>)
   when T == ?TYPE_SHORT; T == ?TYPE_YEAR ->
     {Value, Rest};
 decode_binary(?TYPE_TINY, <<Value:8, Rest/binary>>) ->
@@ -505,6 +510,41 @@ decode_binary(?TYPE_TINY, <<Value:8, Rest/binary>>) ->
 decode_binary(?TYPE_DOUBLE, <<Value:64/float-little, Rest/binary>>) ->
     {Value, Rest};
 decode_binary(?TYPE_FLOAT, <<Value:32/float-little, Rest/binary>>) ->
+    %% There is a precision loss when storing and fetching a 32-bit float.
+    %% In the text protocol, it is obviously rounded. Storing 3.14 in a FLOAT
+    %% column and fetching it using the text protocol, we get "3.14" which we
+    %% parse to the Erlang double 3.14. Fetching the same value as a binary
+    %% 32-bit float, we get 3.140000104904175. To achieve the same rounding
+    %% after receiving it as a 32-bit float, we try to do the same rounding here
+    %% as MySQL does before sending it over the text protocol. Here is a quote
+    %% of a comment in the documentation:
+    %%
+    %%     Posted by Geoffrey Downs on March 10 2011 10:26am
+    %%
+    %%     Following up... I *think* this is correct for the default float
+    %%     columns in mysql:
+    %%
+    %%     var yourNumber = some floating point value
+    %%     max decimal precision = 10 ^ (-5 + floor(yourNumber log 10))
+    %%     So:
+    %%     0 < x < 10 -> max precision is 0.00001
+    %%     10 <= x < 100 -> max precision is 0.0001
+    %%     100 <= x < 1000 -> max precision is 0.001
+    %%     etc.
+    %%
+    %% (From http://dev.mysql.com/doc/refman/5.7/en/problems-with-float.html
+    %% fetched 10 Nov 2014)
+    %%
+    %Precision = math:pow(10, -5 + trunc(math:log10(abs(Value)))),
+    %% Round to this precision
+    %InvPrec = 1 / Precision,
+    %RoundedValue = round(InvPrec * Value) / InvPrec,
+    %% Note: If we multiply be Precision after rounding instead of dividing by
+    %% InvPrec, we get rouding errors.
+    %{RoundedValue, Rest};
+    %%---------- We don't use the above method as it gives us 3.1400000000000006
+    %%---------- for 3.14 (INSERT + SELECT roundtrip). This needs some tweaks
+    %%---------- and extensive testing with various numbers.
     {Value, Rest};
 decode_binary(?TYPE_DATE, <<Length, Data/binary>>) ->
     %% Coded in the same way as DATETIME and TIMESTAMP below, but returned in
@@ -518,7 +558,7 @@ decode_binary(T, <<Length, Data/binary>>)
     %% length (1) -- number of bytes following (valid values: 0, 4, 7, 11)
     case {Length, Data} of
         {0, _} ->
-            {{{0,0,0},{0,0,0}}, Data};
+            {{{0, 0, 0}, {0, 0, 0}}, Data};
         {4, <<Y:16/little, M, D, Rest/binary>>} ->
             {{{Y, M, D}, {0, 0, 0}}, Rest};
         {7, <<Y:16/little, M, D, H, Mi, S, Rest/binary>>} ->
@@ -536,32 +576,97 @@ decode_binary(?TYPE_TIME, <<Length, Data/binary>>) ->
     %% micro_seconds (4) -- micro-seconds
     case {Length, Data} of
         {0, _} ->
-            {{0, 0, 0}, Data};
-        {8, <<IsNeg, D:32/little, H, M, S, Rest/binary>>} ->
-            {{(-IsNeg bsl 1 + 1) * (D * 24 + H), M, S}, Rest};
-        {8, <<IsNeg, D:32/little, H, M, S, Micro:32/little, Rest/binary>>} ->
-            {{(-IsNeg bsl 1 + 1) * (D * 24 + H), M, S + 0.000001 * Micro},
-             Rest}
+            {{time, {0, 0, 0}}, Data};
+        {8, <<0, D:32/little, H, M, S, Rest/binary>>} ->
+            {{time, {D * 24 + H, M, S}}, Rest};
+        {12, <<0, D:32/little, H, M, S, Micro:32/little, Rest/binary>>} ->
+            {{time, {D * 24 + H, M, S + 0.000001 * Micro}}, Rest};
+        {8, <<1, D:32/little, H, M, S, Rest/binary>>} ->
+            %% Negative time. Negating H, M and S is correct but a bit strange.
+            %% We could recalulate like calendar:seconds_to_daystime/1 does:
+            %% {-1,{23,58,20}} = calendar:seconds_to_daystime(-100).
+            {{time, {-(D * 24 + H), -M, -S}}, Rest};
+        {12, <<1, D:32/little, H, M, S, Micro:32/little, Rest/binary>>} ->
+            {{time, {-(D * 24 + H), -M, -S - 0.000001 * Micro}}, Rest}
     end.
 
-%% @doc Encodes a term reprenting av value of type Type as a binary for use in
-%% the binary protocol.
--spec encode_binary(Type :: integer(), Value :: term()) -> binary().
-encode_binary(_Type, null) ->
-    <<>>;
-encode_binary(T, Value)
-  when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
-       T == ?TYPE_ENUM; T == ?TYPE_SET; T == ?TYPE_LONG_BLOB;
-       T == ?TYPE_MEDIUM_BLOB; T == ?TYPE_BLOB; T == ?TYPE_TINY_BLOB;
-       T == ?TYPE_GEOMETRY; T == ?TYPE_BIT; T == ?TYPE_DECIMAL;
-       T == ?TYPE_NEWDECIMAL ->
-    build_lenenc_str(Value);
-encode_binary(_T, _Value) ->
-    fixme = todo.
+%% @doc Encodes a term reprenting av value as a binary for use in the binary
+%% protocol. As this is used to encode parameters for prepared statements, the
+%% encoding is in its required form, namely <<Type:8, Sign:8, Value/binary>>.
+%%
+%% TODO: Maybe change Erlang representation of BIT to <<_:1>>.
+-spec encode_param(term()) -> {TypeAndSign :: binary(), Data :: binary()}.
+encode_param(null) ->
+    {<<?TYPE_NULL, 0>>, <<>>};
+encode_param(Value) when is_binary(Value) ->
+    EncLength = lenenc_int_encode(byte_size(Value)),
+    {<<?TYPE_VAR_STRING, 0>>, <<EncLength/binary, Value/binary>>};
+encode_param(Value) when is_integer(Value), Value >= 0 ->
+    %% We send positive integers with the 'unsigned' flag set.
+    if
+        Value =< 16#ff ->
+            {<<?TYPE_TINY, 16#80>>, <<Value:8>>};
+        Value =< 16#ffff ->
+            {<<?TYPE_SHORT, 16#80>>, <<Value:16/little>>};
+        Value =< 16#ffffffff ->
+            {<<?TYPE_LONG, 16#80>>, <<Value:32/little>>};
+        Value =< 16#ffffffffffffffff ->
+            {<<?TYPE_LONGLONG, 16#80>>, <<Value:64/little>>};
+        true ->
+            %% If larger than a 64-bit int we send it as a string. MySQL does
+            %% silently cast strings in aithmetic expressions. Also, DECIMALs
+            %% are always sent as strings.
+            encode_param(integer_to_binary(Value))
+    end;
+encode_param(Value) when is_integer(Value), Value < 0 ->
+    if
+        Value >= -16#80 ->
+            {<<?TYPE_TINY, 0>>, <<Value:8>>};
+        Value >= -16#8000 ->
+            {<<?TYPE_SHORT, 0>>, <<Value:16/little>>};
+        Value >= -16#80000000 ->
+            {<<?TYPE_LONG, 0>>, <<Value:32/little>>};
+        Value >= -16#8000000000000000 ->
+            {<<?TYPE_LONGLONG, 0>>, <<Value:64/little>>};
+        true ->
+            encode_param(integer_to_binary(Value))
+    end;
+encode_param(Value) when is_float(Value) ->
+    {<<?TYPE_DOUBLE, 0>>, <<Value:64/float-little>>};
+encode_param({Y, M, D}) ->
+    %% calendar:date()
+    {<<?TYPE_DATE, 0>>, <<4, Y:16/little, M, D>>};
+encode_param({{Y, M, D}, {0, 0, 0}}) ->
+    %% Datetime at midnight
+    {<<?TYPE_DATETIME, 0>>, <<4, Y:16/little, M, D>>};
+encode_param({{Y, M, D}, {H, Mi, S}}) when is_integer(S) ->
+    %% calendar:datetime()
+    {<<?TYPE_DATETIME, 0>>, <<7, Y:16/little, M, D, H, Mi, S>>};
+encode_param({{Y, M, D}, {H, Mi, S}}) when is_float(S) ->
+    %% calendar:datetime() with a float for seconds. This way it looks very
+    %% similar to a datetime. Microseconds in MySQL timestamps are possible but
+    %% not very common.
+    Sec = trunc(S),
+    Micro = 1000000 * (S - Sec),
+    {<<?TYPE_DATETIME, 0>>, <<11, Y:16/little, M, D, H, Mi, Sec,
+                              Micro:32/little>>};
+encode_param({time, {H, M, S}}) ->
+    %% calendar:time() tagged with 'time'
+    {<<?TYPE_TIME, 0>>, binary_encode_seconds(H * 3600 + M * 60 + S)}.
 
-%% Rename this and lenenc_str (the decode function)
-build_lenenc_str(_Value) ->
-    ok = fixme.
+%% Helper to encode TIME values.
+binary_encode_seconds(Sec) when is_integer(Sec) ->
+    {NegFlag, AbsSec} = if Sec >= 0 -> {0, Sec};
+                           Sec <  0 -> {1, -Sec} end,
+    {Days, {H, M, S}} = calendar:seconds_to_daystime(AbsSec),
+    <<8, NegFlag, Days:32/little, H, M, S>>;
+binary_encode_seconds(Sec) when is_float(Sec) ->
+    {NegFlag, AbsSec} = if Sec >= 0 -> {0, Sec};
+                           Sec <  0 -> {1, -Sec} end,
+    SecInt = trunc(AbsSec),
+    Micro = trunc(1000000 * (AbsSec - SecInt)),
+    {Days, {H, M, S}} = calendar:seconds_to_daystime(SecInt),
+    <<12, NegFlag, Days:32/little, H, M, S, Micro:32/little>>.
 
 %% -- Protocol basics: packets --
 
@@ -693,7 +798,7 @@ hash_password(Password, <<"mysql_native_password">>, AuthData) ->
 hash_password(_, AuthPlugin, _) ->
     error({auth_method, AuthPlugin}).
 
-%% --- Lowlevel: decoding variable length integers and strings ---
+%% --- Lowlevel: variable length integers and strings ---
 
 %% lenenc_int/1 decodes length-encoded-integer values
 -spec lenenc_int(Input :: binary()) -> {Value :: integer(), Rest :: binary()}.
@@ -701,6 +806,20 @@ lenenc_int(<<Value:8, Rest/bits>>) when Value < 251 -> {Value, Rest};
 lenenc_int(<<16#fc:8, Value:16/little, Rest/binary>>) -> {Value, Rest};
 lenenc_int(<<16#fd:8, Value:24/little, Rest/binary>>) -> {Value, Rest};
 lenenc_int(<<16#fe:8, Value:64/little, Rest/binary>>) -> {Value, Rest}.
+
+%% Length-encoded-integer encode. Appends the encoded value to Acc.
+%% Values not representable in 64 bits are not accepted.
+-spec lenenc_int_encode(0..16#ffffffffffffffff) -> binary().
+lenenc_int_encode(Value) when Value < 0 ->
+    error(badarg);
+lenenc_int_encode(Value) when Value < 251 ->
+    <<Value>>;
+lenenc_int_encode(Value) when Value =< 16#ffff ->
+    <<16#fc, Value:16/little>>;
+lenenc_int_encode(Value) when Value =< 16#ffffff ->
+    <<16#fd, Value:24/little>>;
+lenenc_int_encode(Value) when Value =< 16#ffffffffffffffff ->
+    <<16#fe, Value:64/little>>.
 
 %% lenenc_str/1 decodes length-encoded-string values
 -spec lenenc_str(Input :: binary()) -> {String :: binary(), Rest :: binary()}.
@@ -741,7 +860,7 @@ decode_text_test() ->
 
     %% Date and time
     ?assertEqual({2014, 11, 01}, decode_text(?TYPE_DATE, <<"2014-11-01">>)),
-    ?assertEqual({23, 59, 01}, decode_text(?TYPE_TIME, <<"23:59:01">>)),
+    ?assertEqual({time, {23, 59, 01}}, decode_text(?TYPE_TIME, <<"23:59:01">>)),
     ?assertEqual({{2014, 11, 01}, {23, 59, 01}},
                  decode_text(?TYPE_DATETIME, <<"2014-11-01 23:59:01">>)),
     ?assertEqual({{2014, 11, 01}, {23, 59, 01}},
@@ -770,11 +889,19 @@ null_bitmap_test() ->
     ok.
 
 lenenc_int_test() ->
+    %% decode
     ?assertEqual({40, <<>>}, lenenc_int(<<40>>)),
     ?assertEqual({16#ff, <<>>}, lenenc_int(<<16#fc, 255, 0>>)),
     ?assertEqual({16#33aaff, <<>>}, lenenc_int(<<16#fd, 16#ff, 16#aa, 16#33>>)),
     ?assertEqual({16#12345678, <<>>}, lenenc_int(<<16#fe, 16#78, 16#56, 16#34,
                                                  16#12, 0, 0, 0, 0>>)),
+    %% encode
+    ?assertEqual(<<40>>, lenenc_int_encode(40)),
+    ?assertEqual(<<16#fc, 255, 0>>, lenenc_int_encode(255)),
+    ?assertEqual(<<16#fd, 16#ff, 16#aa, 16#33>>,
+                 lenenc_int_encode(16#33aaff)),
+    ?assertEqual(<<16#fe, 16#78, 16#56, 16#34, 16#12, 0, 0, 0, 0>>,
+                 lenenc_int_encode(16#12345678)),
     ok.
 
 lenenc_str_test() ->

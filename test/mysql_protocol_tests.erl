@@ -108,9 +108,7 @@ prepare_test() ->
     Result = mysql_protocol:prepare(Query, SendFun, RecvFun),
     fakesocket_close(Sock),
     ?assertMatch(#prepared{statement_id = StmtId,
-                           params = [#column_definition{name = <<"?">>},
-                                     #column_definition{name = <<"?">>}],
-                           columns = [#column_definition{name = <<"col1">>}],
+                           param_count = 2,
                            warning_count = 0} when is_integer(StmtId),
                  Result),
     ok.

@@ -118,7 +118,11 @@ handle_call(warning_count, _From, State) ->
 handle_call(insert_id, _From, State) ->
     {reply, State#state.insert_id, State};
 handle_call(affected_rows, _From, State) ->
-    {reply, State#state.affected_rows, State}.
+    {reply, State#state.affected_rows, State};
+handle_call(get_state, _From, State) ->
+    %% *** FOR DEBUGGING ***
+    %% TODO: Delete this.
+    {reply, State, State}.
 
 handle_cast(_, _) -> todo.
 
@@ -149,15 +153,3 @@ update_state(State, _Other) ->
     %% This includes errors, resultsets, etc.
     %% Reset warnings, etc. (Note: We don't reset 'status'.)
     State#state{warning_count = 0, insert_id = 0, affected_rows = 0}.
-
-%% @doc Uses a list of column definitions to decode rows returned in the text
-%% protocol. Returns the rows with values as for their type their appropriate
-%% Erlang terms.
-decode_text_rows(ColDefs, Rows) ->
-    [decode_text_row_acc(ColDefs, Row, []) || Row <- Rows].
-
-decode_text_row_acc([#column_definition{type = T} | Defs], [V | Vs], Acc) ->
-    Term = mysql_text_protocol:text_to_term(T, V),
-    decode_text_row_acc(Defs, Vs, [Term | Acc]);
-decode_text_row_acc([], [], Acc) ->
-    lists:reverse(Acc).

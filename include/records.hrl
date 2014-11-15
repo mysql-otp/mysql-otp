@@ -48,6 +48,5 @@
 
 %% Response of a successfull prepare call.
 -record(prepared, {statement_id :: integer(),
-                   params :: [#column_definition{}],
-                   columns :: [#column_definition{}],
+                   param_count :: integer(),
                    warning_count :: integer()}).
