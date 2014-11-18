@@ -53,7 +53,8 @@ query_test_() ->
      end,
      {with, [fun basic_queries/1,
              fun text_protocol/1,
-             fun binary_protocol/1]}}.
+             fun binary_protocol/1,
+             fun float_rounding/1]}}.
 
 basic_queries(Pid) ->
 
@@ -112,16 +113,11 @@ binary_protocol(Pid) ->
     %% TODO: Put the expected result in a macro to make sure they are identical
     %% for the text and the binary protocol tests.
 
-    %% One thing that are not identical in the text and binary protocols are
-    %% floats. We get the float as a 32-bit float, so the value is not exactly
-    %% what we inserted.
-    <<ExpectedFloat:32/native-float>> = <<3.14:32/native-float>>,
-
     {ok, Stmt} = mysql:prepare(Pid, <<"SELECT * FROM t WHERE id=?">>),
     {ok, Columns, Rows} = mysql:query(Pid, Stmt, [1]),
     ?assertEqual([<<"id">>, <<"bl">>, <<"tx">>, <<"f">>, <<"dc">>, <<"ti">>,
                   <<"ts">>, <<"da">>, <<"c">>], Columns),
-    ?assertEqual([[1, <<"blob">>, <<>>, ExpectedFloat, <<"3.140">>,
+    ?assertEqual([[1, <<"blob">>, <<>>, 3.14, <<"3.140">>,
                    {time, {0, 22, 11}},
                    {{2014, 11, 03}, {00, 22, 24}}, {2014, 11, 03}, null]],
                  Rows),
@@ -135,3 +131,51 @@ binary_protocol(Pid) ->
     %% * Negative TIME
 
     ok = mysql:query(Pid, <<"DROP TABLE t">>).
+
+float_rounding(Pid) ->
+    %% This is to make sure we get the same values for 32-bit FLOATs in the text
+    %% and binary protocols for ordinary queries and prepared statements
+    %% respectively.
+    %%
+    %% MySQL rounds to 6 significant digits when "printing" floats over the
+    %% text protocol. When we receive a float on the binary protocol, we round
+    %% it in the same way to match what MySQL does on the text protocol. This
+    %% way we should to get the same values regardless of which protocol is
+    %% used.
+
+    %% Table for testing floats
+    ok = mysql:query(Pid, "CREATE TABLE f (f FLOAT)"),
+
+    %% Prepared statements
+    {ok, Insert} = mysql:prepare(Pid, "INSERT INTO f (f) VALUES (?)"),
+    {ok, Select} = mysql:prepare(Pid, "SELECT f FROM f"),
+
+    %% [{Input, Expected}]
+    TestData = [{1.0, 1.0}, {3.14, 3.14}, {0.2, 0.2},
+                {0.20082111, 0.200821}, {0.000123456789, 0.000123457},
+                {33.3333333, 33.3333}, {-33.2233443322, -33.2233},
+                {400.0123, 400.012}, {1000.1234, 1000.12},
+                {999.00009, 999.0},
+                {1234.5678, 1234.57}, {68888.8888, 68888.9},
+                {123456.789, 123457.0}, {7654321.0, 7654320.0},
+                {80001111.1, 80001100.0}, {987654321.0, 987654000.0},
+                {-123456789.0, -123457000.0},
+                {2.12345111e-23, 2.12345e-23}, {-2.12345111e-23, -2.12345e-23},
+                {2.12345111e23, 2.12345e23}, {-2.12345111e23, -2.12345e23}],
+    lists:foreach(fun ({Input, Expected}) ->
+                      %% Insert using binary protocol (sending it as a double)
+                      ok = mysql:query(Pid, Insert, [Input]),
+
+                      %% Text (plain query)
+                      {ok, _, [[Value]]} = mysql:query(Pid, "SELECT f FROM f"),
+                      ?assertEqual(Expected, Value),
+
+                      %% Binary (prepared statement)
+                      {ok, _, [[BinValue]]} = mysql:query(Pid, Select, []),
+                      ?assertEqual(Expected, BinValue),
+
+                      %% cleanup before the next test
+                      ok = mysql:query(Pid, "DELETE FROM f")
+                end,
+                TestData),
+    ok = mysql:query(Pid, "DROP TABLE f").

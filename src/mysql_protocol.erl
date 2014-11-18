@@ -513,11 +513,12 @@ decode_binary(?TYPE_FLOAT, <<Value:32/float-little, Rest/binary>>) ->
     %% There is a precision loss when storing and fetching a 32-bit float.
     %% In the text protocol, it is obviously rounded. Storing 3.14 in a FLOAT
     %% column and fetching it using the text protocol, we get "3.14" which we
-    %% parse to the Erlang double 3.14. Fetching the same value as a binary
-    %% 32-bit float, we get 3.140000104904175. To achieve the same rounding
-    %% after receiving it as a 32-bit float, we try to do the same rounding here
-    %% as MySQL does before sending it over the text protocol. Here is a quote
-    %% of a comment in the documentation:
+    %% parse to the Erlang double as close as possible to 3.14. Fetching the
+    %% same value as a binary 32-bit float, we get 3.140000104904175. To achieve
+    %% the same rounding after receiving it as a 32-bit float, we try to do the
+    %% same rounding here as MySQL does when sending it over the text protocol.
+    %%
+    %% This comment explains the idea:
     %%
     %%     Posted by Geoffrey Downs on March 10 2011 10:26am
     %%
@@ -535,17 +536,14 @@ decode_binary(?TYPE_FLOAT, <<Value:32/float-little, Rest/binary>>) ->
     %% (From http://dev.mysql.com/doc/refman/5.7/en/problems-with-float.html
     %% fetched 10 Nov 2014)
     %%
-    %Precision = math:pow(10, -5 + trunc(math:log10(abs(Value)))),
-    %% Round to this precision
-    %InvPrec = 1 / Precision,
-    %RoundedValue = round(InvPrec * Value) / InvPrec,
-    %% Note: If we multiply be Precision after rounding instead of dividing by
-    %% InvPrec, we get rouding errors.
-    %{RoundedValue, Rest};
-    %%---------- We don't use the above method as it gives us 3.1400000000000006
-    %%---------- for 3.14 (INSERT + SELECT roundtrip). This needs some tweaks
-    %%---------- and extensive testing with various numbers.
-    {Value, Rest};
+    %% The above is almost correct, except for the example in the interval
+    %% 0 < x < 1. There are 6 significant digits also for these numbers.
+    %%
+    %% Now, instead of P = 0.00001 we want the inverse 100000.0 but if we
+    %% compute Factor = 1 / P we get a precision loss, so instead we do this:
+    Factor = math:pow(10, floor(6 - math:log10(abs(Value)))),
+    RoundedValue = round(Value * Factor) / Factor,
+    {RoundedValue, Rest};
 decode_binary(?TYPE_DATE, <<Length, Data/binary>>) ->
     %% Coded in the same way as DATETIME and TIMESTAMP below, but returned in
     %% a simple triple.
@@ -590,11 +588,19 @@ decode_binary(?TYPE_TIME, <<Length, Data/binary>>) ->
             {{time, {-(D * 24 + H), -M, -S - 0.000001 * Micro}}, Rest}
     end.
 
+%% @doc Like trunc/1 but towards negative infinity instead of towards zero.
+floor(Value) ->
+    Trunc = trunc(Value),
+    if
+        Trunc =< Value -> Trunc;
+        Trunc > Value -> Trunc - 1 %% for negative values
+    end.
+
 %% @doc Encodes a term reprenting av value as a binary for use in the binary
 %% protocol. As this is used to encode parameters for prepared statements, the
-%% encoding is in its required form, namely <<Type:8, Sign:8, Value/binary>>.
+%% encoding is in its required form, namely `<<Type:8, Sign:8, Value/binary>>'.
 %%
-%% TODO: Maybe change Erlang representation of BIT to <<_:1>>.
+%% TODO: Maybe change Erlang representation of BIT to `<<_:1>>'.
 -spec encode_param(term()) -> {TypeAndSign :: binary(), Data :: binary()}.
 encode_param(null) ->
     {<<?TYPE_NULL, 0>>, <<>>};
@@ -881,6 +887,20 @@ decode_text_test() ->
 
     %% NULL
     ?assertEqual(null, decode_text(?TYPE_FLOAT, null)),
+    ok.
+
+decode_binary_test() ->
+    %% Test the special rounding we apply to (single precision) floats.
+    %?assertEqual({1.0, <<>>},
+    %             decode_binary(?TYPE_FLOAT, <<1.0:32/float-little>>)),
+    %?assertEqual({0.2, <<>>},
+    %             decode_binary(?TYPE_FLOAT, <<0.2:32/float-little>>)),
+    %?assertEqual({-33.3333, <<>>},
+    %             decode_binary(?TYPE_FLOAT, <<-33.333333:32/float-little>>)),
+    %?assertEqual({0.000123457, <<>>},
+    %             decode_binary(?TYPE_FLOAT, <<0.00012345678:32/float-little>>)),
+    %?assertEqual({1234.57, <<>>},
+    %             decode_binary(?TYPE_FLOAT, <<1234.56789:32/float-little>>)),
     ok.
 
 null_bitmap_test() ->
