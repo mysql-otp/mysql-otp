@@ -14,24 +14,29 @@
 %% You should have received a copy of the GNU General Public License
 %% along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-%% @doc MySQL/OTP
+%% @doc MySQL/OTP. FIXME: Documentation of value representation, examples
+%% and more.
+%%
+%% This documentation is written with `edoc' as part of the source code and thus
+%% is covered by GPL 3 or later. See the LICENSE file or find GPL 3 on
+%% <a href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
 -module(mysql).
 
--export([connect/1, disconnect/1, query/2, query/3, prepare/2, warning_count/1,
+-export([start_link/1, query/2, execute/3, prepare/2, warning_count/1,
          affected_rows/1, insert_id/1]).
 
 %% MySQL error with the codes and message returned from the server.
 -type reason() :: {Code :: integer(), SQLState :: binary(),
                    Message :: binary()}.
 
--spec connect(list()) -> {ok, pid()} | ignore | {error, term()}.
-connect(Opts) ->
+%% @doc Starts a connection process and connects to a database. To disconnect
+%% do `exit(Pid, normal)'.
+-spec start_link(Options) -> {ok, pid()} | ignore | {error, term()}
+    when Options :: [Option],
+         Option :: {host, iodata()} | {port, integer()} | {user, iodata()} |
+                   {password, iodata()} | {database, iodata()}.
+start_link(Opts) ->
     gen_server:start_link(mysql_connection, Opts, []).
-
--spec disconnect(pid()) -> ok.
-disconnect(Conn) ->
-    exit(Conn, normal),
-    ok.
 
 -spec query(Conn, Query) -> ok | {ok, Fields, Rows} | {error, Reason}
     when Conn :: pid(),
@@ -43,8 +48,8 @@ query(Conn, Query) ->
     gen_server:call(Conn, {query, Query}).
 
 %% @doc Executes a prepared statement.
-query(Conn, StatementId, Args) ->
-    gen_server:call(Conn, {query, StatementId, Args}).
+execute(Conn, StatementId, Args) ->
+    gen_server:call(Conn, {execute, StatementId, Args}).
 
 -spec prepare(Conn :: pid(), Query :: iodata()) ->
     {ok, StatementId :: integer()} | {error, Reason :: reason()}.

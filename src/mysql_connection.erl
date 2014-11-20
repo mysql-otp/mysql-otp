@@ -82,8 +82,9 @@ handle_call({query, Query}, _From, State) when is_binary(Query);
             Names = [Def#column_definition.name || Def <- ColDefs],
             {reply, {ok, Names, Rows}, State1}
     end;
-handle_call({query, Stmt, Args}, _From, State) when is_integer(Stmt);
-                                                    is_atom(Stmt) ->
+handle_call({execute, Stmt, Args}, _From, State) when is_integer(Stmt);
+                                                      is_atom(Stmt) ->
+    %% TODO: Return {error, not_prepared} instead of crashing if not found.
     StmtRec = dict:fetch(Stmt, State#state.stmts),
     #state{socket = Socket, timeout = Timeout} = State,
     SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,

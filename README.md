@@ -26,8 +26,8 @@ Synopsis
 Opts = [{host, "localhost"}, {user, "foo"}, {password, "hello"},
         {database, "test"}],
 
-%% This will probably be renamed to start_link/1
-{ok, Pid} = mysql:connect(Opts),
+%% Connect and link to the connection process.
+{ok, Pid} = mysql:start_link(Opts),
 
 %% A query returning results
 {ok, ColumnNames, Rows} = mysql:query(Pid, <<"SELECT * FROM mytable">>),
@@ -35,15 +35,13 @@ Opts = [{host, "localhost"}, {user, "foo"}, {password, "hello"},
 %% A query not returning any rows just returns ok.
 ok = mysql:query(Pid, "INSERT INTO mytable (foo, bar) VALUES (1, 42)"),
 
-%% Named prepared statements. Maybe the function should be execute/3
-%% instead of query/3.
+%% Named prepared statements.
 {ok, foo} = mysql:prepare(Pid, "SELECT * FROM mytable WHERE id=?", foo),
-{ok, Columns, Rows} = mysql:query(Pid, foo, [42]),
+{ok, Columns, Rows} = mysql:execute(Pid, foo, [42]),
 
-%% Unnamed prepared statements. The function query/3 will maybe be
-%% renamed to execute/3.
+%% Unnamed prepared statements.
 {ok, StmtId} = mysql:prepare(Pid, "SELECT * FROM mytable WHERE id=?"),
-{ok, Columns, Rows} = mysql:query(Pid, StmtId, [42]).
+{ok, Columns, Rows} = mysql:execute(Pid, StmtId, [42]).
 
 %% Separate calls to fetch more info about the last query
 LastInsertId = mysql:insert_id(Pid),

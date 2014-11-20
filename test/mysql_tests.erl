@@ -35,13 +35,13 @@
                           ") ENGINE=InnoDB">>).
 
 connect_test() ->
-    {ok, Pid} = mysql:connect([{user, ?user}, {password, ?password}]),
-    ?assertEqual(ok, mysql:disconnect(Pid)).
+    {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password}]),
+    exit(Pid, normal).
 
 query_test_() ->
     {setup,
      fun () ->
-         {ok, Pid} = mysql:connect([{user, ?user}, {password, ?password}]),
+         {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password}]),
          ok = mysql:query(Pid, <<"DROP DATABASE IF EXISTS otptest">>),
          ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
          ok = mysql:query(Pid, <<"USE otptest">>),
@@ -49,7 +49,7 @@ query_test_() ->
      end,
      fun (Pid) ->
          ok = mysql:query(Pid, <<"DROP DATABASE otptest">>),
-         mysql:disconnect(Pid)
+         exit(Pid, normal)
      end,
      {with, [fun basic_queries/1,
              fun text_protocol/1,
@@ -105,16 +105,16 @@ binary_protocol(Pid) ->
     {ok, Ins} = mysql:prepare(Pid, <<"INSERT INTO t (bl, f, dc, ti, ts, da, c)"
                                      " VALUES (?, ?, ?, ?, ?, ?, ?)">>),
 
-    ok = mysql:query(Pid, Ins, [<<"blob">>, 3.14, <<"3.14">>,
-                                {time, {0, 22, 11}}, 
-                                {{2014, 11, 03}, {0, 22, 24}},
-                                {2014, 11, 03}, null]),
+    ok = mysql:execute(Pid, Ins, [<<"blob">>, 3.14, <<"3.14">>,
+                                  {time, {0, 22, 11}}, 
+                                  {{2014, 11, 03}, {0, 22, 24}},
+                                  {2014, 11, 03}, null]),
 
     %% TODO: Put the expected result in a macro to make sure they are identical
     %% for the text and the binary protocol tests.
 
     {ok, Stmt} = mysql:prepare(Pid, <<"SELECT * FROM t WHERE id=?">>),
-    {ok, Columns, Rows} = mysql:query(Pid, Stmt, [1]),
+    {ok, Columns, Rows} = mysql:execute(Pid, Stmt, [1]),
     ?assertEqual([<<"id">>, <<"bl">>, <<"tx">>, <<"f">>, <<"dc">>, <<"ti">>,
                   <<"ts">>, <<"da">>, <<"c">>], Columns),
     ?assertEqual([[1, <<"blob">>, <<>>, 3.14, <<"3.140">>,
@@ -164,14 +164,14 @@ float_rounding(Pid) ->
                 {2.12345111e23, 2.12345e23}, {-2.12345111e23, -2.12345e23}],
     lists:foreach(fun ({Input, Expected}) ->
                       %% Insert using binary protocol (sending it as a double)
-                      ok = mysql:query(Pid, Insert, [Input]),
+                      ok = mysql:execute(Pid, Insert, [Input]),
 
                       %% Text (plain query)
                       {ok, _, [[Value]]} = mysql:query(Pid, "SELECT f FROM f"),
                       ?assertEqual(Expected, Value),
 
                       %% Binary (prepared statement)
-                      {ok, _, [[BinValue]]} = mysql:query(Pid, Select, []),
+                      {ok, _, [[BinValue]]} = mysql:execute(Pid, Select, []),
                       ?assertEqual(Expected, BinValue),
 
                       %% cleanup before the next test
