@@ -86,6 +86,16 @@ DATE                | calendar:date()         | {2014, 11, 18}
 TIME                | {time, calendar:time()} | {time, {10, 22, 36}} -- **will probably change**
 NULL                | null                    | null
 
+Tests
+-----
+
+Run the eunit tests with `rebar eunit`. For the suite `mysql_tests` you need
+MySQL running on localhost and give privileges to the `otptest` user:
+
+```SQL
+grant all privileges on otptest.* to otptest@localhost identified by 'otptest';
+```
+
 Problems with Emysql
 --------------------
 
