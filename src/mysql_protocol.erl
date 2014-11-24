@@ -384,17 +384,39 @@ decode_text(T, Text)
     Text;
 decode_text(?TYPE_DATE, <<Y:4/binary, "-", M:2/binary, "-", D:2/binary>>) ->
     {binary_to_integer(Y), binary_to_integer(M), binary_to_integer(D)};
-decode_text(?TYPE_TIME, <<H:2/binary, ":", Mi:2/binary, ":", S:2/binary>>) ->
-    %% FIXME: Hours can be negative + more digits. Seconds can have fractions.
-    %% Add tests for these cases.
-    Time = {binary_to_integer(H), binary_to_integer(Mi), binary_to_integer(S)},
-    {time, Time};
+decode_text(?TYPE_TIME, Text) ->
+    {match, [Sign, Hbin, Mbin, Sbin, Frac]} =
+        re:run(Text,
+               <<"^(-?)(\\d+):(\\d+):(\\d+)(\\.?\\d*)$">>,
+               [{capture, all_but_first, binary}]),
+    H = binary_to_integer(Hbin),
+    M = binary_to_integer(Mbin),
+    S = binary_to_integer(Sbin),
+    IsNeg = Sign == <<"-">>,
+    Fraction = case Frac of
+        <<>> -> 0;
+        _ when not IsNeg -> binary_to_float(<<"0", Frac/binary>>);
+        _ when IsNeg -> 1 - binary_to_float(<<"0", Frac/binary>>)
+    end,
+    Sec1 = H * 3600 + M * 60 + S,
+    Sec2 = if IsNeg -> -Sec1; true -> Sec1 end,
+    Sec3 = if IsNeg and (Fraction /= 0) -> Sec2 - 1;
+              true                      -> Sec2
+           end,
+    {Days, {Hours, Minutes, Seconds}} = calendar:seconds_to_daystime(Sec3),
+    {Days, {Hours, Minutes, Seconds + Fraction}};
 decode_text(T, <<Y:4/binary, "-", M:2/binary, "-", D:2/binary, " ",
                  H:2/binary, ":", Mi:2/binary, ":", S:2/binary>>)
   when T == ?TYPE_TIMESTAMP; T == ?TYPE_DATETIME ->
-    %% FIXME: Fractions of seconds.
+    %% Without fractions.
     {{binary_to_integer(Y), binary_to_integer(M), binary_to_integer(D)},
      {binary_to_integer(H), binary_to_integer(Mi), binary_to_integer(S)}};
+decode_text(T, <<Y:4/binary, "-", M:2/binary, "-", D:2/binary, " ",
+                 H:2/binary, ":", Mi:2/binary, ":", FloatS/binary>>)
+  when T == ?TYPE_TIMESTAMP; T == ?TYPE_DATETIME ->
+    %% With fractions.
+    {{binary_to_integer(Y), binary_to_integer(M), binary_to_integer(D)},
+     {binary_to_integer(H), binary_to_integer(Mi), binary_to_float(FloatS)}};
 decode_text(T, Text) when T == ?TYPE_FLOAT; T == ?TYPE_DOUBLE ->
     try binary_to_float(Text)
     catch error:badarg ->
@@ -574,18 +596,26 @@ decode_binary(?TYPE_TIME, <<Length, Data/binary>>) ->
     %% micro_seconds (4) -- micro-seconds
     case {Length, Data} of
         {0, _} ->
-            {{time, {0, 0, 0}}, Data};
+            {{0, {0, 0, 0}}, Data};
         {8, <<0, D:32/little, H, M, S, Rest/binary>>} ->
-            {{time, {D * 24 + H, M, S}}, Rest};
+            {{D, {H, M, S}}, Rest};
         {12, <<0, D:32/little, H, M, S, Micro:32/little, Rest/binary>>} ->
-            {{time, {D * 24 + H, M, S + 0.000001 * Micro}}, Rest};
+            {{D, {H, M, S + 0.000001 * Micro}}, Rest};
         {8, <<1, D:32/little, H, M, S, Rest/binary>>} ->
-            %% Negative time. Negating H, M and S is correct but a bit strange.
-            %% We could recalulate like calendar:seconds_to_daystime/1 does:
-            %% {-1,{23,58,20}} = calendar:seconds_to_daystime(-100).
-            {{time, {-(D * 24 + H), -M, -S}}, Rest};
-        {12, <<1, D:32/little, H, M, S, Micro:32/little, Rest/binary>>} ->
-            {{time, {-(D * 24 + H), -M, -S - 0.000001 * Micro}}, Rest}
+            %% Negative time. Example: '-00:00:01' --> {-1,{23,59,59}}
+            Seconds = ((D * 24 + H) * 60 + M) * 60 + S,
+            %Seconds = D * 86400 + calendar:time_to_seconds({H, M, S}),
+            {calendar:seconds_to_daystime(-Seconds), Rest};
+        {12, <<1, D:32/little, H, M, S, Micro:32/little, Rest/binary>>}
+          when Micro > 0 ->
+            %% Negate and convert to seconds, excl fractions
+            Seconds = -(((D * 24 + H) * 60 + M) * 60 + S),
+            %Seconds = -D * 86400 - calendar:time_to_seconds({H, M, S}),
+            %% Subtract 1 second for the fractions
+            {Days, {Hours, Minutes, Sec}} =
+                calendar:seconds_to_daystime(Seconds - 1),
+            %% Adding the fractions to Sec again makes it a float
+            {{Days, {Hours, Minutes, Sec + 1 - 0.000001 * Micro}}, Rest}
     end.
 
 %% @doc Like trunc/1 but towards negative infinity instead of towards zero.
@@ -653,26 +683,30 @@ encode_param({{Y, M, D}, {H, Mi, S}}) when is_float(S) ->
     %% similar to a datetime. Microseconds in MySQL timestamps are possible but
     %% not very common.
     Sec = trunc(S),
-    Micro = 1000000 * (S - Sec),
+    Micro = round(1000000 * (S - Sec)),
     {<<?TYPE_DATETIME, 0>>, <<11, Y:16/little, M, D, H, Mi, Sec,
                               Micro:32/little>>};
-encode_param({time, {H, M, S}}) ->
-    %% calendar:time() tagged with 'time'
-    {<<?TYPE_TIME, 0>>, binary_encode_seconds(H * 3600 + M * 60 + S)}.
-
-%% Helper to encode TIME values.
-binary_encode_seconds(Sec) when is_integer(Sec) ->
-    {NegFlag, AbsSec} = if Sec >= 0 -> {0, Sec};
-                           Sec <  0 -> {1, -Sec} end,
-    {Days, {H, M, S}} = calendar:seconds_to_daystime(AbsSec),
-    <<8, NegFlag, Days:32/little, H, M, S>>;
-binary_encode_seconds(Sec) when is_float(Sec) ->
-    {NegFlag, AbsSec} = if Sec >= 0 -> {0, Sec};
-                           Sec <  0 -> {1, -Sec} end,
-    SecInt = trunc(AbsSec),
-    Micro = trunc(1000000 * (AbsSec - SecInt)),
-    {Days, {H, M, S}} = calendar:seconds_to_daystime(SecInt),
-    <<12, NegFlag, Days:32/little, H, M, S, Micro:32/little>>.
+encode_param({D, {H, M, S}}) when is_integer(S), D >= 0 ->
+    %% calendar:seconds_to_daystime()
+    {<<?TYPE_TIME, 0>>, <<8, 0, D:32/little, H, M, S>>};
+encode_param({D, {H, M, S}}) when is_integer(S), D < 0 ->
+    %% Convert to seconds, negate and convert back to daystime form.
+    %% Then set the minus flag.
+    Seconds = ((D * 24 + H) * 60 + M) * 60 + S,
+    {D1, {H1, M1, S1}} = calendar:seconds_to_daystime(-Seconds),
+    {<<?TYPE_TIME, 0>>, <<8, 1, D1:32/little, H1, M1, S1>>};
+encode_param({D, {H, M, S}}) when is_float(S), D >= 0 ->
+    S1 = trunc(S),
+    Micro = round(1000000 * (S - S1)),
+    {<<?TYPE_TIME, 0>>, <<12, 0, D:32/little, H, M, S1, Micro:32/little>>};
+encode_param({D, {H, M, S}}) when is_float(S), S > 0.0, D < 0 ->
+    IntS = trunc(S),
+    Micro = round(1000000 * (1 - S + IntS)),
+    Seconds = (D * 24 + H) * 3600 + M * 60 + IntS + 1,
+    {D1, {M1, H1, S1}} = calendar:seconds_to_daystime(-Seconds),
+    {<<?TYPE_TIME, 0>>, <<12, 1, D1:32/little, H1, M1, S1, Micro:32/little>>};
+encode_param({D, {H, M, 0.0}}) ->
+    encode_param({D, {H, M, 0}}).
 
 %% -- Protocol basics: packets --
 
@@ -866,7 +900,7 @@ decode_text_test() ->
 
     %% Date and time
     ?assertEqual({2014, 11, 01}, decode_text(?TYPE_DATE, <<"2014-11-01">>)),
-    ?assertEqual({time, {23, 59, 01}}, decode_text(?TYPE_TIME, <<"23:59:01">>)),
+    ?assertEqual({0, {23, 59, 01}}, decode_text(?TYPE_TIME, <<"23:59:01">>)),
     ?assertEqual({{2014, 11, 01}, {23, 59, 01}},
                  decode_text(?TYPE_DATETIME, <<"2014-11-01 23:59:01">>)),
     ?assertEqual({{2014, 11, 01}, {23, 59, 01}},

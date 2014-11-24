@@ -83,8 +83,15 @@ FLOAT, DOUBLE       | float()                 | 3.14
 DECIMAL             | binary()                | <<"3.140">>
 DATETIME, TIMESTAMP | calendar:datetime()     | {{2014, 11, 18}, {10, 22, 36}}
 DATE                | calendar:date()         | {2014, 11, 18}
-TIME                | {time, calendar:time()} | {time, {10, 22, 36}} -- **will probably change**
+TIME                | {Days, calendar:time()} | {0, {10, 22, 36}}
 NULL                | null                    | null
+
+Since `TIME` can be outside the calendar:time() interval, we use the format as
+returned by `calendar:seconds_to_daystime/1` for `TIME` values.
+
+For `DATETIME`, `TIMESTAMP` and `TIME` values with franctions of seconds, we use
+a float for the seconds part. (These are unusual and were added to MySQL in
+version 5.6.4.)
 
 Tests
 -----
