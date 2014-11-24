@@ -16,6 +16,6 @@
 
 {application, mysql, [
     {description, "MySQL/OTP - Erlang MySQL client"},
-    {vsn, "0.0.3"},
+    {vsn, "0.1.0"},
     {modules, []}
 ]}.
