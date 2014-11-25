@@ -3,6 +3,10 @@ deps
 *.o
 *.beam
 *.plt
+doc/*.html
+doc/edoc-info
+doc/erlang.png
+doc/stylesheet.css
 erl_crash.dump
 ebin
 rel/example_project

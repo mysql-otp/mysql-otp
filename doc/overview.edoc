@@ -1,0 +1,97 @@
+%% MySQL/OTP – a MySQL driver for Erlang/OTP
+%% Copyright (C) 2014 Viktor Söderqvist
+%%
+%% This program is free software: you can redistribute it and/or modify
+%% it under the terms of the GNU General Public License as published by
+%% the Free Software Foundation, either version 3 of the License, or
+%% (at your option) any later version.
+%%
+%% This program is distributed in the hope that it will be useful,
+%% but WITHOUT ANY WARRANTY; without even the implied warranty of
+%% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+%% GNU General Public License for more details.
+%%
+%% You should have received a copy of the GNU General Public License
+%% along with this program. If not, see <https://www.gnu.org/licenses/>.
+------------------------------------------------------------------------
+
+@title MySQL/OTP client library
+@doc
+This is the documentation generated from the Erlang source code using EDoc.
+
+The source code is available on the github page <a target="_top"
+ href="https://github.com/mysql-otp/mysql-otp/">
+https://github.com/mysql-otp/mysql-otp/</a> along with a wiki and an issue
+tracker.
+
+This documentation is free to to copy, change and use for any purpose in
+accordance with the GNU GPL 3 or any later version as it is generated from the
+the source code itself which has this license. See the LICENSE file in the
+source code.
+
+<h2>API functions</h2>
+
+The <a href="mysql.html">mysql</a> module contains all the API
+functions for connecting to and interacting with a MySQL server.
+The <a href="mysql_connection.html">mysql_connection</a> module is the
+`gen_server' callback module holding a connection so you may want to refer to
+that sometimes (e.g. in the Modules part in a childspec for a supervisor). The
+other modules are for the internals.
+
+<h2>Value representation</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>MySQL</th>
+      <th>Erlang</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>INT, TINYINT, etc.</td>
+      <td>`integer()'</td>
+      <td>`42'</td>
+    </tr>
+    <tr>
+      <td>VARCHAR, TEXT, etc.</td>
+      <td>`iodata()'</td>
+      <td>`<<"foo">>, "bar"'</td>
+    </tr>
+    <tr>
+      <td>FLOAT, DOUBLE</td>
+      <td>`float()'</td>
+      <td>`3.14'</td>
+    </tr>
+    <tr>
+      <td>DECIMAL</td>
+      <td>`binary()'</td>
+      <td>`<<"3.140">>'</td>
+    </tr>
+    <tr>
+      <td>DATETIME, TIMESTAMP</td>
+      <td>`calendar:datetime()'</td>
+      <td>`{{2014, 11, 18}, {10, 22, 36}}'</td>
+    </tr>
+    <tr>
+      <td>DATE</td>
+      <td>`calendar:date()'</td>
+      <td>`{2014, 11, 18}'</td>
+    </tr>
+    <tr>
+      <td>TIME</td>
+      <td>`{Days, calendar:time()}'</td>
+      <td>`{0, {10, 22, 36}}'</td>
+    </tr>
+    <tr>
+      <td>NULL</td>
+      <td>`null'</td>
+      <td>`null'</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Example with Poolboy</h2>
+
+TODO
