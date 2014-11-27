@@ -2,7 +2,7 @@ language: erlang
 services:
   - mysql
 before_script:
-  - mysql -e 'grant all privileges on otptest.* to otptest@localhost identified by 'otptest''
+  - mysql -e "grant all privileges on otptest.* to otptest@localhost identified by 'otptest'"
 script: 'rebar eunit'
 otp_release:
   - 17.3
