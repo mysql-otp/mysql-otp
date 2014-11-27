@@ -273,7 +273,7 @@ microseconds(Pid) ->
             ok;
         true ->
             error_logger:info_msg("Skipping microseconds test. Microseconds are"
-                                  " not available on MySQL version ~s. Required"
-                                  " version is >= 5.6.4.",
+                                  " not available in MySQL version ~s. Required"
+                                  " version is >= 5.6.4.~n",
                                   [VersionBin])
     end.
