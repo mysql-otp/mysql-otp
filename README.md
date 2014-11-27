@@ -122,3 +122,11 @@ License
 -------
 
 GNU General Public License (GPL) version 3 or any later version. See the LICENSE file.
+
+**Erlang programmer's note on licenses:** If you have any second thoughts on
+license compatibility issues, keep this in mind:
+* If you're using this software as an external dependency, e.g. with Rebar or
+  Erlang.mk, you're not actually distributing the dependency.
+* Even if you do distribute dependencies with your application, they are not
+  actually linked together until they are loaded and run in the BEAM (unless
+  you compile the release with HiPE before distributing it).
