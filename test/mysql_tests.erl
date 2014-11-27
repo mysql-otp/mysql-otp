@@ -223,57 +223,53 @@ time(Pid) ->
 
 microseconds(Pid) ->
     %% Check whether we have the required version for this testcase.
-    {ok, _, [[VersionBin]]} = mysql:query(Pid, <<"SELECT @@version">>),
-    Version = lists:map(fun binary_to_integer/1,
-                        binary:split(VersionBin, <<".">>, [global])),
-    if
-        Version >= [5, 6, 4] ->
-            ok = mysql:query(Pid, "CREATE TABLE m (t TIME(6))"),
-            SelectTime = "SELECT t FROM m",
-            {ok, SelectStmt} = mysql:prepare(Pid, SelectTime),
-            {ok, InsertStmt} = mysql:prepare(Pid, "INSERT INTO m VALUES (?)"),
-            %% Positive time, insert using plain query
-            E1 = {0, {23, 59, 57.654321}},
-            ok = mysql:query(Pid,
-                             <<"INSERT INTO m VALUES ('23:59:57.654321')">>),
-            ?assertEqual({ok, [<<"t">>], [[E1]]},
-                         mysql:query(Pid, SelectTime)),
-            ?assertEqual({ok, [<<"t">>], [[E1]]},
-                         mysql:execute(Pid, SelectStmt, [])),
-            ok = mysql:query(Pid, "DELETE FROM m"),
-            %% The same, but insert using prepared stmt
-            ok = mysql:execute(Pid, InsertStmt, [E1]),
-            ?assertEqual({ok, [<<"t">>], [[E1]]},
-                         mysql:query(Pid, SelectTime)),
-            ?assertEqual({ok, [<<"t">>], [[E1]]},
-                         mysql:execute(Pid, SelectStmt, [])),
-            ok = mysql:query(Pid, "DELETE FROM m"),
-            %% Negative time
-            E2 = {-1, {23, 59, 57.654321}},
-            ok = mysql:query(Pid,
-                             <<"INSERT INTO m VALUES ('-00:00:02.345679')">>),
-            ?assertEqual({ok, [<<"t">>], [[E2]]},
-                         mysql:query(Pid, SelectTime)),
-            ?assertEqual({ok, [<<"t">>], [[E2]]},
-                         mysql:execute(Pid, SelectStmt, [])),
-            ok = mysql:query(Pid, "DELETE FROM m"),
-            %% The same, but insert using prepared stmt
-            ok = mysql:execute(Pid, InsertStmt, [E2]),
-            ?assertEqual({ok, [<<"t">>], [[E2]]},
-                         mysql:query(Pid, SelectTime)),
-            ?assertEqual({ok, [<<"t">>], [[E2]]},
-                         mysql:execute(Pid, SelectStmt, [])),
-            ok = mysql:query(Pid, "DROP TABLE m"),
-            %% Datetime
-            Q3 = <<"SELECT TIMESTAMP '2014-11-23 23:59:57.654321' AS t">>,
-            E3 = [[{{2014, 11, 23}, {23, 59, 57.654321}}]],
-            ?assertEqual({ok, [<<"t">>], E3}, mysql:query(Pid, Q3)),
-            {ok, S3} = mysql:prepare(Pid, Q3),
-            ?assertEqual({ok, [<<"t">>], E3}, mysql:execute(Pid, S3, [])),
-            ok;
-        true ->
-            error_logger:info_msg("Skipping microseconds test. Microseconds are"
-                                  " not available in MySQL version ~s. Required"
-                                  " version is >= 5.6.4.~n",
-                                  [VersionBin])
+    {ok, _, [[Version]]} = mysql:query(Pid, <<"SELECT @@version">>),
+    try
+        %% Remove stuff after dash for e.g. "5.5.40-0ubuntu0.12.04.1-log"
+        [Version1 | _] = binary:split(Version, <<"-">>),
+        Version2 = lists:map(fun binary_to_integer/1,
+                             binary:split(Version1, <<".">>, [global])),
+        Version2 >= [5, 6, 4] orelse throw(nope)
+    of _ ->
+        run_test_microseconds(Pid)
+    catch _:_ ->
+        error_logger:info_msg("Skipping microseconds test. Current MySQL"
+                              " version is ~s. Required version is >= 5.6.4.~n",
+                              [Version])
     end.
+
+run_test_microseconds(Pid) ->
+    ok = mysql:query(Pid, "CREATE TABLE m (t TIME(6))"),
+    SelectTime = "SELECT t FROM m",
+    {ok, SelectStmt} = mysql:prepare(Pid, SelectTime),
+    {ok, InsertStmt} = mysql:prepare(Pid, "INSERT INTO m VALUES (?)"),
+    %% Positive time, insert using plain query
+    E1 = {0, {23, 59, 57.654321}},
+    ok = mysql:query(Pid, <<"INSERT INTO m VALUES ('23:59:57.654321')">>),
+    ?assertEqual({ok, [<<"t">>], [[E1]]}, mysql:query(Pid, SelectTime)),
+    ?assertEqual({ok, [<<"t">>], [[E1]]}, mysql:execute(Pid, SelectStmt, [])),
+    ok = mysql:query(Pid, "DELETE FROM m"),
+    %% The same, but insert using prepared stmt
+    ok = mysql:execute(Pid, InsertStmt, [E1]),
+    ?assertEqual({ok, [<<"t">>], [[E1]]}, mysql:query(Pid, SelectTime)),
+    ?assertEqual({ok, [<<"t">>], [[E1]]}, mysql:execute(Pid, SelectStmt, [])),
+    ok = mysql:query(Pid, "DELETE FROM m"),
+    %% Negative time
+    E2 = {-1, {23, 59, 57.654321}},
+    ok = mysql:query(Pid, <<"INSERT INTO m VALUES ('-00:00:02.345679')">>),
+    ?assertEqual({ok, [<<"t">>], [[E2]]}, mysql:query(Pid, SelectTime)),
+    ?assertEqual({ok, [<<"t">>], [[E2]]}, mysql:execute(Pid, SelectStmt, [])),
+    ok = mysql:query(Pid, "DELETE FROM m"),
+    %% The same, but insert using prepared stmt
+    ok = mysql:execute(Pid, InsertStmt, [E2]),
+    ?assertEqual({ok, [<<"t">>], [[E2]]}, mysql:query(Pid, SelectTime)),
+    ?assertEqual({ok, [<<"t">>], [[E2]]}, mysql:execute(Pid, SelectStmt, [])),
+    ok = mysql:query(Pid, "DROP TABLE m"),
+    %% Datetime
+    Q3 = <<"SELECT TIMESTAMP '2014-11-23 23:59:57.654321' AS t">>,
+    E3 = [[{{2014, 11, 23}, {23, 59, 57.654321}}]],
+    ?assertEqual({ok, [<<"t">>], E3}, mysql:query(Pid, Q3)),
+    {ok, S3} = mysql:prepare(Pid, Q3),
+    ?assertEqual({ok, [<<"t">>], E3}, mysql:execute(Pid, S3, [])),
+    ok.
+

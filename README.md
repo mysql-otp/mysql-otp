@@ -1,6 +1,8 @@
 MySQL/OTP
 =========
 
+[![Build Status](https://travis-ci.org/mysql-otp/mysql-otp.svg)](https://travis-ci.org/mysql-otp/mysql-otp)
+
 This is a MySQL driver for Erlang following the OTP principles.
 
 Status: Work in progress. Connecting and executing queries using the text protocol (plain queries) and binary protocols (prepared statements) work. The API and the value representation are subjects to change.
