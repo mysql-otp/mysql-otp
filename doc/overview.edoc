@@ -26,11 +26,12 @@ The source code is available on the github page <a target="_top"
 https://github.com/mysql-otp/mysql-otp/</a> along with a wiki and an issue
 tracker.
 
-<img src="LGPLv3_Logo.svg" width="100" height="43" style="float:right"/>
+<img src="https://www.gnu.org/graphics/lgplv3-88x31.png" width="88" height="31"
+     style="float:right"/>
 This library is free software licensed under the GNU LGPL which allows you to
-include it in any application, regardless its license, free or proprietary. This
-documentation is generated from the source code and thus has the same license as
-the library itself.
+use it in non-free applications and applications with other licenses. This
+documentation is generated from the source code and thus goes under the same
+license as the library itself.
 
 <h2>API functions</h2>
 

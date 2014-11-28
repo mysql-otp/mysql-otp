@@ -1,8 +1,8 @@
 MySQL/OTP
 =========
 
-<img src="doc/LGPLv3_Logo.svg" width="100" height="43" style="float:right"/>
 [![Build Status](https://travis-ci.org/mysql-otp/mysql-otp.svg)](https://travis-ci.org/mysql-otp/mysql-otp)
+[![LGPL](https://www.gnu.org/graphics/lgplv3-88x31.png)](#license)
 
 This is a MySQL driver for Erlang following the OTP principles.
 
@@ -126,7 +126,8 @@ License
 
 GNU Lesser General Public License (LGPL) version 3 or any later version.
 Since the LGPL is a set of additional permissions on top of the GPL, both
-license texts are included in the files COPYING and COPYING.LESSER respectively.
+license texts are included in the files [COPYING](COPYING) and
+[COPYING.LESSER](COPYING.LESSER) respectively.
 
-In short, LGPL allows you to use the library in non-free software and software
-with incompible licenses.
+We hope this license should be permissive enough while remaining copyleft. If
+you have issues with this license, please create an issue in the issue tracker!
