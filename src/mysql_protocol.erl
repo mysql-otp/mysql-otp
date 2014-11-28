@@ -1,23 +1,25 @@
-%% MySQL/OTP – a MySQL driver for Erlang/OTP
+%% MySQL/OTP – MySQL client library for Erlang/OTP
 %% Copyright (C) 2014 Viktor Söderqvist
 %%
-%% This program is free software: you can redistribute it and/or modify
-%% it under the terms of the GNU General Public License as published by
-%% the Free Software Foundation, either version 3 of the License, or
-%% (at your option) any later version.
+%% This file is part of MySQL/OTP.
 %%
-%% This program is distributed in the hope that it will be useful,
-%% but WITHOUT ANY WARRANTY; without even the implied warranty of
-%% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-%% GNU General Public License for more details.
+%% MySQL/OTP is free software: you can redistribute it and/or modify it under
+%% the terms of the GNU Lesser General Public License as published by the Free
+%% Software Foundation, either version 3 of the License, or (at your option)
+%% any later version.
 %%
-%% You should have received a copy of the GNU General Public License
+%% This program is distributed in the hope that it will be useful, but WITHOUT
+%% ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+%% FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+%% more details.
+%%
+%% You should have received a copy of the GNU Lesser General Public License
 %% along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 %% @doc This module implements parts of the MySQL client/server protocol.
 %%
 %% The protocol is described in the document "MySQL Internals" which can be
-%% found under "MySQL Documentation: Expert Guides" on http://dev.mysql.com/
+%% found under "MySQL Documentation: Expert Guides" on http://dev.mysql.com/.
 %%
 %% TCP communication is not handled in this module. Most of the public functions
 %% take funs for data communitaction as parameters.

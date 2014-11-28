@@ -1,18 +1,20 @@
-%% MySQL/OTP – a MySQL driver for Erlang/OTP
-%% Copyright (C) 2014 Viktor Söderqvist
-%%
-%% This program is free software: you can redistribute it and/or modify
-%% it under the terms of the GNU General Public License as published by
-%% the Free Software Foundation, either version 3 of the License, or
-%% (at your option) any later version.
-%%
-%% This program is distributed in the hope that it will be useful,
-%% but WITHOUT ANY WARRANTY; without even the implied warranty of
-%% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-%% GNU General Public License for more details.
-%%
-%% You should have received a copy of the GNU General Public License
-%% along with this program. If not, see <https://www.gnu.org/licenses/>.
+MySQL/OTP – MySQL client library for Erlang/OTP
+Copyright (C) 2014 Viktor Söderqvist
+
+This file is part of MySQL/OTP.
+
+MySQL/OTP is free software: you can redistribute it and/or modify it under
+the terms of the GNU Lesser General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+more details.
+
+You should have received a copy of the GNU Lesser General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
 ------------------------------------------------------------------------
 
 @title MySQL/OTP client library
@@ -24,10 +26,11 @@ The source code is available on the github page <a target="_top"
 https://github.com/mysql-otp/mysql-otp/</a> along with a wiki and an issue
 tracker.
 
-This documentation is free to to copy, change and use for any purpose in
-accordance with the GNU GPL 3 or any later version as it is generated from the
-the source code itself which has this license. See the LICENSE file in the
-source code.
+<img src="LGPLv3_Logo.svg" width="100" height="43" style="float:right"/>
+This library is free software licensed under the GNU LGPL which allows you to
+include it in any application, regardless its license, free or proprietary. This
+documentation is generated from the source code and thus has the same license as
+the library itself.
 
 <h2>API functions</h2>
 

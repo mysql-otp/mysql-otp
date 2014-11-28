@@ -1,6 +1,7 @@
 MySQL/OTP
 =========
 
+<img src="doc/LGPLv3_Logo.svg" width="100" height="43" style="float:right"/>
 [![Build Status](https://travis-ci.org/mysql-otp/mysql-otp.svg)](https://travis-ci.org/mysql-otp/mysql-otp)
 
 This is a MySQL driver for Erlang following the OTP principles.
@@ -123,12 +124,9 @@ From the Emysql README:
 License
 -------
 
-GNU General Public License (GPL) version 3 or any later version. See the LICENSE file.
+GNU Lesser General Public License (LGPL) version 3 or any later version.
+Since the LGPL is a set of additional permissions on top of the GPL, both
+license texts are included in the files COPYING and COPYING.LESSER respectively.
 
-**Erlang programmer's note on licenses:** If you have any second thoughts on
-license compatibility issues, keep this in mind:
-* If you're using this software as an external dependency, e.g. with Rebar or
-  Erlang.mk, you're not actually distributing the dependency.
-* Even if you do distribute dependencies with your application, they are not
-  actually linked together until they are loaded and run in the BEAM (unless
-  you compile the release with HiPE before distributing it).
+In short, LGPL allows you to use the library in non-free software and software
+with incompible licenses.
