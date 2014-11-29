@@ -56,23 +56,15 @@ WarningCount = mysql:warning_count(Pid),
 {ok, ColumnNames, Rows} =
     mysql:query(Pid, <<"SELECT * FROM mytable WHERE id=?">>, [42]),
 
-%% Transactions: If an exception (throw/error/exit) occurs, the transaction
-%% is rollbacked without catching the exception. This means transactions are
-%% transparent to error handling. NOT IMPLEMENTED YET.
-try
-    mysql:transaction(
-        Pid,
+%% Mnesia style transactions (nestable and restartable).
+%% NOT IMPLEMENTED YET. See issue #7.
+%% This example will obviously fail with a badmatch.
+{atomic, ResultOfFun} = mysql:transaction(Pid,
         fun () ->
             ok = mysql:query(Pid, "INSERT INTO mytable (foo) VALUES (1)"),
             throw(foo),
             ok = mysql:query(Pid, "INSERT INTO mytable (foo) VALUES (1)")
-        end
-    )
-catch
-    throw:foo ->
-        %% Foo occurred. Fortunately nothing was stored.
-        foo_occured
-end.
+        end).
 ```
 
 Value representation
@@ -130,4 +122,5 @@ license texts are included in the files [COPYING](COPYING) and
 [COPYING.LESSER](COPYING.LESSER) respectively.
 
 We hope this license should be permissive enough while remaining copyleft. If
-you have issues with this license, please create an issue in the issue tracker!
+you're having issues with this license, please create an issue in the issue
+tracker!
