@@ -275,3 +275,52 @@ run_test_microseconds(Pid) ->
     ?assertEqual({ok, [<<"t">>], E3}, mysql:execute(Pid, S3, [])),
     ok.
 
+%% --------------------------------------------------------------------------
+
+%% Transaction tests
+
+transaction_single_connection_test_() ->
+    {setup,
+     fun () ->
+         {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password}]),
+         ok = mysql:query(Pid, <<"DROP DATABASE IF EXISTS otptest">>),
+         ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
+         ok = mysql:query(Pid, <<"USE otptest">>),
+         ok = mysql:query(Pid, <<"CREATE TABLE foo (bar INT) engine=InnoDB">>),
+         Pid
+     end,
+     fun (Pid) ->
+         ok = mysql:query(Pid, <<"DROP DATABASE otptest">>),
+         exit(Pid, normal)
+     end,
+     {with, [fun transaction_simple_success/1,
+             fun transaction_simple_aborted/1]}}.
+
+transaction_simple_success(Pid) ->
+    Result = mysql:transaction(Pid, fun () ->
+                 ok = mysql:query(Pid, "INSERT INTO foo VALUES (42)"),
+                 hello
+             end),
+    ?assertEqual({atomic, hello}, Result),
+    ok = mysql:query(Pid, "DELETE FROM foo").
+
+transaction_simple_aborted(Pid) ->
+    ok = mysql:query(Pid, "INSERT INTO foo VALUES (9)"),
+    ?assertEqual({ok, [<<"bar">>], [[9]]},
+                 mysql:query(Pid, "SELECT bar FROM foo")),
+    Result = mysql:transaction(Pid, fun () ->
+                 ok = mysql:query(Pid, "INSERT INTO foo VALUES (42)"),
+                 ?assertMatch({ok, _, [[2]]},
+                              mysql:query(Pid, "SELECT COUNT(*) FROM foo")),
+                 error(hello)
+             end),
+    ?assertMatch({aborted, {hello, Stacktrace}} when is_list(Stacktrace),
+                 Result),
+    ?assertEqual({ok, [<<"bar">>], [[9]]},
+                 mysql:query(Pid, "SELECT bar FROM foo")),
+    ok = mysql:query(Pid, "DELETE FROM foo"),
+    %% Also check the abort Reason for throw and exit.
+    ?assertEqual({aborted, {throw, foo}},
+                 mysql:transaction(Pid, fun () -> throw(foo) end)),
+    ?assertEqual({aborted, foo},
+                 mysql:transaction(Pid, fun () -> exit(foo) end)).

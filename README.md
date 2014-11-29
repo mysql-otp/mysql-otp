@@ -56,15 +56,23 @@ WarningCount = mysql:warning_count(Pid),
 {ok, ColumnNames, Rows} =
     mysql:query(Pid, <<"SELECT * FROM mytable WHERE id=?">>, [42]),
 
-%% Mnesia style transactions (nestable and restartable).
-%% NOT IMPLEMENTED YET. See issue #7.
-%% This example will obviously fail with a badmatch.
-{atomic, ResultOfFun} = mysql:transaction(Pid,
-        fun () ->
-            ok = mysql:query(Pid, "INSERT INTO mytable (foo) VALUES (1)"),
-            throw(foo),
-            ok = mysql:query(Pid, "INSERT INTO mytable (foo) VALUES (1)")
-        end).
+%% Simple Mnesia style transactions.
+%%
+%% Note 1: Cannot be nested.
+%% Note 2: Not automatically restarted when a deadlock is detected.
+%%
+%% There are plans to implement nested and restartable transactions. (Issue #7)
+Result = mysql:transaction(Pid, fun () ->
+    ok = mysql:query(Pid, "INSERT INTO mytable (foo) VALUES (1)"),
+    throw(foo),
+    ok = mysql:query(Pid, "INSERT INTO mytable (foo) VALUES (1)")
+end),
+case Result of
+    {atomic, ResultOfFun} ->
+        io:format("Inserted 2 rows.~n");
+    {aborted, Reason} ->
+        io:format("Inserted 0 rows.~n")
+end
 ```
 
 Value representation
