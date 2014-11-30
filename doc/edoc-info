@@ -1,0 +1,4 @@
+%% encoding: UTF-8
+{application,mysql}.
+{packages,[]}.
+{modules,[mysql,mysql_connection,mysql_protocol]}.

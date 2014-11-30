@@ -1,0 +1,176 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<title>.eunit/mysql_connection.COVER.html</title>
+</head><body style='background-color: white; color: black'>
+<pre>
+File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_connection.erl by COVER 2014-11-30 at 22:39:38
+
+****************************************************************************
+
+        |  %% MySQL/OTP – MySQL client library for Erlang/OTP
+        |  %% Copyright (C) 2014 Viktor Söderqvist
+        |  %%
+        |  %% This file is part of MySQL/OTP.
+        |  %%
+        |  %% MySQL/OTP is free software: you can redistribute it and/or modify it under
+        |  %% the terms of the GNU Lesser General Public License as published by the Free
+        |  %% Software Foundation, either version 3 of the License, or (at your option)
+        |  %% any later version.
+        |  %%
+        |  %% This program is distributed in the hope that it will be useful, but WITHOUT
+        |  %% ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+        |  %% FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+        |  %% more details.
+        |  %%
+        |  %% You should have received a copy of the GNU Lesser General Public License
+        |  %% along with this program. If not, see &lt;https://www.gnu.org/licenses/&gt;.
+        |  
+        |  %% A mysql connection implemented as a gen_server. This is a gen_server callback
+        |  %% module only. The API functions are located in the mysql module.
+        |  -module(mysql_connection).
+        |  -behaviour(gen_server).
+        |  
+        |  -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
+        |           code_change/3]).
+        |  
+        |  %% Some defaults
+        |  -define(default_host, "localhost").
+        |  -define(default_port, 3306).
+        |  -define(default_user, &lt;&lt;&gt;&gt;).
+        |  -define(default_password, &lt;&lt;&gt;&gt;).
+        |  -define(default_timeout, infinity).
+        |  
+        |  -include("records.hrl").
+        |  -include("server_status.hrl").
+        |  
+        |  %% Gen_server state
+        |  -record(state, {socket, timeout = infinity, affected_rows = 0, status = 0,
+        |                  warning_count = 0, insert_id = 0, stmts = dict:new()}).
+        |  
+        |  %% A tuple representing a MySQL server error, typically returned in the form
+        |  %% {error, reason()}.
+        |  -type reason() :: {Code :: integer(), SQLState :: binary(), Msg :: binary()}.
+        |  
+        |  init(Opts) -&gt;
+        |      %% Connect
+     3..|      Host     = proplists:get_value(host,     Opts, ?default_host),
+     3..|      Port     = proplists:get_value(port,     Opts, ?default_port),
+     3..|      User     = proplists:get_value(user,     Opts, ?default_user),
+     3..|      Password = proplists:get_value(password, Opts, ?default_password),
+     3..|      Database = proplists:get_value(database, Opts, undefined),
+     3..|      Timeout  = proplists:get_value(timeout,  Opts, ?default_timeout),
+        |  
+        |      %% Connect socket
+     3..|      SockOpts = [{active, false}, binary, {packet, raw}],
+     3..|      {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
+        |  
+        |      %% Exchange handshake communication.
+     3..|      SendFun = fun (Data) -&gt; gen_tcp:send(Socket, Data) end,
+     3..|      RecvFun = fun (Size) -&gt; gen_tcp:recv(Socket, Size, Timeout) end,
+     3..|      Result = mysql_protocol:handshake(User, Password, Database, SendFun,
+        |                                        RecvFun),
+     3..|      case Result of
+        |          #ok{} = OK -&gt;
+     3..|              State = #state{socket = Socket, timeout = Timeout},
+     3..|              State1 = update_state(State, OK),
+     3..|              {ok, State1};
+        |          #error{} = E -&gt;
+<font color=red>     0..|              {stop, error_to_reason(E)}</font>
+        |      end.
+        |  
+        |  handle_call({query, Query}, _From, State) when is_binary(Query);
+        |                                                 is_list(Query) -&gt;
+   131..|      #state{socket = Socket, timeout = Timeout} = State,
+   131..|      SendFun = fun (Data) -&gt; gen_tcp:send(Socket, Data) end,
+   131..|      RecvFun = fun (Size) -&gt; gen_tcp:recv(Socket, Size, Timeout) end,
+   131..|      Rec = mysql_protocol:query(Query, SendFun, RecvFun),
+   131..|      State1 = update_state(State, Rec),
+   131..|      case Rec of
+        |          #ok{} -&gt;
+    84..|              {reply, ok, State1};
+        |          #error{} = E -&gt;
+     1..|              {reply, {error, error_to_reason(E)}, State1};
+        |          #resultset{column_definitions = ColDefs, rows = Rows} -&gt;
+    46..|              Names = [Def#column_definition.name || Def &lt;- ColDefs],
+    46..|              {reply, {ok, Names, Rows}, State1}
+        |      end;
+        |  handle_call({execute, Stmt, Args}, _From, State) when is_integer(Stmt);
+        |                                                        is_atom(Stmt) -&gt;
+        |      %% TODO: Return {error, not_prepared} instead of crashing if not found.
+    72..|      StmtRec = dict:fetch(Stmt, State#state.stmts),
+    72..|      #state{socket = Socket, timeout = Timeout} = State,
+    72..|      SendFun = fun (Data) -&gt; gen_tcp:send(Socket, Data) end,
+    72..|      RecvFun = fun (Size) -&gt; gen_tcp:recv(Socket, Size, Timeout) end,
+    72..|      Rec = mysql_protocol:execute(StmtRec, Args, SendFun, RecvFun),
+    72..|      State1 = update_state(State, Rec),
+    72..|      case Rec of
+        |          #ok{} -&gt;
+    31..|              {reply, ok, State1};
+        |          #error{} = E -&gt;
+<font color=red>     0..|              {reply, {error, error_to_reason(E)}, State1};</font>
+        |          #resultset{column_definitions = ColDefs, rows = Rows} -&gt;
+    41..|              Names = [Def#column_definition.name || Def &lt;- ColDefs],
+    41..|              {reply, {ok, Names, Rows}, State1}
+        |      end;
+        |  handle_call({prepare, Query}, _From, State) -&gt;
+     9..|      #state{socket = Socket, timeout = Timeout} = State,
+     9..|      SendFun = fun (Data) -&gt; gen_tcp:send(Socket, Data) end,
+     9..|      RecvFun = fun (Size) -&gt; gen_tcp:recv(Socket, Size, Timeout) end,
+     9..|      Rec = mysql_protocol:prepare(Query, SendFun, RecvFun),
+     9..|      State1 = update_state(State, Rec),
+     9..|      case Rec of
+        |          #error{} = E -&gt;
+<font color=red>     0..|              {reply, {error, error_to_reason(E)}, State1};</font>
+        |          #prepared{statement_id = Id} = Stmt -&gt;
+     9..|              Stmts1 = dict:store(Id, Stmt, State1#state.stmts),
+     9..|              State2 = State#state{stmts = Stmts1},
+     9..|              {reply, {ok, Id}, State2}
+        |      end;
+        |  handle_call(warning_count, _From, State) -&gt;
+     2..|      {reply, State#state.warning_count, State};
+        |  handle_call(insert_id, _From, State) -&gt;
+     1..|      {reply, State#state.insert_id, State};
+        |  handle_call(affected_rows, _From, State) -&gt;
+     1..|      {reply, State#state.affected_rows, State};
+        |  handle_call(autocommit, _From, State) -&gt;
+     3..|      {reply, State#state.status band ?SERVER_STATUS_AUTOCOMMIT /= 0, State};
+        |  handle_call(in_transaction, _From, State) -&gt;
+     3..|      {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};
+        |  handle_call(get_state, _From, State) -&gt;
+        |      %% *** FOR DEBUGGING ***
+        |      %% TODO: Delete this.
+<font color=red>     0..|      {reply, State, State}.</font>
+        |  
+<font color=red>     0..|  handle_cast(_, _) -&gt; todo.</font>
+        |  
+<font color=red>     0..|  handle_info(_, _) -&gt; todo.</font>
+        |  
+<font color=red>     0..|  terminate(_, _) -&gt; todo.</font>
+        |  
+<font color=red>     0..|  code_change(_, _, _) -&gt; todo.</font>
+        |  
+        |  %% --- Helpers ---
+        |  
+        |  %% @doc Produces a tuple to return when an error needs to be returned to in the
+        |  %% public API.
+        |  -spec error_to_reason(#error{}) -&gt; reason().
+        |  error_to_reason(#error{code = Code, state = State, msg = Msg}) -&gt;
+     1..|      {Code, State, Msg}.
+        |  
+        |  %% @doc Updates a state with information from a response.
+        |  -spec update_state(#state{}, #ok{} | #eof{} | any()) -&gt; #state{}.
+        |  update_state(State, #ok{status = S, affected_rows = R,
+        |                          insert_id = Id, warning_count = W}) -&gt;
+   118..|      State#state{status = S, affected_rows = R, insert_id = Id,
+        |                  warning_count = W};
+        |  update_state(State, #eof{status = S, warning_count = W}) -&gt;
+<font color=red>     0..|      State#state{status = S, warning_count = W, affected_rows = 0};</font>
+        |  update_state(State, _Other) -&gt;
+        |      %% This includes errors, resultsets, etc.
+        |      %% Reset warnings, etc. (Note: We don't reset status and insert_id.)
+    97..|      State#state{warning_count = 0, affected_rows = 0}.
+</pre>
+</body>
+</html>
