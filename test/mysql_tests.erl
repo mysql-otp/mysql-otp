@@ -47,18 +47,27 @@ query_test_() ->
          ok = mysql:query(Pid, <<"DROP DATABASE IF EXISTS otptest">>),
          ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
          ok = mysql:query(Pid, <<"USE otptest">>),
+         ok = mysql:query(Pid, <<"SET autocommit = 1">>),
          Pid
      end,
      fun (Pid) ->
          ok = mysql:query(Pid, <<"DROP DATABASE otptest">>),
          exit(Pid, normal)
      end,
-     {with, [fun basic_queries/1,
+     {with, [fun autocommit/1,
+             fun basic_queries/1,
              fun text_protocol/1,
              fun binary_protocol/1,
              fun float_rounding/1,
              fun time/1,
              fun microseconds/1]}}.
+
+autocommit(Pid) ->
+    ?assert(mysql:autocommit(Pid)),
+    ok = mysql:query(Pid, <<"SET autocommit = 0">>),
+    ?assertNot(mysql:autocommit(Pid)),
+    ok = mysql:query(Pid, <<"SET autocommit = 1">>),
+    ?assert(mysql:autocommit(Pid)).
 
 basic_queries(Pid) ->
 

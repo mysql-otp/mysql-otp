@@ -23,7 +23,7 @@
 -module(mysql).
 
 -export([start_link/1, query/2, execute/3, prepare/2, warning_count/1,
-         affected_rows/1, insert_id/1, in_transaction/1,
+         affected_rows/1, autocommit/1, insert_id/1, in_transaction/1,
          transaction/2, transaction/3]).
 
 -export_type([connection/0]).
@@ -85,6 +85,11 @@ warning_count(Conn) ->
 -spec affected_rows(connection()) -> integer().
 affected_rows(Conn) ->
     gen_server:call(Conn, affected_rows).
+
+%% @doc Returns true if auto-commit is enabled and false otherwise.
+-spec autocommit(connection()) -> boolean().
+autocommit(Conn) ->
+    gen_server:call(Conn, autocommit).
 
 %% @doc Returns the last insert-id.
 -spec insert_id(connection()) -> integer().

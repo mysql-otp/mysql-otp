@@ -123,6 +123,8 @@ handle_call(insert_id, _From, State) ->
     {reply, State#state.insert_id, State};
 handle_call(affected_rows, _From, State) ->
     {reply, State#state.affected_rows, State};
+handle_call(autocommit, _From, State) ->
+    {reply, State#state.status band ?SERVER_STATUS_AUTOCOMMIT /= 0, State};
 handle_call(in_transaction, _From, State) ->
     {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};
 handle_call(get_state, _From, State) ->
