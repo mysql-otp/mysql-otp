@@ -32,6 +32,7 @@
 -define(default_timeout, infinity).
 
 -include("records.hrl").
+-include("server_status.hrl").
 
 %% Gen_server state
 -record(state, {socket, timeout = infinity, affected_rows = 0, status = 0,
@@ -122,6 +123,8 @@ handle_call(insert_id, _From, State) ->
     {reply, State#state.insert_id, State};
 handle_call(affected_rows, _From, State) ->
     {reply, State#state.affected_rows, State};
+handle_call(in_transaction, _From, State) ->
+    {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};
 handle_call(get_state, _From, State) ->
     %% *** FOR DEBUGGING ***
     %% TODO: Delete this.
@@ -150,9 +153,8 @@ update_state(State, #ok{status = S, affected_rows = R,
     State#state{status = S, affected_rows = R, insert_id = Id,
                 warning_count = W};
 update_state(State, #eof{status = S, warning_count = W}) ->
-    State#state{status = S, warning_count = W, insert_id = 0,
-                affected_rows = 0};
+    State#state{status = S, warning_count = W, affected_rows = 0};
 update_state(State, _Other) ->
     %% This includes errors, resultsets, etc.
-    %% Reset warnings, etc. (Note: We don't reset 'status'.)
-    State#state{warning_count = 0, insert_id = 0, affected_rows = 0}.
+    %% Reset warnings, etc. (Note: We don't reset status and insert_id.)
+    State#state{warning_count = 0, affected_rows = 0}.

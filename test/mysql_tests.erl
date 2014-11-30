@@ -297,11 +297,14 @@ transaction_single_connection_test_() ->
              fun transaction_simple_aborted/1]}}.
 
 transaction_simple_success(Pid) ->
+    ?assertNot(mysql:in_transaction(Pid)),
     Result = mysql:transaction(Pid, fun () ->
                  ok = mysql:query(Pid, "INSERT INTO foo VALUES (42)"),
+                 ?assert(mysql:in_transaction(Pid)),
                  hello
              end),
     ?assertEqual({atomic, hello}, Result),
+    ?assertNot(mysql:in_transaction(Pid)),
     ok = mysql:query(Pid, "DELETE FROM foo").
 
 transaction_simple_aborted(Pid) ->

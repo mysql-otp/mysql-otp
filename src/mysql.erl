@@ -23,7 +23,8 @@
 -module(mysql).
 
 -export([start_link/1, query/2, execute/3, prepare/2, warning_count/1,
-         affected_rows/1, insert_id/1, transaction/2, transaction/3]).
+         affected_rows/1, insert_id/1, in_transaction/1,
+         transaction/2, transaction/3]).
 
 -export_type([connection/0]).
 
@@ -44,12 +45,12 @@
 %% This is just a wrapper for `gen_server:start_link(mysql_connection, Options,
 %% [])'. If you need to specify gen_server options, use gen_server:start_link/3
 %% directly.
-start_link(Opts) ->
-    gen_server:start_link(mysql_connection, Opts, []).
 -spec start_link(Options) -> {ok, pid()} | ignore | {error, term()}
     when Options :: [Option],
          Option :: {host, iodata()} | {port, integer()} | {user, iodata()} |
                    {password, iodata()} | {database, iodata()}.
+start_link(Opts) ->
+    gen_server:start_link(mysql_connection, Opts, []).
 
 %% @doc Executes a query.
 -spec query(Conn, Query) -> ok | {ok, ColumnNames, Rows} | {error, Reason}
@@ -90,8 +91,19 @@ affected_rows(Conn) ->
 insert_id(Conn) ->
     gen_server:call(Conn, insert_id).
 
+%% @doc Returns true if the connection is in a transaction and false otherwise.
+%% This works regardless of whether the transaction has been started using
+%% transaction/2,3 or using a plain `mysql:query(Connection, "START
+%% TRANSACTION")'.
+%% @see transaction/2
+%% @see transaction/3
+-spec in_transaction(connection()) -> boolean().
+in_transaction(Conn) ->
+    gen_server:call(Conn, in_transaction).
+
 %% @doc This function executes the functional object Fun as a transaction.
 %% @see transaction/3
+%% @see in_transaction/1
 -spec transaction(connection(), fun()) -> {atomic, term()} | {aborted, term()}.
 transaction(Conn, Fun) ->
     transaction(Conn, Fun, []).
@@ -121,7 +133,7 @@ transaction(Conn, Fun) ->
 %%   </thead>
 %%   <tbody>
 %%     <tr>
-%%       <td>`error' with ErrorReason</td>
+%%       <td>`error' with reason `ErrorReason'</td>
 %%       <td>`{aborted, {ErrorReason, Stack}}'</td>
 %%     </tr>
 %%     <tr><td>`exit(Term)'</td><td>`{aborted, Term}'</td></tr>
@@ -131,6 +143,7 @@ transaction(Conn, Fun) ->
 %%
 %% TODO: Implement nested transactions
 %% TODO: Automatic restart on deadlocks
+%% @see in_transaction/1
 -spec transaction(connection(), fun(), list()) -> {atomic, term()} |
                                                   {aborted, term()}.
 transaction(Conn, Fun, Args) when is_list(Args),

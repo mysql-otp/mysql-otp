@@ -879,6 +879,7 @@ nulterm_str(Bin) ->
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-include("server_status.hrl").
 
 %% Testing some of the internal functions, mostly the cases we don't cover in
 %% other tests.
