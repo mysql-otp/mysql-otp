@@ -17,8 +17,8 @@ Features:
 
 See also:
 
-* [API documenation](//mysql-otp.github.io/mysql-otp/doc/index.html) (Edoc)
-* [Test coverage](//mysql-otp.github.io/mysql-otp/.eunit/index.html) (EUnit)
+* [API documenation](//mysql-otp.github.io/mysql-otp/index.html) (Edoc)
+* [Test coverage](//mysql-otp.github.io/mysql-otp/eunit.html) (EUnit)
 * [Why another MySQL driver?](https://github.com/mysql-otp/mysql-otp/wiki#why-another-mysql-driver) in the wiki
 
 This is a work in progress. The API and the value representation may still
