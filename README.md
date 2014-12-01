@@ -2,25 +2,27 @@ MySQL/OTP
 =========
 
 [![Build Status](https://travis-ci.org/mysql-otp/mysql-otp.svg)](https://travis-ci.org/mysql-otp/mysql-otp)
-[![LGPL](https://www.gnu.org/graphics/lgplv3-88x31.png)](#license)
 
-This is a MySQL driver for Erlang following the OTP principles.
+MySQL/OTP is a client library for connecting to MySQL databases from Erlang/OTP
+applications. It is a native implementation of the MySQL protocol in Erlang.
 
-Status: Work in progress. Connecting and executing queries using the text protocol (plain queries) and binary protocols (prepared statements) work. The API and the value representation are subjects to change.
+Features:
 
-Background: We are starting this project with the aim at overcoming the problems with Emysql (the currently most popular driver) and erlang-mysql-driver (the even older driver).
-
-Design choices:
-
-* A connection is a gen_server.
-* No connection pool. Poolboy or your own supervisor can be used for this.
+* Works with MySQL 4.1 and later.
+* Mnesia style transactions.
+* Uses the binary protocol for prepared statements.
+* Each connection is a gen_server, which makes it compatible with Poolboy (for
+  connection pooling) and ordinary OTP supervisors.
 * No records in the public API.
-* API inspired by that of epgsql (the PostgreSQL driver).
 
-Contributing
-------------
+See also:
 
-We welcome contributors and new members of the project. We are open for suggestions about the API, the internal design and almost anything else. Let's use the project's wiki for discussions and TODOs.
+* [API documenation](//mysql-otp.github.io/mysql-otp/doc/index.html) (Edoc)
+* [Test coverage](//mysql-otp.github.io/mysql-otp/.eunit/index.html) (EUnit)
+* [Why another MySQL driver?](https://github.com/mysql-otp/mysql-otp/wiki#why-another-mysql-driver) in the wiki
+
+This is a work in progress. The API and the value representation may still
+change. Use a tagged version to make sure nothing breaks.
 
 Synopsis
 --------
@@ -29,20 +31,20 @@ Synopsis
 Opts = [{host, "localhost"}, {user, "foo"}, {password, "hello"},
         {database, "test"}],
 
-%% Connect and link to the connection process.
+%% Connect
 {ok, Pid} = mysql:start_link(Opts),
 
-%% A query returning results
+%% Select
 {ok, ColumnNames, Rows} = mysql:query(Pid, <<"SELECT * FROM mytable">>),
 
-%% A query not returning any rows just returns ok.
+%% Manipulate data
 ok = mysql:query(Pid, "INSERT INTO mytable (foo, bar) VALUES (1, 42)"),
 
-%% Named prepared statements.
+%% Named prepared statements
 {ok, foo} = mysql:prepare(Pid, "SELECT * FROM mytable WHERE id=?", foo),
 {ok, Columns, Rows} = mysql:execute(Pid, foo, [42]),
 
-%% Unnamed prepared statements.
+%% Unnamed prepared statements
 {ok, StmtId} = mysql:prepare(Pid, "SELECT * FROM mytable WHERE id=?"),
 {ok, Columns, Rows} = mysql:execute(Pid, StmtId, [42]).
 
@@ -75,27 +77,6 @@ case Result of
 end
 ```
 
-Value representation
---------------------
-
- MySQL              | Erlang                  | Examples
---------------------|-------------------------|-------------------
-INT, TINYINT, etc.  | integer()               | 42
-VARCHAR, TEXT, etc. | iodata()                | <<"foo">>, "bar"
-FLOAT, DOUBLE       | float()                 | 3.14
-DECIMAL             | binary()                | <<"3.140">>
-DATETIME, TIMESTAMP | calendar:datetime()     | {{2014, 11, 18}, {10, 22, 36}}
-DATE                | calendar:date()         | {2014, 11, 18}
-TIME                | {Days, calendar:time()} | {0, {10, 22, 36}}
-NULL                | null                    | null
-
-Since `TIME` can be outside the calendar:time() interval, we use the format as
-returned by `calendar:seconds_to_daystime/1` for `TIME` values.
-
-For `DATETIME`, `TIMESTAMP` and `TIME` values with franctions of seconds, we use
-a float for the seconds part. (These are unusual and were added to MySQL in
-version 5.6.4.)
-
 Tests
 -----
 
@@ -106,20 +87,11 @@ MySQL running on localhost and give privileges to the `otptest` user:
 grant all privileges on otptest.* to otptest@localhost identified by 'otptest';
 ```
 
-Problems with Emysql
---------------------
+Contributing
+------------
 
-From the Emysql README:
-
-> The driver has several technical shortcomings:
->
-> * No clear protocol / connection pool separation
-> * No clear protocol / socket separation
-> * A very complicated connection pool management
-> * Uses the textual protocol in a lot of places where it shouldthe binary protocol
-> * The API could be better
->
->However, this is probably the best MySQL driver out there for Erlang. The erlang-mysql-driver uses a problematic connection pool design for many use cases and is not suitable for general purpose use. This driver is.
+Pull request and feature requests are welcome. If you're looking for something
+to do, pick one of the issues and solve it. Remember to include test cases.
 
 License
 -------

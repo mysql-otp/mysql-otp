@@ -19,30 +19,29 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 @title MySQL/OTP client library
 @doc
-This is the documentation generated from the Erlang source code using EDoc.
+MySQL/OTP is a client library for connecting to MySQL databases from Erlang/OTP
+applications. It is a native implementation of the MySQL protocol in Erlang.
 
+This is the documentation generated from the Erlang source code using EDoc.
 The source code is available on the github page <a target="_top"
  href="https://github.com/mysql-otp/mysql-otp/">
 https://github.com/mysql-otp/mysql-otp/</a> along with a wiki and an issue
-tracker.
+tracker. Coverage reports from the EUnit tests are available <a target="_top"
+ href="../.eunit/index.html">here</a>.
 
-<img src="https://www.gnu.org/graphics/lgplv3-88x31.png" width="88" height="31"
-     style="float:right"/>
 This library is free software licensed under the GNU LGPL which allows you to
-use it in non-free applications and applications with other licenses. This
-documentation is generated from the source code and thus goes under the same
-license as the library itself.
+use it in proprietary applications as well as free software applications with
+other licenses. This documentation is generated from the source code and thus
+goes under the same license as the library itself. The license files are
+available in the files <a href="../COPYING" target="_top">COPYING</a> and
+<a href="../COPYING.LESSER" target="_top">COPYING.LESSER</a>.
 
 <h2>API functions</h2>
 
-The <a href="mysql.html">mysql</a> module contains all the API
-functions for connecting to and interacting with a MySQL server.
-The <a href="mysql_connection.html">mysql_connection</a> module is the
-`gen_server' callback module holding a connection so you may want to refer to
-that sometimes (e.g. in the Modules part in a childspec for a supervisor). The
-other modules are for the internals.
+The <a href="mysql.html">mysql</a> module contains all the API functions for
+connecting to and interacting with a MySQL server.
 
-<h2>Value representation</h2>
+<h2 id="value-representation">Value representation</h2>
 
 <table>
   <thead>
@@ -60,7 +59,7 @@ other modules are for the internals.
     </tr>
     <tr>
       <td>VARCHAR, TEXT, etc.</td>
-      <td>`iodata()'</td>
+      <td>`iodata()' [<a href="#vn1">1</a>]</td>
       <td>`<<"foo">>, "bar"'</td>
     </tr>
     <tr>
@@ -70,12 +69,12 @@ other modules are for the internals.
     </tr>
     <tr>
       <td>DECIMAL</td>
-      <td>`binary()'</td>
+      <td>`binary()' [<a href="#vn2">2</a>]</td>
       <td>`<<"3.140">>'</td>
     </tr>
     <tr>
       <td>DATETIME, TIMESTAMP</td>
-      <td>`calendar:datetime()'</td>
+      <td>`calendar:datetime()' [<a href="#vn3">3</a>]</td>
       <td>`{{2014, 11, 18}, {10, 22, 36}}'</td>
     </tr>
     <tr>
@@ -85,7 +84,8 @@ other modules are for the internals.
     </tr>
     <tr>
       <td>TIME</td>
-      <td>`{Days, calendar:time()}'</td>
+      <td>`{Days, calendar:time()}' [<a href="#vn3">3</a>,
+          <a href="#vn4">4</a>]</td>
       <td>`{0, {10, 22, 36}}'</td>
     </tr>
     <tr>
@@ -95,6 +95,28 @@ other modules are for the internals.
     </tr>
   </tbody>
 </table>
+
+Notes:
+
+<ol>
+  <li id="vn1">When fetching VARCHAR, TEXT etc. they are returned as `binary()'.
+    When sending (insert or update) any `iodata()' is accepted.</li>
+  <li id="vn2">DECIMAL are currently always returned as `binary()'. This will
+    probably be changed to something similar to how the `odbc' OTP application
+    handles them, namely
+    <ul>
+      <li>`integer()' when there are no fractions;</li>
+      <li>`float()' when the precision of a float is exact enough;</li>
+      <li>`binary()' when the precision of a float is not enough.</li>
+    </ul>
+  </li>
+  <li id="vn3">For `DATETIME', `TIMESTAMP' and `TIME' values with franctions of
+    seconds, we use a float for the seconds part. (These are unusual and were
+    added to MySQL in version 5.6.4.)</li>
+  <li id="vn4">Since `TIME' can be outside the `calendar:time()' interval, we use
+    the format as returned by calendar:seconds_to_daystime/1 for `TIME'
+    values.</li>
+</ol>
 
 <h2>Example with Poolboy</h2>
 
