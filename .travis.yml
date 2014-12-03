@@ -1,11 +1,18 @@
 language: erlang
-services:
-  - mysql
-before_script:
-  - mysql -uroot -e "grant all privileges on otptest.* to otptest@localhost identified by 'otptest'"
-script: 'rebar eunit'
+
 otp_release:
   - 17.3
   - 17.0
   - R16B03-1
   - R16B
+
+services:
+  - mysql
+
+sudo: false
+
+before_script:
+  - mysql -uroot -e "grant all privileges on otptest.* to otptest@localhost identified by 'otptest'"
+
+script: 'rebar eunit'
+
