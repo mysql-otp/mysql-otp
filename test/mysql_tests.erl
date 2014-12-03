@@ -37,8 +37,10 @@
                           ") ENGINE=InnoDB">>).
 
 connect_test() ->
-    {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password}]),
-    exit(Pid, normal).
+    %% A connection with a registered name
+    Options = [{name, {local, tardis}}, {user, ?user}, {password, ?password}],
+    ?assertMatch({ok, Pid} when is_pid(Pid), mysql:start_link(Options)),
+    exit(whereis(tardis), normal).
 
 query_test_() ->
     {setup,

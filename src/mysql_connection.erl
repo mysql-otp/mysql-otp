@@ -21,10 +21,13 @@
 -module(mysql_connection).
 -behaviour(gen_server).
 
+%% API functions
+-export([start_link/1]).
+
+%% Gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
 
-%% Some defaults
 -define(default_host, "localhost").
 -define(default_port, 3306).
 -define(default_user, <<>>).
@@ -41,6 +44,19 @@
 %% A tuple representing a MySQL server error, typically returned in the form
 %% {error, reason()}.
 -type reason() :: {Code :: integer(), SQLState :: binary(), Msg :: binary()}.
+
+%% @doc Starts a connection gen_server and links to it. The options are
+%% described in mysql:start_link/1.
+%% @see mysql:start_link/1.
+start_link(Options) ->
+    case proplists:get_value(name, Options) of
+        undefined ->
+            gen_server:start_link(mysql_connection, Options, []);
+        ServerName ->
+            gen_server:start_link(ServerName, mysql_connection, Options, [])
+    end.
+
+%% --- Gen_server callbacks ---
 
 init(Opts) ->
     %% Connect

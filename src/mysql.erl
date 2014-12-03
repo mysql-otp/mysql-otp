@@ -43,15 +43,46 @@
 %% @doc Starts a connection gen_server process and connects to a database. To
 %% disconnect just do `exit(Pid, normal)'.
 %%
-%% This is just a wrapper for `gen_server:start_link(mysql_connection, Options,
-%% [])'. If you need to specify gen_server options, use gen_server:start_link/3
-%% directly.
+%% Note that the callback module for the gen_server is `mysql_connection'.
+%% This function is actually a synonym for mysql_connection:start_link/1. In
+%% some applications (e.g. Poolboy) the callback module needs to be the module
+%% where the start_link function is located. In those cases use
+%% mysql_connection:start_link/1 instead.
+%%
+%% Options:
+%%
+%% <dl>
+%%   <dt>`{name, ServerName}'</dt>
+%%   <dd>If a name is provided, the gen_server will be registered with this
+%%       name. For detauls, see the documentation for the first argument to
+%%       gen_server:start_link/4.</dd>
+%%   <dt>`{host, Host}'</dt>
+%%   <dd>Hostname of the MySQL database; default `"localhost"'.</dd>
+%%   <dt>`{port, Port}'</dt>
+%%   <dd>Port; default 3306 if omitted.</dd>
+%%   <dt>`{user, User}'</dt>
+%%   <dd>Username.</dd>
+%%   <dt>`{password, Password}'</dt>
+%%   <dd>Password.</dd>
+%%   <dt>`{database, Database}'</dt>
+%%   <dd>The name of the database AKA schema to use. This can be changed later
+%%       using the query `USE <database>'.</dd>
+%% </dl>
+%%
+%% TODO: Implement {database, Database}. Currently the database has to be
+%% selected using a `USE <database>' query after connecting.
+%%
+%% @see mysql_connection:start_link/1
 -spec start_link(Options) -> {ok, pid()} | ignore | {error, term()}
     when Options :: [Option],
-         Option :: {host, iodata()} | {port, integer()} | {user, iodata()} |
-                   {password, iodata()} | {database, iodata()}.
-start_link(Opts) ->
-    gen_server:start_link(mysql_connection, Opts, []).
+         Option :: {name, ServerName} | {host, iodata()} | {port, integer()} | 
+                   {user, iodata()} | {password, iodata()} |
+                   {database, iodata()},
+         ServerName :: {local, Name :: atom()} |
+                       {global, GlobalName :: term()} |
+                       {via, Module :: atom(), ViaName :: term()}.
+start_link(Options) ->
+    mysql_connection:start_link(Options).
 
 %% @doc Executes a query.
 -spec query(Conn, Query) -> ok | {ok, ColumnNames, Rows} | {error, Reason}
