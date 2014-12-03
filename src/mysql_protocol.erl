@@ -25,7 +25,7 @@
 %% take funs for data communitaction as parameters.
 -module(mysql_protocol).
 
--export([handshake/5,
+-export([handshake/5, quit/2,
          query/3,
          prepare/3, unprepare/3, execute/4]).
 
@@ -62,6 +62,13 @@ handshake(Username, Password, Database, SendFun, RecvFun) ->
     {ok, SeqNum2} = send_packet(SendFun, Response, SeqNum1),
     {ok, ConfirmPacket, _SeqNum3} = recv_packet(RecvFun, SeqNum2),
     parse_handshake_confirm(ConfirmPacket).
+
+quit(SendFun, RecvFun) ->
+    {ok, SeqNum1} = send_packet(SendFun, <<?COM_QUIT>>, 0),
+    case recv_packet(RecvFun, SeqNum1) of
+        {error, closed} -> ok;
+        {ok, ?ok_pattern, _SeqNum2} -> ok
+    end.
 
 -spec query(Query :: iodata(), sendfun(), recvfun()) ->
     #ok{} | #error{} | #resultset{}.
@@ -746,14 +753,18 @@ recv_packet(RecvFun, SeqNum) ->
                   Acc :: binary()) ->
     {ok, Data :: binary(), NextSeqNum :: integer()}.
 recv_packet(RecvFun, ExpectSeqNum, Acc) ->
-    {ok, Header} = RecvFun(4),
-    {Size, ExpectSeqNum, More} = parse_packet_header(Header),
-    {ok, Body} = RecvFun(Size),
-    Acc1 = <<Acc/binary, Body/binary>>,
-    NextSeqNum = (ExpectSeqNum + 1) band 16#ff,
-    case More of
-        false -> {ok, Acc1, NextSeqNum};
-        true  -> recv_packet(RecvFun, NextSeqNum, Acc1)
+    case RecvFun(4) of
+        {ok, Header} ->
+            {Size, ExpectSeqNum, More} = parse_packet_header(Header),
+            {ok, Body} = RecvFun(Size),
+            Acc1 = <<Acc/binary, Body/binary>>,
+            NextSeqNum = (ExpectSeqNum + 1) band 16#ff,
+            case More of
+                false -> {ok, Acc1, NextSeqNum};
+                true  -> recv_packet(RecvFun, NextSeqNum, Acc1)
+            end;
+        {error, closed} ->
+            {error, closed}
     end.
 
 %% @doc Parses a packet header (32 bits) and returns a tuple.

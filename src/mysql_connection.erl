@@ -64,6 +64,8 @@ init(Opts) ->
         #ok{} = OK ->
             State = #state{socket = Socket, timeout = Timeout},
             State1 = update_state(State, OK),
+            %% Trap exit so that we can properly disconnect when we die.
+            process_flag(trap_exit, true),
             {ok, State1};
         #error{} = E ->
             {stop, error_to_reason(E)}
@@ -163,18 +165,27 @@ handle_call(autocommit, _From, State) ->
     {reply, State#state.status band ?SERVER_STATUS_AUTOCOMMIT /= 0, State};
 handle_call(in_transaction, _From, State) ->
     {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};
-handle_call(get_state, _From, State) ->
-    %% *** FOR DEBUGGING ***
-    %% TODO: Delete this.
-    {reply, State, State}.
+%handle_call(get_state, _From, State) ->
+%    %% *** FOR DEBUGGING ***
+%    {reply, State, State}.
+handle_call(_Msg, _From, State) ->
+    {reply, {error, invalid_message}, State}.
 
-handle_cast(_, _) -> todo.
+handle_cast(_Msg, State) ->
+    {noreply, State}.
 
-handle_info(_, _) -> todo.
+handle_info(_Info, State) ->
+    {noreply, State}.
 
-terminate(_, _) -> todo.
+terminate(_Reason, State) ->
+    %% Send the goodbye message for politeness.
+    #state{socket = Socket, timeout = Timeout} = State,
+    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
+    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
+    mysql_protocol:quit(SendFun, RecvFun).
 
-code_change(_, _, _) -> todo.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
 %% --- Helpers ---
 
