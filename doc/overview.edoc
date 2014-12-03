@@ -20,21 +20,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 @title MySQL/OTP client library
 @doc
 MySQL/OTP is a client library for connecting to MySQL databases from Erlang/OTP
-applications. It is a native implementation of the MySQL protocol in Erlang.
+applications.
 
 This is the documentation generated from the Erlang source code using EDoc.
-The source code is available on the github page <a target="_top"
- href="https://github.com/mysql-otp/mysql-otp/">
-https://github.com/mysql-otp/mysql-otp/</a> along with a wiki and an issue
-tracker. Coverage reports from the EUnit tests are available <a target="_top"
- href="../.eunit/index.html">here</a>.
-
-This library is free software licensed under the GNU LGPL which allows you to
-use it in proprietary applications as well as free software applications with
-other licenses. This documentation is generated from the source code and thus
-goes under the same license as the library itself. The license files are
-available in the files <a href="../COPYING" target="_top">COPYING</a> and
-<a href="../COPYING.LESSER" target="_top">COPYING.LESSER</a>.
+The project page is here:
+<a href="https://github.com/mysql-otp/mysql-otp/"
+   target="_top">https://github.com/mysql-otp/mysql-otp/</a>.
 
 <h2>API functions</h2>
 
@@ -118,6 +109,13 @@ Notes:
     values.</li>
 </ol>
 
-<h2>Example with Poolboy</h2>
+<h2>Copying</h2>
 
-TODO
+Copyright 2014 The contributors of MySQL/OTP. See the project page at
+<a href="https://github.com/mysql-otp/mysql-otp"
+   target="_top">https://github.com/mysql-otp/mysql-otp</a>.
+
+This library is free software licensed under the GNU LGPL which allows you to
+use it in proprietary applications as well as free software applications with
+other licenses. This documentation is generated from the source code and thus
+goes under the same license as the library itself.
