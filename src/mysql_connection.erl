@@ -85,23 +85,25 @@ handle_call({query, Query}, _From, State) when is_binary(Query);
             Names = [Def#column_definition.name || Def <- ColDefs],
             {reply, {ok, Names, Rows}, State1}
     end;
-handle_call({execute, Stmt, Args}, _From, State) when is_integer(Stmt);
-                                                      is_atom(Stmt) ->
-    %% TODO: Return {error, not_prepared} instead of crashing if not found.
-    StmtRec = dict:fetch(Stmt, State#state.stmts),
-    #state{socket = Socket, timeout = Timeout} = State,
-    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
-    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
-    Rec = mysql_protocol:execute(StmtRec, Args, SendFun, RecvFun),
-    State1 = update_state(State, Rec),
-    case Rec of
-        #ok{} ->
-            {reply, ok, State1};
-        #error{} = E ->
-            {reply, {error, error_to_reason(E)}, State1};
-        #resultset{column_definitions = ColDefs, rows = Rows} ->
-            Names = [Def#column_definition.name || Def <- ColDefs],
-            {reply, {ok, Names, Rows}, State1}
+handle_call({execute, Stmt, Args}, _From, State) ->
+    case dict:find(Stmt, State#state.stmts) of
+        {ok, StmtRec} ->
+            #state{socket = Socket, timeout = Timeout} = State,
+            SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
+            RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
+            Rec = mysql_protocol:execute(StmtRec, Args, SendFun, RecvFun),
+            State1 = update_state(State, Rec),
+            case Rec of
+                #ok{} ->
+                    {reply, ok, State1};
+                #error{} = E ->
+                    {reply, {error, error_to_reason(E)}, State1};
+                #resultset{column_definitions = ColDefs, rows = Rows} ->
+                    Names = [Def#column_definition.name || Def <- ColDefs],
+                    {reply, {ok, Names, Rows}, State1}
+            end;
+        error ->
+            {reply, {error, not_prepared}, State}
     end;
 handle_call({prepare, Query}, _From, State) ->
     #state{socket = Socket, timeout = Timeout} = State,
@@ -116,6 +118,40 @@ handle_call({prepare, Query}, _From, State) ->
             Stmts1 = dict:store(Id, Stmt, State1#state.stmts),
             State2 = State#state{stmts = Stmts1},
             {reply, {ok, Id}, State2}
+    end;
+handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) ->
+    #state{socket = Socket, timeout = Timeout} = State,
+    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
+    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
+    %% First unprepare if there is an old statement with this name.
+    State1 = case dict:find(Name, State#state.stmts) of
+        {ok, OldStmt} ->
+            mysql_protocol:unprepare(OldStmt, SendFun, RecvFun),
+            State#state{stmts = dict:erase(Name, State#state.stmts)};
+        error ->
+            State
+    end,
+    Rec = mysql_protocol:prepare(Query, SendFun, RecvFun),
+    State2 = update_state(State1, Rec),
+    case Rec of
+        #error{} = E ->
+            {reply, {error, error_to_reason(E)}, State2};
+        #prepared{} = Stmt ->
+            Stmts1 = dict:store(Name, Stmt, State2#state.stmts),
+            State3 = State2#state{stmts = Stmts1},
+            {reply, {ok, Name}, State3}
+    end;
+handle_call({unprepare, Name}, _From, State) ->
+    case dict:find(Name, State#state.stmts) of
+        {ok, StmtRec} ->
+            #state{socket = Socket, timeout = Timeout} = State,
+            SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
+            RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
+            mysql_protocol:unprepare(StmtRec, SendFun, RecvFun),
+            Stmts1 = dict:erase(Name, State#state.stmts),
+            {reply, ok, State#state{stmts = Stmts1}};
+        error ->
+            {reply, {error, not_prepared}, State}
     end;
 handle_call(warning_count, _From, State) ->
     {reply, State#state.warning_count, State};

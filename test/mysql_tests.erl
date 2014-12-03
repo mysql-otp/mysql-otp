@@ -286,9 +286,9 @@ run_test_microseconds(Pid) ->
 
 %% --------------------------------------------------------------------------
 
-%% Transaction tests
+%% Prepared statements and transactions
 
-transaction_single_connection_test_() ->
+with_table_foo_test_() ->
     {setup,
      fun () ->
          {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password}]),
@@ -302,8 +302,35 @@ transaction_single_connection_test_() ->
          ok = mysql:query(Pid, <<"DROP DATABASE otptest">>),
          exit(Pid, normal)
      end,
-     {with, [fun transaction_simple_success/1,
+     {with, [fun prepared_statements/1,
+             fun transaction_simple_success/1,
              fun transaction_simple_aborted/1]}}.
+
+prepared_statements(Pid) ->
+    %% Unnamed
+    ?assertEqual({error,{1146, <<"42S02">>,
+                         <<"Table 'otptest.tab' doesn't exist">>}},
+                 mysql:prepare(Pid, "SELECT * FROM tab WHERE id = ?")),
+    {ok, StmtId} = mysql:prepare(Pid, "SELECT * FROM foo WHERE bar = ?"),
+    ?assert(is_integer(StmtId)),
+    ?assertEqual(ok, mysql:unprepare(Pid, StmtId)),
+    ?assertEqual({error, not_prepared}, mysql:unprepare(Pid, StmtId)),
+
+    %% Named
+    ?assertEqual({error,{1146, <<"42S02">>,
+                         <<"Table 'otptest.tab' doesn't exist">>}},
+                 mysql:prepare(Pid, tab, "SELECT * FROM tab WHERE id = ?")),
+    ?assertEqual({ok, foo},
+                 mysql:prepare(Pid, foo, "SELECT * FROM foo WHERE bar = ?")),
+    %% Prepare again unprepares the old stmt associated with this name.
+    ?assertEqual({ok, foo},
+                 mysql:prepare(Pid, foo, "SELECT bar FROM foo WHERE bar = ?")),
+    ?assertEqual(ok, mysql:unprepare(Pid, foo)),
+    ?assertEqual({error, not_prepared}, mysql:unprepare(Pid, foo)),
+
+    %% Execute when not prepared
+    ?assertEqual({error, not_prepared}, mysql:execute(Pid, not_a_stmt, [])),
+    ok.
 
 transaction_simple_success(Pid) ->
     ?assertNot(mysql:in_transaction(Pid)),

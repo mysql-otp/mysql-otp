@@ -27,7 +27,7 @@
 
 -export([handshake/5,
          query/3,
-         prepare/3, execute/4]).
+         prepare/3, unprepare/3, execute/4]).
 
 -export_type([sendfun/0, recvfun/0]).
 
@@ -123,6 +123,12 @@ prepare(Query, SendFun, RecvFun) ->
                       param_count = NumParams,
                       warning_count = WarningCount}
     end.
+
+%% @doc Deallocates a prepared statement.
+-spec unprepare(#prepared{}, sendfun(), recvfun()) -> ok.
+unprepare(#prepared{statement_id = Id}, SendFun, _RecvFun) ->
+    {ok, _SeqNum} = send_packet(SendFun, <<?COM_STMT_CLOSE, Id:32/little>>, 0),
+    ok.
 
 %% @doc Executes a prepared statement.
 -spec execute(#prepared{}, [term()], sendfun(), recvfun()) -> #resultset{}.
