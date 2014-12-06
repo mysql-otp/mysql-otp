@@ -99,11 +99,12 @@ handle_call({query, Query}, _From, State) when is_binary(Query);
             {reply, ok, State1};
         #error{} = E ->
             {reply, {error, error_to_reason(E)}, State1};
-        #resultset{column_definitions = ColDefs, rows = Rows} ->
-            Names = [Def#column_definition.name || Def <- ColDefs],
+        #resultset{cols = ColDefs, rows = Rows} ->
+            Names = [Def#col.name || Def <- ColDefs],
             {reply, {ok, Names, Rows}, State1}
     end;
-handle_call({execute, Stmt, Args}, _From, State) ->
+handle_call({execute, Stmt, Args}, _From, State) when is_atom(Stmt);
+                                                      is_integer(Stmt) ->
     case dict:find(Stmt, State#state.stmts) of
         {ok, StmtRec} ->
             #state{socket = Socket, timeout = Timeout} = State,
@@ -116,8 +117,8 @@ handle_call({execute, Stmt, Args}, _From, State) ->
                     {reply, ok, State1};
                 #error{} = E ->
                     {reply, {error, error_to_reason(E)}, State1};
-                #resultset{column_definitions = ColDefs, rows = Rows} ->
-                    Names = [Def#column_definition.name || Def <- ColDefs],
+                #resultset{cols = ColDefs, rows = Rows} ->
+                    Names = [Def#col.name || Def <- ColDefs],
                     {reply, {ok, Names, Rows}, State1}
             end;
         error ->
@@ -159,14 +160,15 @@ handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) ->
             State3 = State2#state{stmts = Stmts1},
             {reply, {ok, Name}, State3}
     end;
-handle_call({unprepare, Name}, _From, State) ->
-    case dict:find(Name, State#state.stmts) of
+handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);
+                                                  is_integer(Stmt) ->
+    case dict:find(Stmt, State#state.stmts) of
         {ok, StmtRec} ->
             #state{socket = Socket, timeout = Timeout} = State,
             SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
             RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
             mysql_protocol:unprepare(StmtRec, SendFun, RecvFun),
-            Stmts1 = dict:erase(Name, State#state.stmts),
+            Stmts1 = dict:erase(Stmt, State#state.stmts),
             {reply, ok, State#state{stmts = Stmts1}};
         error ->
             {reply, {error, not_prepared}, State}
@@ -193,12 +195,14 @@ handle_cast(_Msg, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
-terminate(_Reason, State) ->
+terminate(Reason, State) when Reason == normal; Reason == shutdown ->
     %% Send the goodbye message for politeness.
     #state{socket = Socket, timeout = Timeout} = State,
     SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
     RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
-    mysql_protocol:quit(SendFun, RecvFun).
+    mysql_protocol:quit(SendFun, RecvFun);
+terminate(_Reason, _State) ->
+    ok.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.

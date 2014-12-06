@@ -61,6 +61,8 @@ query_test_() ->
              fun text_protocol/1,
              fun binary_protocol/1,
              fun float_rounding/1,
+             fun int/1,
+             %fun bit/1,
              fun time/1,
              fun microseconds/1]}}.
 
@@ -107,10 +109,6 @@ text_protocol(Pid) ->
 
     %% TODO:
     %% * More types: BIT, SET, ENUM, GEOMETRY
-    %% * TIME with negative hours
-    %% * TIME with more than 2 digits in hour.
-    %% * TIME with microseconds
-    %% * Negative TIME
 
     ok = mysql:query(Pid, <<"DROP TABLE t">>).
 
@@ -141,9 +139,6 @@ binary_protocol(Pid) ->
     %% * Values for all types
     %% * Negative numbers for all integer types
     %% * Integer overflow
-    %% * TIME with more than 2 digits in hour.
-    %% * TIME with microseconds
-    %% * Negative TIME
 
     ok = mysql:query(Pid, <<"DROP TABLE t">>).
 
@@ -195,42 +190,39 @@ float_rounding(Pid) ->
                 TestData),
     ok = mysql:query(Pid, "DROP TABLE f").
 
+int(Pid) ->
+    ok = mysql:query(Pid, "CREATE TABLE ints (i INT)"),
+    write_read_text_binary(Pid, 42, <<"42">>, <<"ints">>, <<"i">>),
+    write_read_text_binary(Pid, -42, <<"-42">>, <<"ints">>, <<"i">>),
+    write_read_text_binary(Pid, 987654321, <<"987654321">>, <<"ints">>,
+                           <<"i">>),
+    write_read_text_binary(Pid, -987654321, <<"-987654321">>,
+                           <<"ints">>, <<"i">>),
+    ok = mysql:query(Pid, "DROP TABLE ints").
+
+%% The BIT(N) datatype in MySQL 5.0.3 and later: the equivallent to bitstring()
+bit(Pid) ->
+    ok = mysql:query(Pid, "CREATE TABLE bits (b BIT(11))"),
+    write_read_text_binary(Pid, <<16#ff, 0:3>>, <<"b'11111111000'">>,
+                           <<"bits">>, <<"b">>),
+    write_read_text_binary(Pid, <<16#7f, 2:3>>, <<"b'01111111110'">>,
+                           <<"bits">>, <<"b">>),
+    ok = mysql:query(Pid, "DROP TABLE bits").
+
 %% Test TIME value representation. There are a few things to check.
 time(Pid) ->
     ok = mysql:query(Pid, "CREATE TABLE tm (tm TIME)"),
-    {ok, Insert} = mysql:prepare(Pid, "INSERT INTO tm VALUES (?)"),
-    {ok, Select} = mysql:prepare(Pid, "SELECT tm FROM tm"),
     lists:foreach(
-        fun ({Value, Text}) ->
-            %% --- Insert using text query ---
-            ok = mysql:query(Pid, ["INSERT INTO tm VALUES ('", Text, "')"]),
-            %% Select using prepared statement
-            ?assertEqual({ok, [<<"tm">>], [[Value]]},
-                         mysql:execute(Pid, Select, [])),
-            %% Select using plain query
-            ?assertEqual({ok, [<<"tm">>], [[Value]]},
-                         mysql:query(Pid, "SELECT tm FROM tm")),
-            %% Empty table
-            ok = mysql:query(Pid, "DELETE FROM tm"),
-            %% --- Insert using prepared statement ---
-            ok = mysql:execute(Pid, Insert, [Value]),
-            %% Select using prepared statement
-            ?assertEqual({ok, [<<"tm">>], [[Value]]},
-                         mysql:execute(Pid, Select, [])),
-            %% Select using plain query
-            ?assertEqual({ok, [<<"tm">>], [[Value]]},
-                         mysql:query(Pid, "SELECT tm FROM tm")),
-            %% Empty table
-            ok = mysql:query(Pid, "DELETE FROM tm"),
-            ok
+        fun ({Value, SqlLiteral}) ->
+            write_read_text_binary(Pid, Value, SqlLiteral, <<"tm">>, <<"tm">>)
         end,
-        [{{0, {10, 11, 12}},   "10:11:12"},
-         {{5, {0, 0, 1}},     "120:00:01"},
-         {{-1, {23, 59, 59}}, "-00:00:01"},
-         {{-1, {23, 59, 0}},  "-00:01:00"},
-         {{-1, {23, 0, 0}},   "-01:00:00"},
-         {{-1, {0, 0, 0}},    "-24:00:00"},
-         {{-5, {10, 0, 0}},  "-110:00:00"}]
+        [{{0, {10, 11, 12}},   <<"'10:11:12'">>},
+         {{5, {0, 0, 1}},     <<"'120:00:01'">>},
+         {{-1, {23, 59, 59}}, <<"'-00:00:01'">>},
+         {{-1, {23, 59, 0}},  <<"'-00:01:00'">>},
+         {{-1, {23, 0, 0}},   <<"'-01:00:00'">>},
+         {{-1, {0, 0, 0}},    <<"'-24:00:00'">>},
+         {{-5, {10, 0, 0}},  <<"'-110:00:00'">>}]
     ),
     ok = mysql:query(Pid, "DROP TABLE tm").
 
@@ -244,47 +236,57 @@ microseconds(Pid) ->
                              binary:split(Version1, <<".">>, [global])),
         Version2 >= [5, 6, 4] orelse throw(nope)
     of _ ->
-        run_test_microseconds(Pid)
+        test_time_microseconds(Pid),
+        test_datetime_microseconds(Pid)
     catch _:_ ->
         error_logger:info_msg("Skipping microseconds test. Current MySQL"
                               " version is ~s. Required version is >= 5.6.4.~n",
                               [Version])
     end.
 
-run_test_microseconds(Pid) ->
+test_time_microseconds(Pid) ->
     ok = mysql:query(Pid, "CREATE TABLE m (t TIME(6))"),
-    SelectTime = "SELECT t FROM m",
-    {ok, SelectStmt} = mysql:prepare(Pid, SelectTime),
-    {ok, InsertStmt} = mysql:prepare(Pid, "INSERT INTO m VALUES (?)"),
-    %% Positive time, insert using plain query
-    E1 = {0, {23, 59, 57.654321}},
-    ok = mysql:query(Pid, <<"INSERT INTO m VALUES ('23:59:57.654321')">>),
-    ?assertEqual({ok, [<<"t">>], [[E1]]}, mysql:query(Pid, SelectTime)),
-    ?assertEqual({ok, [<<"t">>], [[E1]]}, mysql:execute(Pid, SelectStmt, [])),
-    ok = mysql:query(Pid, "DELETE FROM m"),
-    %% The same, but insert using prepared stmt
-    ok = mysql:execute(Pid, InsertStmt, [E1]),
-    ?assertEqual({ok, [<<"t">>], [[E1]]}, mysql:query(Pid, SelectTime)),
-    ?assertEqual({ok, [<<"t">>], [[E1]]}, mysql:execute(Pid, SelectStmt, [])),
-    ok = mysql:query(Pid, "DELETE FROM m"),
+    %% Positive time
+    write_read_text_binary(Pid, {0, {23, 59, 57.654321}},
+                           <<"'23:59:57.654321'">>, <<"m">>, <<"t">>),
     %% Negative time
-    E2 = {-1, {23, 59, 57.654321}},
-    ok = mysql:query(Pid, <<"INSERT INTO m VALUES ('-00:00:02.345679')">>),
-    ?assertEqual({ok, [<<"t">>], [[E2]]}, mysql:query(Pid, SelectTime)),
-    ?assertEqual({ok, [<<"t">>], [[E2]]}, mysql:execute(Pid, SelectStmt, [])),
-    ok = mysql:query(Pid, "DELETE FROM m"),
-    %% The same, but insert using prepared stmt
-    ok = mysql:execute(Pid, InsertStmt, [E2]),
-    ?assertEqual({ok, [<<"t">>], [[E2]]}, mysql:query(Pid, SelectTime)),
-    ?assertEqual({ok, [<<"t">>], [[E2]]}, mysql:execute(Pid, SelectStmt, [])),
-    ok = mysql:query(Pid, "DROP TABLE m"),
-    %% Datetime
-    Q3 = <<"SELECT TIMESTAMP '2014-11-23 23:59:57.654321' AS t">>,
-    E3 = [[{{2014, 11, 23}, {23, 59, 57.654321}}]],
-    ?assertEqual({ok, [<<"t">>], E3}, mysql:query(Pid, Q3)),
-    {ok, S3} = mysql:prepare(Pid, Q3),
-    ?assertEqual({ok, [<<"t">>], E3}, mysql:execute(Pid, S3, [])),
-    ok.
+    write_read_text_binary(Pid, {-1, {23, 59, 57.654321}},
+                           <<"'-00:00:02.345679'">>, <<"m">>, <<"t">>),
+    ok = mysql:query(Pid, "DROP TABLE m").
+
+test_datetime_microseconds(Pid) ->
+    ok = mysql:query(Pid, "CREATE TABLE dt (dt DATETIME(6))"),
+    write_read_text_binary(Pid, {{2014, 11, 23}, {23, 59, 57.654321}},
+                           <<"'2014-11-23 23:59:57.654321'">>, <<"dt">>,
+                           <<"dt">>),
+    ok = mysql:query(Pid, "DROP TABLE dt").
+
+%% @doc Tests write and read in text and the binary protocol, all combinations.
+%% This helper function assumes an empty table with a single column.
+write_read_text_binary(Conn, Term, SqlLiteral, Table, Column) ->
+    SelectQuery = <<"SELECT ", Column/binary, " FROM ", Table/binary>>,
+    {ok, SelectStmt} = mysql:prepare(Conn, SelectQuery),
+
+    %% Insert as text, read text and binary, delete
+    InsertQuery = <<"INSERT INTO ", Table/binary, " (", Column/binary, ")"
+                    " VALUES (", SqlLiteral/binary, ")">>,
+    ok = mysql:query(Conn, InsertQuery),
+    ?assertEqual({ok, [Column], [[Term]]}, mysql:query(Conn, SelectQuery)),
+    ?assertEqual({ok, [Column], [[Term]]}, mysql:execute(Conn, SelectStmt, [])),
+    mysql:query(Conn, <<"DELETE FROM ", Table/binary>>),
+
+    %% Insert as binary, read text and binary, delete
+    InsertQ = <<"INSERT INTO ", Table/binary, " (", Column/binary, ")",
+                " VALUES (?)">>,
+    {ok, InsertStmt} = mysql:prepare(Conn, InsertQ),
+    ok = mysql:execute(Conn, InsertStmt, [Term]),
+    ok = mysql:unprepare(Conn, InsertStmt),
+    ?assertEqual({ok, [Column], [[Term]]}, mysql:query(Conn, SelectQuery)),
+    ?assertEqual({ok, [Column], [[Term]]}, mysql:execute(Conn, SelectStmt, [])),
+    mysql:query(Conn, <<"DELETE FROM ", Table/binary>>),
+
+    %% Cleanup
+    ok = mysql:unprepare(Conn, SelectStmt).
 
 %% --------------------------------------------------------------------------
 

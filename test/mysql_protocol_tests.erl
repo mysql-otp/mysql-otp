@@ -43,9 +43,7 @@ resultset_test() ->
     RecvFun = fun (Size) -> fakesocket_recv(FakeSock, Size) end,
     ResultSet = mysql_protocol:query(Query, SendFun, RecvFun),
     fakesocket_close(FakeSock),
-    ?assertMatch(#resultset{column_definitions =
-                                [#column_definition{
-                                     name = <<"@@version_comment">>}],
+    ?assertMatch(#resultset{cols = [#col{name = <<"@@version_comment">>}],
                             rows = [[<<"MySQL Community Server (GPL)">>]]},
                  ResultSet),
     ok.

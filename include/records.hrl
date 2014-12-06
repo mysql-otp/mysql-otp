@@ -40,12 +40,12 @@
 -record(eof, {status, warning_count}).
 
 %% Column definition, used while parsing a result set.
--record(column_definition, {name, type, charset}).
+-record(col, {name, type, charset, length, decimals, flags}).
 
 %% A resultset. The rows can be either lists of terms or unparsed binaries as
 %% received from the server using either the text protocol or the binary
 %% protocol.
--record(resultset, {column_definitions :: [#column_definition{}],
+-record(resultset, {cols :: [#col{}],
                     rows :: [[term()] | binary()]}).
 
 %% Response of a successfull prepare call.
