@@ -198,7 +198,12 @@ int(Pid) ->
                            <<"i">>),
     write_read_text_binary(Pid, -987654321, <<"-987654321">>,
                            <<"ints">>, <<"i">>),
-    ok = mysql:query(Pid, "DROP TABLE ints").
+    ok = mysql:query(Pid, "DROP TABLE ints"),
+    %% Overflow with TINYINT
+    ok = mysql:query(Pid, "CREATE TABLE tint (i TINYINT)"),
+    write_read_text_binary(Pid, 127, <<"1000">>, <<"tint">>, <<"i">>),
+    write_read_text_binary(Pid, -128, <<"-1000">>, <<"tint">>, <<"i">>),
+    ok = mysql:query(Pid, "DROP TABLE tint").
 
 %% The BIT(N) datatype in MySQL 5.0.3 and later: the equivallent to bitstring()
 bit(Pid) ->

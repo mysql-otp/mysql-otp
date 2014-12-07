@@ -557,7 +557,7 @@ decode_binary(#col{type = T}, <<Value:32/signed-little, Rest/binary>>)
 decode_binary(#col{type = T}, <<Value:16/signed-little, Rest/binary>>)
   when T == ?TYPE_SHORT; T == ?TYPE_YEAR ->
     {Value, Rest};
-decode_binary(#col{type = ?TYPE_TINY}, <<Value:8, Rest/binary>>) ->
+decode_binary(#col{type = ?TYPE_TINY}, <<Value:8/signed, Rest/binary>>) ->
     {Value, Rest};
 decode_binary(#col{type = ?TYPE_DOUBLE},
               <<Value:64/float-little, Rest/binary>>) ->
