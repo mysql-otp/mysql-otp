@@ -62,7 +62,7 @@ query_test_() ->
              fun binary_protocol/1,
              fun float_rounding/1,
              fun int/1,
-             %fun bit/1,
+             fun bit/1,
              fun time/1,
              fun microseconds/1]}}.
 
@@ -210,7 +210,7 @@ bit(Pid) ->
     ok = mysql:query(Pid, "CREATE TABLE bits (b BIT(11))"),
     write_read_text_binary(Pid, <<16#ff, 0:3>>, <<"b'11111111000'">>,
                            <<"bits">>, <<"b">>),
-    write_read_text_binary(Pid, <<16#7f, 2:3>>, <<"b'01111111110'">>,
+    write_read_text_binary(Pid, <<16#7f, 6:3>>, <<"b'01111111110'">>,
                            <<"bits">>, <<"b">>),
     ok = mysql:query(Pid, "DROP TABLE bits").
 

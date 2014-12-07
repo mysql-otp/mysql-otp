@@ -405,9 +405,9 @@ decode_text(#col{type = T}, Text)
     %% As of MySQL 5.6.21 we receive SET and ENUM values as STRING, i.e. we
     %% cannot convert them to atom() or sets:set(), etc.
     Text;
-decode_text(#col{type = ?TYPE_BIT, length = _Length}, Text) ->
-    %% TODO: Convert to <<_:Length/bitstring>>
-    Text;
+decode_text(#col{type = ?TYPE_BIT, length = Length}, Text) ->
+    %% Convert to <<_:Length/bitstring>>
+    decode_bitstring(Text, Length);
 decode_text(#col{type = ?TYPE_DATE},
             <<Y:4/binary, "-", M:2/binary, "-", D:2/binary>>) ->
     {binary_to_integer(Y), binary_to_integer(M), binary_to_integer(D)};
@@ -543,8 +543,7 @@ decode_binary(#col{type = T}, Data)
   when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
        T == ?TYPE_ENUM; T == ?TYPE_SET; T == ?TYPE_LONG_BLOB;
        T == ?TYPE_MEDIUM_BLOB; T == ?TYPE_BLOB; T == ?TYPE_TINY_BLOB;
-       T == ?TYPE_GEOMETRY; T == ?TYPE_BIT; T == ?TYPE_DECIMAL;
-       T == ?TYPE_NEWDECIMAL ->
+       T == ?TYPE_GEOMETRY; T == ?TYPE_DECIMAL; T == ?TYPE_NEWDECIMAL ->
     %% As of MySQL 5.6.21 we receive SET and ENUM values as STRING, i.e. we
     %% cannot convert them to atom() or sets:set(), etc.
     lenenc_str(Data);
@@ -598,6 +597,10 @@ decode_binary(#col{type = ?TYPE_FLOAT},
     Factor = math:pow(10, floor(6 - math:log10(abs(Value)))),
     RoundedValue = round(Value * Factor) / Factor,
     {RoundedValue, Rest};
+decode_binary(#col{type = ?TYPE_BIT, length = Length}, Data) ->
+    {Binary, Rest} = lenenc_str(Data),
+    %% Convert to <<_:Length/bitstring>>
+    {decode_bitstring(Binary, Length), Rest};
 decode_binary(#col{type = ?TYPE_DATE}, <<Length, Data/binary>>) ->
     %% Coded in the same way as DATETIME and TIMESTAMP below, but returned in
     %% a simple triple.
@@ -701,6 +704,10 @@ encode_param(Value) when is_integer(Value), Value < 0 ->
     end;
 encode_param(Value) when is_float(Value) ->
     {<<?TYPE_DOUBLE, 0>>, <<Value:64/float-little>>};
+encode_param(Value) when is_bitstring(Value) ->
+    Binary = encode_bitstring(Value),
+    EncLength = lenenc_int_encode(byte_size(Binary)),
+    {<<?TYPE_VAR_STRING, 0>>, <<EncLength/binary, Binary/binary>>};
 encode_param(Set) when is_tuple(Set), element(1, Set) == set ->
     %% For convenience; encode only. When decoding, a set is returned as binary.
     Binary = set_to_binary(Set),
@@ -746,6 +753,17 @@ encode_param({D, {H, M, 0.0}}) ->
     encode_param({D, {H, M, 0}}).
 
 %% -- Value representation in both the text and binary protocols --
+
+%% @doc Convert to `<<_:Length/bitstring>>'
+decode_bitstring(Binary, Length) ->
+    PaddingLength = bit_size(Binary) - Length,
+    <<_:PaddingLength/bitstring, Bitstring:Length/bitstring>> = Binary,
+    Bitstring.
+
+encode_bitstring(Bitstring) ->
+    Size = bit_size(Bitstring),
+    PaddingSize = byte_size(Bitstring) * 8 - Size,
+    <<0:PaddingSize, Bitstring:Size/bitstring>>.
 
 %% @doc Converts a set of atoms (or binaries) to a comma-separated binary.
 set_to_binary(Set) ->
@@ -940,7 +958,7 @@ decode_text_test() ->
                    ?TYPE_INT24, ?TYPE_YEAR]),
 
     %% BIT
-    <<217>> = decode_text(#col{type = ?TYPE_BIT}, <<217>>),
+    <<217>> = decode_text(#col{type = ?TYPE_BIT, length = 8}, <<217>>),
 
     %% Floating point and decimal numbers
     lists:foreach(fun (T) ->

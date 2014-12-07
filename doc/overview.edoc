@@ -54,6 +54,11 @@ connecting to and interacting with a MySQL server.
       <td>`<<"foo">>, "bar"'</td>
     </tr>
     <tr>
+      <td>BIT(N)</td>
+      <td>`bitstring()'</td>
+      <td>`<<255, 6:3>>'</td>
+    </tr>
+    <tr>
       <td>FLOAT, DOUBLE</td>
       <td>`float()'</td>
       <td>`3.14'</td>
@@ -105,7 +110,7 @@ Notes:
     seconds, we use a float for the seconds part. (These are unusual and were
     added to MySQL in version 5.6.4.)</li>
   <li id="vn4">Since `TIME' can be outside the `calendar:time()' interval, we use
-    the format as returned by calendar:seconds_to_daystime/1 for `TIME'
+    the format as returned by `calendar:seconds_to_daystime/1' for `TIME'
     values.</li>
 </ol>
 
