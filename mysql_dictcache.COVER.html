@@ -1,0 +1,40 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<title>.eunit/mysql_dictcache.COVER.html</title>
+</head><body style='background-color: white; color: black'>
+<pre>
+File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_dictcache.erl by COVER 2014-12-08 at 01:45:30
+
+****************************************************************************
+
+        |  %% @doc A simple cache using a dict.
+        |  %% @private
+        |  -module(mysql_dictcache).
+        |  
+        |  %% @doc Picks K random keys in a dict in O(N) time.
+        |  fetch_random_keys(K, Dict) -&gt;
+<font color=red>     0..|      N = dict:size(Dict),</font>
+<font color=red>     0..|      Threshold = trunc(256 * K / N),</font>
+<font color=red>     0..|      Pattern = [Byte =&lt; Threshold || &lt;&lt;Byte&gt;&gt; &lt;= crypto:rand_bytes(N)],</font>
+<font color=red>     0..|      {[], 0, 0, Keys} = dict:fold(</font>
+        |          fun (Key, Value, {[PickMe | Ds], KLeft, NLeft, Acc}) -&gt;
+<font color=red>     0..|              Pick = if</font>
+<font color=red>     0..|                  KLeft &gt;= NLeft -&gt; true;  %% Pick the rest</font>
+<font color=red>     0..|                  KLeft =&lt; 0     -&gt; false; %% Don't pick any more</font>
+<font color=red>     0..|                  PickMe         -&gt; true;  %% Simon says pick this one</font>
+<font color=red>     0..|                  true           -&gt; false  %% Simon says don't pick</font>
+        |              end,
+<font color=red>     0..|              case Pick of</font>
+<font color=red>     0..|                  true -&gt; {Ds, KLeft - 1, NLeft - 1, [Key | Acc]};</font>
+<font color=red>     0..|                  false -&gt; {Ds, KLeft, NLeft - 1, Acc}</font>
+        |              end
+        |          end,
+        |          {Pattern, K, N, []},
+        |          Dict
+        |      ),
+<font color=red>     0..|      Keys.</font>
+</pre>
+</body>
+</html>
