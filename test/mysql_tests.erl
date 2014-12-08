@@ -61,6 +61,7 @@ query_test_() ->
              fun text_protocol/1,
              fun binary_protocol/1,
              fun float_rounding/1,
+             fun decimal/1,
              fun int/1,
              fun bit/1,
              fun time/1,
@@ -103,7 +104,7 @@ text_protocol(Pid) ->
     {ok, Columns, Rows} = mysql:query(Pid, <<"SELECT * FROM t">>),
     ?assertEqual([<<"id">>, <<"bl">>, <<"tx">>, <<"f">>, <<"dc">>, <<"ti">>,
                   <<"ts">>, <<"da">>, <<"c">>], Columns),
-    ?assertEqual([[1, <<"blob">>, <<>>, 3.14, <<"3.140">>, {0, {0, 22, 11}},
+    ?assertEqual([[1, <<"blob">>, <<>>, 3.14, 3.14, {0, {0, 22, 11}},
                    {{2014, 11, 03}, {00, 22, 24}}, {2014, 11, 03}, null]],
                  Rows),
 
@@ -118,7 +119,7 @@ binary_protocol(Pid) ->
     {ok, Ins} = mysql:prepare(Pid, <<"INSERT INTO t (bl, f, dc, ti, ts, da, c)"
                                      " VALUES (?, ?, ?, ?, ?, ?, ?)">>),
 
-    ok = mysql:execute(Pid, Ins, [<<"blob">>, 3.14, <<"3.14">>,
+    ok = mysql:execute(Pid, Ins, [<<"blob">>, 3.14, 3.14,
                                   {0, {0, 22, 11}}, 
                                   {{2014, 11, 03}, {0, 22, 24}},
                                   {2014, 11, 03}, null]),
@@ -130,7 +131,7 @@ binary_protocol(Pid) ->
     {ok, Columns, Rows} = mysql:execute(Pid, Stmt, [1]),
     ?assertEqual([<<"id">>, <<"bl">>, <<"tx">>, <<"f">>, <<"dc">>, <<"ti">>,
                   <<"ts">>, <<"da">>, <<"c">>], Columns),
-    ?assertEqual([[1, <<"blob">>, <<>>, 3.14, <<"3.140">>,
+    ?assertEqual([[1, <<"blob">>, <<>>, 3.14, 3.14,
                    {0, {0, 22, 11}},
                    {{2014, 11, 03}, {00, 22, 24}}, {2014, 11, 03}, null]],
                  Rows),
@@ -189,6 +190,38 @@ float_rounding(Pid) ->
                 end,
                 TestData),
     ok = mysql:query(Pid, "DROP TABLE f").
+
+decimal(Pid) ->
+    %% As integer when S == 0
+    ok = mysql:query(Pid, "CREATE TABLE dec0 (d DECIMAL(50, 0))"),
+    write_read_text_binary(
+        Pid, 14159265358979323846264338327950288419716939937510,
+        <<"14159265358979323846264338327950288419716939937510">>,
+        <<"dec0">>, <<"d">>
+    ),
+    write_read_text_binary(
+        Pid, -14159265358979323846264338327950288419716939937510,
+        <<"-14159265358979323846264338327950288419716939937510">>,
+        <<"dec0">>, <<"d">>
+    ),
+    ok = mysql:query(Pid, "DROP TABLE dec0"),
+    %% As float when P =< 15, S > 0
+    ok = mysql:query(Pid, "CREATE TABLE dec15 (d DECIMAL(15, 14))"),
+    write_read_text_binary(Pid, 3.14159265358979, <<"3.14159265358979">>,
+                           <<"dec15">>, <<"d">>),
+    write_read_text_binary(Pid, -3.14159265358979, <<"-3.14159265358979">>,
+                           <<"dec15">>, <<"d">>),
+    write_read_text_binary(Pid, 3.0, <<"3">>, <<"dec15">>, <<"d">>),
+    ok = mysql:query(Pid, "DROP TABLE dec15"),
+    %% As binary when P >= 16, S > 0
+    ok = mysql:query(Pid, "CREATE TABLE dec16 (d DECIMAL(16, 15))"),
+    write_read_text_binary(Pid, <<"3.141592653589793">>,
+                           <<"3.141592653589793">>, <<"dec16">>, <<"d">>),
+    write_read_text_binary(Pid, <<"-3.141592653589793">>,
+                           <<"-3.141592653589793">>, <<"dec16">>, <<"d">>),
+    write_read_text_binary(Pid, <<"3.000000000000000">>, <<"3">>,
+                           <<"dec16">>, <<"d">>),
+    ok = mysql:query(Pid, "DROP TABLE dec16").
 
 int(Pid) ->
     ok = mysql:query(Pid, "CREATE TABLE ints (i INT)"),

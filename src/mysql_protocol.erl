@@ -401,13 +401,18 @@ decode_text(#col{type = T}, Text)
   when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
        T == ?TYPE_ENUM; T == ?TYPE_SET; T == ?TYPE_LONG_BLOB;
        T == ?TYPE_MEDIUM_BLOB; T == ?TYPE_BLOB; T == ?TYPE_TINY_BLOB;
-       T == ?TYPE_GEOMETRY; T == ?TYPE_DECIMAL; T == ?TYPE_NEWDECIMAL ->
+       T == ?TYPE_GEOMETRY ->
     %% As of MySQL 5.6.21 we receive SET and ENUM values as STRING, i.e. we
     %% cannot convert them to atom() or sets:set(), etc.
     Text;
 decode_text(#col{type = ?TYPE_BIT, length = Length}, Text) ->
     %% Convert to <<_:Length/bitstring>>
     decode_bitstring(Text, Length);
+decode_text(#col{type = T, decimals = S, length = L}, Text)
+  when T == ?TYPE_DECIMAL; T == ?TYPE_NEWDECIMAL ->
+    %% Length is the max number of symbols incl. dot and minus sign, e.g. the
+    %% number of digits plus 2.
+    decode_decimal(Text, L - 2, S);
 decode_text(#col{type = ?TYPE_DATE},
             <<Y:4/binary, "-", M:2/binary, "-", D:2/binary>>) ->
     {binary_to_integer(Y), binary_to_integer(M), binary_to_integer(D)};
@@ -543,7 +548,7 @@ decode_binary(#col{type = T}, Data)
   when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
        T == ?TYPE_ENUM; T == ?TYPE_SET; T == ?TYPE_LONG_BLOB;
        T == ?TYPE_MEDIUM_BLOB; T == ?TYPE_BLOB; T == ?TYPE_TINY_BLOB;
-       T == ?TYPE_GEOMETRY; T == ?TYPE_DECIMAL; T == ?TYPE_NEWDECIMAL ->
+       T == ?TYPE_GEOMETRY ->
     %% As of MySQL 5.6.21 we receive SET and ENUM values as STRING, i.e. we
     %% cannot convert them to atom() or sets:set(), etc.
     lenenc_str(Data);
@@ -558,6 +563,12 @@ decode_binary(#col{type = T}, <<Value:16/signed-little, Rest/binary>>)
     {Value, Rest};
 decode_binary(#col{type = ?TYPE_TINY}, <<Value:8/signed, Rest/binary>>) ->
     {Value, Rest};
+decode_binary(#col{type = T, decimals = S, length = L}, Data)
+  when T == ?TYPE_DECIMAL; T == ?TYPE_NEWDECIMAL ->
+    %% Length is the max number of symbols incl. dot and minus sign, e.g. the
+    %% number of digits plus 2.
+    {Binary, Rest} = lenenc_str(Data),
+    {decode_decimal(Binary, L - 2, S), Rest};
 decode_binary(#col{type = ?TYPE_DOUBLE},
               <<Value:64/float-little, Rest/binary>>) ->
     {Value, Rest};
@@ -765,6 +776,13 @@ encode_bitstring(Bitstring) ->
     PaddingSize = byte_size(Bitstring) * 8 - Size,
     <<0:PaddingSize, Bitstring:Size/bitstring>>.
 
+decode_decimal(Bin, _P, 0) ->
+    binary_to_integer(Bin);
+decode_decimal(Bin, P, S) when P =< 15, S > 0 ->
+    binary_to_float(Bin);
+decode_decimal(Bin, P, S) when P >= 16, S > 0 ->
+    Bin.
+
 %% @doc Converts a set of atoms (or binaries) to a comma-separated binary.
 set_to_binary(Set) ->
     List = [if is_atom(X) -> atom_to_binary(X, utf8); is_binary(X) -> X end
@@ -967,8 +985,8 @@ decode_text_test() ->
                   [?TYPE_FLOAT, ?TYPE_DOUBLE]),
     %% Decimal types
     lists:foreach(fun (T) ->
-                      ColDef = #col{type = T},
-                      ?assertEqual(<<"3.0">>, decode_text(ColDef, <<"3.0">>))
+                      ColDef = #col{type = T, decimals = 1, length = 4},
+                      ?assertMatch(3.0, decode_text(ColDef, <<"3.0">>))
                   end,
                   [?TYPE_DECIMAL, ?TYPE_NEWDECIMAL]),
     ?assertEqual(3.0,  decode_text(#col{type = ?TYPE_FLOAT}, <<"3">>)),

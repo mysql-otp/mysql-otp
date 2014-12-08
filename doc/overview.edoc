@@ -51,11 +51,11 @@ connecting to and interacting with a MySQL server.
     <tr>
       <td>VARCHAR, TEXT, etc.</td>
       <td>`iodata()' [<a href="#vn1">1</a>]</td>
-      <td>`<<"foo">>, "bar"'</td>
+      <td>`<<"foo">>', `"bar"'</td>
     </tr>
     <tr>
       <td>BIT(N)</td>
-      <td>`bitstring()'</td>
+      <td>`<<_:N/bitstring>>'</td>
       <td>`<<255, 6:3>>'</td>
     </tr>
     <tr>
@@ -64,9 +64,11 @@ connecting to and interacting with a MySQL server.
       <td>`3.14'</td>
     </tr>
     <tr>
-      <td>DECIMAL</td>
-      <td>`binary()' [<a href="#vn2">2</a>]</td>
-      <td>`<<"3.140">>'</td>
+      <td>DECIMAL(P, S)</td>
+      <td>`integer()' when S == 0<br />
+          `float()' when P =&lt; 15 and S &gt; 0<br />
+          `binary()' when P &gt;= 16 and S &gt; 0 [<a href="#vn2">2</a>]</td>
+      <td>`42'<br />`3.14'<br />`<<"3.14159265358979323846">>'</td>
     </tr>
     <tr>
       <td>DATETIME, TIMESTAMP</td>
@@ -97,15 +99,10 @@ Notes:
 <ol>
   <li id="vn1">When fetching VARCHAR, TEXT etc. they are returned as `binary()'.
     When sending (insert or update) any `iodata()' is accepted.</li>
-  <li id="vn2">DECIMAL are currently always returned as `binary()'. This will
-    probably be changed to something similar to how the `odbc' OTP application
-    handles them, namely
-    <ul>
-      <li>`integer()' when there are no fractions;</li>
-      <li>`float()' when the precision of a float is exact enough;</li>
-      <li>`binary()' when the precision of a float is not enough.</li>
-    </ul>
-  </li>
+  <li id="vn2">DECIMALs are returned as `integer()' or `float()' when the value
+    can be represented without precision loss and as `binary()' for high
+    precision DECIMAL values. This is similar to how the `odbc' OTP application
+    treats DECIMALs.</li>
   <li id="vn3">For `DATETIME', `TIMESTAMP' and `TIME' values with franctions of
     seconds, we use a float for the seconds part. (These are unusual and were
     added to MySQL in version 5.6.4.)</li>
@@ -116,7 +113,7 @@ Notes:
 
 <h2>Copying</h2>
 
-Copyright 2014 The contributors of MySQL/OTP. See the project page at
+Copyright 2014 The authors of MySQL/OTP. See the project page at
 <a href="https://github.com/mysql-otp/mysql-otp"
    target="_top">https://github.com/mysql-otp/mysql-otp</a>.
 
