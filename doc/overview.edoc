@@ -17,7 +17,7 @@ You should have received a copy of the GNU Lesser General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 ------------------------------------------------------------------------
 
-@title MySQL/OTP client library
+@title MySQL/OTP User's Guide
 @doc
 MySQL/OTP is a client library for connecting to MySQL databases from Erlang/OTP
 applications.
@@ -27,10 +27,7 @@ The project page is here:
 <a href="https://github.com/mysql-otp/mysql-otp/"
    target="_top">https://github.com/mysql-otp/mysql-otp/</a>.
 
-<h2>API functions</h2>
-
-The <a href="mysql.html">mysql</a> module contains all the API functions for
-connecting to and interacting with a MySQL server.
+For the reference manual see the <a href="mysql.html">mysql</a> module.
 
 <h2 id="value-representation">Value representation</h2>
 
