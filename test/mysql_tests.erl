@@ -41,10 +41,15 @@ connect_test() ->
     Options = [{name, {local, tardis}}, {user, ?user}, {password, ?password}],
     {ok, Pid} = mysql:start_link(Options),
     %% Test some gen_server callbacks not tested elsewhere
-    State = sys:get_state(Pid),
+    State = get_state(Pid),
     ?assertMatch({ok, State}, mysql:code_change("0.1.0", State, [])),
     ?assertMatch({error, _}, mysql:code_change("2.0.0", unknown_state, [])),
     exit(whereis(tardis), normal).
+
+%% For R16B where sys:get_state/1 is not available.
+get_state(Process) ->
+    {status,_,_,[_,_,_,_,Misc]} = sys:get_status(Process),
+    hd([State || {data,[{"State", State}]} <- Misc]).
 
 query_test_() ->
     {setup,
