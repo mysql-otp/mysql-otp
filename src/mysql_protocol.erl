@@ -49,17 +49,14 @@
 %% @doc Performs a handshake using the supplied functions for communication.
 %% Returns an ok or an error record. Raises errors when various unimplemented
 %% features are requested.
-%%
-%% TODO: Implement setting the database in the handshake. Currently an error
-%% occurs if Database is anything other than undefined.
 -spec handshake(iodata(), iodata(), iodata() | undefined, sendfun(),
                 recvfun()) -> #ok{} | #error{}.
 handshake(Username, Password, Database, SendFun, RecvFun) ->
     SeqNum0 = 0,
-    Database == undefined orelse error(database_in_handshake),
     {ok, HandshakePacket, SeqNum1} = recv_packet(RecvFun, SeqNum0),
     Handshake = parse_handshake(HandshakePacket),
-    Response = build_handshake_response(Handshake, Username, Password),
+    Response = build_handshake_response(Handshake, Username, Password,
+                                        Database),
     {ok, SeqNum2} = send_packet(SendFun, Response, SeqNum1),
     {ok, ConfirmPacket, _SeqNum3} = recv_packet(RecvFun, SeqNum2),
     parse_handshake_confirm(ConfirmPacket).
@@ -236,12 +233,17 @@ parse_handshake(<<Protocol:8, _/binary>>) when Protocol /= 10 ->
 
 %% @doc The response sent by the client to the server after receiving the
 %% initial handshake from the server
--spec build_handshake_response(#handshake{}, iodata(), iodata()) -> binary().
-build_handshake_response(Handshake, Username, Password) ->
+-spec build_handshake_response(#handshake{}, iodata(), iodata(),
+                               iodata() | undefined) -> binary().
+build_handshake_response(Handshake, Username, Password, Database) ->
     %% We require these capabilities. Make sure the server handles them.
-    CapabilityFlags = ?CLIENT_PROTOCOL_41 bor
-                      ?CLIENT_TRANSACTIONS bor
-                      ?CLIENT_SECURE_CONNECTION,
+    CapabilityFlags0 = ?CLIENT_PROTOCOL_41 bor
+                       ?CLIENT_TRANSACTIONS bor
+                       ?CLIENT_SECURE_CONNECTION,
+    CapabilityFlags = case Database of
+        undefined -> CapabilityFlags0;
+        _         -> CapabilityFlags0 bor ?CLIENT_CONNECT_WITH_DB
+    end,
     Handshake#handshake.capabilities band CapabilityFlags == CapabilityFlags
         orelse error(old_server_version),
     Hash = case Handshake#handshake.auth_plugin_name of
@@ -256,6 +258,10 @@ build_handshake_response(Handshake, Username, Password) ->
     HashLength = size(Hash),
     CharacterSet = ?UTF8,
     UsernameUtf8 = unicode:characters_to_binary(Username),
+    DbBin = case Database of
+        undefined -> <<>>;
+        _         -> <<(iolist_to_binary(Database))/binary, 0>>
+    end,
     <<CapabilityFlags:32/little,
       ?MAX_BYTES_PER_PACKET:32/little,
       CharacterSet:8,
@@ -263,7 +269,8 @@ build_handshake_response(Handshake, Username, Password) ->
       UsernameUtf8/binary,
       0, %% NUL-terminator for the username
       HashLength,
-      Hash/binary>>.
+      Hash/binary,
+      DbBin/binary>>.
 
 %% @doc Handles the second packet from the server, when we have replied to the
 %% initial handshake. Returns an error if the server returns an error. Raises
@@ -675,8 +682,6 @@ floor(Value) ->
 %% @doc Encodes a term reprenting av value as a binary for use in the binary
 %% protocol. As this is used to encode parameters for prepared statements, the
 %% encoding is in its required form, namely `<<Type:8, Sign:8, Value/binary>>'.
-%%
-%% TODO: Maybe change Erlang representation of BIT to `<<_:1>>'.
 -spec encode_param(term()) -> {TypeAndSign :: binary(), Data :: binary()}.
 encode_param(null) ->
     {<<?TYPE_NULL, 0>>, <<>>};

@@ -73,9 +73,6 @@
 %%   <dd>The name of the database AKA schema to use. This can be changed later
 %%       using the query `USE <database>'.</dd>
 %% </dl>
-%%
-%% TODO: Implement {database, Database}. Currently the database has to be
-%% selected using a `USE <database>' query after connecting.
 -spec start_link(Options) -> {ok, pid()} | ignore | {error, term()}
     when Options :: [Option],
          Option :: {name, ServerName} | {host, iodata()} | {port, integer()} | 
@@ -365,9 +362,6 @@ handle_call(autocommit, _From, State) ->
     {reply, State#state.status band ?SERVER_STATUS_AUTOCOMMIT /= 0, State};
 handle_call(in_transaction, _From, State) ->
     {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State}.
-%handle_call(get_state, _From, State) ->
-%    %% *** FOR DEBUGGING ***
-%    {reply, State, State}.
 
 %% @private
 handle_cast(_Msg, State) ->
@@ -387,9 +381,10 @@ terminate(Reason, State) when Reason == normal; Reason == shutdown ->
 terminate(_Reason, _State) ->
     ok.
 
-%% @private
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(_OldVsn, State = #state{}, _Extra) ->
+    {ok, State};
+code_change(_OldVsn, _State, _Extra) ->
+    {error, incompatible_state}.
 
 %% --- Helpers ---
 

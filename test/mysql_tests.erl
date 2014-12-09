@@ -39,7 +39,11 @@
 connect_test() ->
     %% A connection with a registered name
     Options = [{name, {local, tardis}}, {user, ?user}, {password, ?password}],
-    ?assertMatch({ok, Pid} when is_pid(Pid), mysql:start_link(Options)),
+    {ok, Pid} = mysql:start_link(Options),
+    %% Test some gen_server callbacks not tested elsewhere
+    State = sys:get_state(Pid),
+    ?assertMatch({ok, State}, mysql:code_change("0.1.0", State, [])),
+    ?assertMatch({error, _}, mysql:code_change("2.0.0", unknown_state, [])),
     exit(whereis(tardis), normal).
 
 query_test_() ->
@@ -56,7 +60,8 @@ query_test_() ->
          ok = mysql:query(Pid, <<"DROP DATABASE otptest">>),
          exit(Pid, normal)
      end,
-     {with, [fun autocommit/1,
+     {with, [fun connect_with_db/1,
+             fun autocommit/1,
              fun basic_queries/1,
              fun text_protocol/1,
              fun binary_protocol/1,
@@ -66,6 +71,14 @@ query_test_() ->
              fun bit/1,
              fun time/1,
              fun microseconds/1]}}.
+
+connect_with_db(_Pid) ->
+    %% Make another connection and set the db in the handshake phase
+    {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
+                                  {database, "otptest"}]),
+    ?assertMatch({ok, _, [[<<"otptest">>]]},
+                 mysql:query(Pid, "SELECT DATABASE()")),
+    exit(Pid, normal).
 
 autocommit(Pid) ->
     ?assert(mysql:autocommit(Pid)),
@@ -405,3 +418,10 @@ transaction_simple_aborted(Pid) ->
                  mysql:transaction(Pid, fun () -> throw(foo) end)),
     ?assertEqual({aborted, foo},
                  mysql:transaction(Pid, fun () -> exit(foo) end)).
+
+%% --- simple gen_server callbacks ---
+
+gen_server_coverage_test() ->
+    {noreply, state} = mysql:handle_cast(foo, state),
+    {noreply, state} = mysql:handle_info(foo, state),
+    ok = mysql:terminate(kill, state).

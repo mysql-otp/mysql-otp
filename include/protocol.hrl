@@ -26,6 +26,10 @@
 
 %% --- Capability flags ---
 
+%% Server: supports schema-name in Handshake Response Packet
+%% Client: Handshake Response Packet contains a schema-name
+-define(CLIENT_CONNECT_WITH_DB, 16#00000008).
+
 %% Server: supports the 4.1 protocol 
 %% Client: uses the 4.1 protocol 
 -define(CLIENT_PROTOCOL_41, 16#00000200).
