@@ -10,27 +10,30 @@
 <hr>
 
 <h1>Module mysql</h1>
-<ul class="index"><li><a href="#description">Description</a></li><li><a href="#types">Data Types</a></li><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>API for communicating with MySQL databases.
+<ul class="index"><li><a href="#description">Description</a></li><li><a href="#types">Data Types</a></li><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>MySQL client.
 
+<p><b>Behaviours:</b> <a href="gen_server.html"><tt>gen_server</tt></a>.</p>
 
-<h2><a name="description">Description</a></h2><p>API for communicating with MySQL databases.</p>
+<h2><a name="description">Description</a></h2><p>MySQL client.</p>
  
-  Most of the functions are wrappers for <code>gen_server</code> calls. The
-  <code>connection()</code> type is the same as returned by <code>gen_server:start_link/2,3</code>.
+  The <code>connection()</code> type is a gen_server reference as described in the
+  documentation for <code>gen_server:call/2,3</code>, e.g. the pid or the name if the
+  gen_server is locally registered.
 <h2><a name="types">Data Types</a></h2>
 
 <h3 class="typedecl"><a name="type-connection">connection()</a></h3>
 <p><tt>connection() = atom() | {Name::atom(), Node::atom()} | {global, GlobalName::term()} | {via, Module::atom(), ViaName::term()} | pid()</tt></p>
 
 
-<h3 class="typedecl"><a name="type-reason">reason()</a></h3>
-<p><tt>reason() = {Code::integer(), SQLState::binary(), Message::binary()}</tt></p>
+<h3 class="typedecl"><a name="type-server_reason">server_reason()</a></h3>
+<p><tt>server_reason() = {Code::integer(), SQLState::binary(), Message::binary()}</tt></p>
 
 
 <h2><a name="index">Function Index</a></h2>
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#affected_rows-1">affected_rows/1</a></td><td>Returns the number of inserted, updated and deleted rows of the last
   executed query or prepared statement.</td></tr>
 <tr><td valign="top"><a href="#autocommit-1">autocommit/1</a></td><td>Returns true if auto-commit is enabled and false otherwise.</td></tr>
+<tr><td valign="top"><a href="#code_change-3">code_change/3</a></td><td></td></tr>
 <tr><td valign="top"><a href="#execute-3">execute/3</a></td><td>Executes a prepared statement.</td></tr>
 <tr><td valign="top"><a href="#in_transaction-1">in_transaction/1</a></td><td>Returns true if the connection is in a transaction and false otherwise.</td></tr>
 <tr><td valign="top"><a href="#insert_id-1">insert_id/1</a></td><td>Returns the last insert-id.</td></tr>
@@ -60,6 +63,11 @@ a transaction.</td></tr>
 <p><tt>autocommit(Conn::<a href="#type-connection">connection()</a>) -&gt; boolean()</tt><br></p>
 </div><p>Returns true if auto-commit is enabled and false otherwise.</p>
 
+<h3 class="function"><a name="code_change-3">code_change/3</a></h3>
+<div class="spec">
+<p><tt>code_change(OldVsn, State, Extra) -&gt; any()</tt></p>
+</div>
+
 <h3 class="function"><a name="execute-3">execute/3</a></h3>
 <div class="spec">
 <p><tt>execute(Conn, StatementId, Args) -&gt; any()</tt></p>
@@ -82,13 +90,13 @@ a transaction.</td></tr>
 
 <h3 class="function"><a name="prepare-2">prepare/2</a></h3>
 <div class="spec">
-<p><tt>prepare(Conn::<a href="#type-connection">connection()</a>, Query::iodata()) -&gt; {ok, StatementId::integer()} | {error, Reason::<a href="#type-reason">reason()</a>}</tt><br></p>
+<p><tt>prepare(Conn::<a href="#type-connection">connection()</a>, Query::iodata()) -&gt; {ok, StatementId::integer()} | {error, Reason::<a href="#type-server_reason">server_reason()</a>}</tt><br></p>
 </div><p>Creates a prepared statement from the passed query.</p>
 <p><b>See also:</b> <a href="#execute-3">execute/3</a>.</p>
 
 <h3 class="function"><a name="prepare-3">prepare/3</a></h3>
 <div class="spec">
-<p><tt>prepare(Conn::<a href="#type-connection">connection()</a>, Name::term(), Query::iodata()) -&gt; {ok, Name::term()} | {error, Reason::<a href="#type-reason">reason()</a>}</tt><br></p>
+<p><tt>prepare(Conn::<a href="#type-connection">connection()</a>, Name::term(), Query::iodata()) -&gt; {ok, Name::term()} | {error, Reason::<a href="#type-server_reason">server_reason()</a>}</tt><br></p>
 </div><p>Creates a prepared statement from the passed query and associates it
   with the given name.</p>
 <p><b>See also:</b> <a href="#execute-3">execute/3</a>.</p>
@@ -96,7 +104,7 @@ a transaction.</td></tr>
 <h3 class="function"><a name="query-2">query/2</a></h3>
 <div class="spec">
 <p><tt>query(Conn, Query) -&gt; ok | {ok, ColumnNames, Rows} | {error, Reason}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>ColumnNames = [binary()]</tt></li><li><tt>Rows = [[term()]]</tt></li><li><tt>Reason = <a href="#type-reason">reason()</a></tt></li></ul></p>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>ColumnNames = [binary()]</tt></li><li><tt>Rows = [[term()]]</tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a></tt></li></ul></p>
 </div><p>Executes a query.</p>
 
 <h3 class="function"><a name="start_link-1">start_link/1</a></h3>
@@ -106,18 +114,12 @@ a transaction.</td></tr>
 </div><p><p>Starts a connection gen_server process and connects to a database. To
   disconnect just do <code>exit(Pid, normal)</code>.</p>
  
-  <p>Note that the callback module for the gen_server is <code>mysql_connection</code>.  
-This function is actually a synonym for mysql_connection:start_link/1. In  
-some applications (e.g. Poolboy) the callback module needs to be the module  
-where the start_link function is located. In those cases use  
-mysql_connection:start_link/1 instead.</p>
- 
   <p>Options:</p>
  
   <dl>
     <dt><code>{name, ServerName}</code></dt>
     <dd>If a name is provided, the gen_server will be registered with this
-        name. For detauls, see the documentation for the first argument to
+        name. For details see the documentation for the first argument of
         gen_server:start_link/4.</dd>
     <dt><code>{host, Host}</code></dt>
     <dd>Hostname of the MySQL database; default <code>"localhost"</code>.</dd>
@@ -130,12 +132,7 @@ mysql_connection:start_link/1 instead.</p>
     <dt><code>{database, Database}</code></dt>
     <dd>The name of the database AKA schema to use. This can be changed later
         using the query <code>USE &lt;database&gt;</code>.</dd>
-  </dl>
- </p>
-<p><b>See also:</b> <a href="mysql_connection.html#start_link-1">mysql_connection:start_link/1</a>.</p>
-<p><b><font color="red">To do</font></b><ul><li><font color="red"> Implement {database, Database}. Currently the database has to be
-  selected using a <code>USE &lt;database&gt;</code> query after connecting.
- </font></li></ul></p>
+  </dl></p>
 
 <h3 class="function"><a name="transaction-2">transaction/2</a></h3>
 <div class="spec">
@@ -184,7 +181,7 @@ exception.</p>
 
 <h3 class="function"><a name="unprepare-2">unprepare/2</a></h3>
 <div class="spec">
-<p><tt>unprepare(Conn::<a href="#type-connection">connection()</a>, StatementRef::term()) -&gt; ok | {error, not_prepared} | {error, Reason::<a href="#type-reason">reason()</a>}</tt><br></p>
+<p><tt>unprepare(Conn::<a href="#type-connection">connection()</a>, StatementRef::term()) -&gt; ok | {error, not_prepared} | {error, Reason::<a href="#type-server_reason">server_reason()</a>}</tt><br></p>
 </div><p>Deallocates a prepared statement.</p>
 <p><b>See also:</b> <a href="#prepare-3">prepare/3</a>.</p>
 
@@ -196,6 +193,6 @@ exception.</p>
 <hr>
 
 <div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
-<p><i>Generated by EDoc, Dec 8 2014, 02:01:00.</i></p>
+<p><i>Generated by EDoc, Dec 9 2014, 10:47:41.</i></p>
 </body>
 </html>

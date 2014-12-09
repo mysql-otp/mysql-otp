@@ -5,7 +5,7 @@
 <title>.eunit/mysql.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-12-08 at 02:00:59
+File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-12-09 at 10:47:40
 
 ****************************************************************************
 
@@ -27,10 +27,11 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |  %% You should have received a copy of the GNU Lesser General Public License
         |  %% along with this program. If not, see &lt;https://www.gnu.org/licenses/&gt;.
         |  
-        |  %% @doc API for communicating with MySQL databases.
+        |  %% @doc MySQL client.
         |  %%
-        |  %% Most of the functions are wrappers for `gen_server' calls. The
-        |  %% `connection()' type is the same as returned by `gen_server:start_link/2,3'.
+        |  %% The `connection()' type is a gen_server reference as described in the
+        |  %% documentation for `gen_server:call/2,3', e.g. the pid or the name if the
+        |  %% gen_server is locally registered.
         |  -module(mysql).
         |  
         |  -export([start_link/1, query/2, execute/3, prepare/2, prepare/3, unprepare/2,
@@ -38,7 +39,17 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |           in_transaction/1,
         |           transaction/2, transaction/3]).
         |  
-        |  -export_type([connection/0]).
+        |  -export_type([connection/0, server_reason/0]).
+        |  
+        |  -behaviour(gen_server).
+        |  -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
+        |           code_change/3]).
+        |  
+        |  -define(default_host, "localhost").
+        |  -define(default_port, 3306).
+        |  -define(default_user, &lt;&lt;&gt;&gt;).
+        |  -define(default_password, &lt;&lt;&gt;&gt;).
+        |  -define(default_timeout, infinity).
         |  
         |  %% A connection is a ServerRef as in gen_server:call/2,3.
         |  -type connection() :: Name :: atom() |
@@ -48,24 +59,18 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |                        pid().
         |  
         |  %% MySQL error with the codes and message returned from the server.
-        |  -type reason() :: {Code :: integer(), SQLState :: binary(),
-        |                     Message :: binary()}.
+        |  -type server_reason() :: {Code :: integer(), SQLState :: binary(),
+        |                            Message :: binary()}.
         |  
         |  %% @doc Starts a connection gen_server process and connects to a database. To
         |  %% disconnect just do `exit(Pid, normal)'.
-        |  %%
-        |  %% Note that the callback module for the gen_server is `mysql_connection'.
-        |  %% This function is actually a synonym for mysql_connection:start_link/1. In
-        |  %% some applications (e.g. Poolboy) the callback module needs to be the module
-        |  %% where the start_link function is located. In those cases use
-        |  %% mysql_connection:start_link/1 instead.
         |  %%
         |  %% Options:
         |  %%
         |  %% &lt;dl&gt;
         |  %%   &lt;dt&gt;`{name, ServerName}'&lt;/dt&gt;
         |  %%   &lt;dd&gt;If a name is provided, the gen_server will be registered with this
-        |  %%       name. For detauls, see the documentation for the first argument to
+        |  %%       name. For details see the documentation for the first argument of
         |  %%       gen_server:start_link/4.&lt;/dd&gt;
         |  %%   &lt;dt&gt;`{host, Host}'&lt;/dt&gt;
         |  %%   &lt;dd&gt;Hostname of the MySQL database; default `"localhost"'.&lt;/dd&gt;
@@ -79,11 +84,6 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |  %%   &lt;dd&gt;The name of the database AKA schema to use. This can be changed later
         |  %%       using the query `USE &lt;database&gt;'.&lt;/dd&gt;
         |  %% &lt;/dl&gt;
-        |  %%
-        |  %% TODO: Implement {database, Database}. Currently the database has to be
-        |  %% selected using a `USE &lt;database&gt;' query after connecting.
-        |  %%
-        |  %% @see mysql_connection:start_link/1
         |  -spec start_link(Options) -&gt; {ok, pid()} | ignore | {error, term()}
         |      when Options :: [Option],
         |           Option :: {name, ServerName} | {host, iodata()} | {port, integer()} | 
@@ -93,7 +93,12 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |                         {global, GlobalName :: term()} |
         |                         {via, Module :: atom(), ViaName :: term()}.
         |  start_link(Options) -&gt;
-     3..|      mysql_connection:start_link(Options).
+     4..|      case proplists:get_value(name, Options) of
+        |          undefined -&gt;
+     3..|              gen_server:start_link(?MODULE, Options, []);
+        |          ServerName -&gt;
+     1..|              gen_server:start_link(ServerName, ?MODULE, Options, [])
+        |      end.
         |  
         |  %% @doc Executes a query.
         |  -spec query(Conn, Query) -&gt; ok | {ok, ColumnNames, Rows} | {error, Reason}
@@ -101,9 +106,9 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |           Query :: iodata(),
         |           ColumnNames :: [binary()],
         |           Rows :: [[term()]],
-        |           Reason :: reason().
+        |           Reason :: server_reason().
         |  query(Conn, Query) -&gt;
-   230..|      gen_server:call(Conn, {query, Query}).
+   231..|      gen_server:call(Conn, {query, Query}).
         |  
         |  %% @doc Executes a prepared statement.
         |  %% @see prepare/2
@@ -113,7 +118,7 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |  %% @doc Creates a prepared statement from the passed query.
         |  %% @see execute/3
         |  -spec prepare(Conn :: connection(), Query :: iodata()) -&gt;
-        |      {ok, StatementId :: integer()} | {error, Reason :: reason()}.
+        |      {ok, StatementId :: integer()} | {error, Reason :: server_reason()}.
         |  prepare(Conn, Query) -&gt;
     58..|      gen_server:call(Conn, {prepare, Query}).
         |  
@@ -121,14 +126,14 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |  %% with the given name.
         |  %% @see execute/3
         |  -spec prepare(Conn :: connection(), Name :: term(), Query :: iodata()) -&gt;
-        |      {ok, Name :: term()} | {error, Reason :: reason()}.
+        |      {ok, Name :: term()} | {error, Reason :: server_reason()}.
         |  prepare(Conn, Name, Query) -&gt;
      3..|      gen_server:call(Conn, {prepare, Name, Query}).
         |  
         |  %% @doc Deallocates a prepared statement.
         |  %% @see prepare/3
         |  -spec unprepare(Conn :: connection(), StatementRef :: term()) -&gt;
-        |      ok | {error, not_prepared} | {error, Reason :: reason()}.
+        |      ok | {error, not_prepared} | {error, Reason :: server_reason()}.
         |  unprepare(Conn, StatementRef) -&gt;
     56..|      gen_server:call(Conn, {unprepare, StatementRef}).
         |  
@@ -216,12 +221,12 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
      4..|      ok = query(Conn, &lt;&lt;"BEGIN"&gt;&gt;),
      4..|      try apply(Fun, Args) of
         |          ResultOfFun -&gt;
-        |              %% We must be able to rollback. Otherwise let's go mad.
+        |              %% We must be able to rollback. Otherwise let's crash.
      1..|              ok = query(Conn, &lt;&lt;"COMMIT"&gt;&gt;),
      1..|              {atomic, ResultOfFun}
         |      catch
         |          Class:Reason -&gt;
-        |              %% We must be able to rollback. Otherwise let's go mad.
+        |              %% We must be able to rollback. Otherwise let's crash.
      3..|              ok = query(Conn, &lt;&lt;"ROLLBACK"&gt;&gt;),
         |              %% These forms for throw, error and exit mirror Mnesia's behaviour.
      3..|              Aborted = case Class of
@@ -231,6 +236,186 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |              end,
      3..|              {aborted, Aborted}
         |      end.
+        |  
+        |  %% --- Gen_server callbacks ---
+        |  
+        |  -include("records.hrl").
+        |  -include("server_status.hrl").
+        |  
+        |  %% Gen_server state
+        |  -record(state, {socket, timeout = infinity, affected_rows = 0, status = 0,
+        |                  warning_count = 0, insert_id = 0, stmts = dict:new()}).
+        |  
+        |  %% @private
+        |  init(Opts) -&gt;
+        |      %% Connect
+     4..|      Host     = proplists:get_value(host,     Opts, ?default_host),
+     4..|      Port     = proplists:get_value(port,     Opts, ?default_port),
+     4..|      User     = proplists:get_value(user,     Opts, ?default_user),
+     4..|      Password = proplists:get_value(password, Opts, ?default_password),
+     4..|      Database = proplists:get_value(database, Opts, undefined),
+     4..|      Timeout  = proplists:get_value(timeout,  Opts, ?default_timeout),
+        |  
+        |      %% Connect socket
+     4..|      SockOpts = [{active, false}, binary, {packet, raw}],
+     4..|      {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
+        |  
+        |      %% Exchange handshake communication.
+     4..|      SendFun = fun (Data) -&gt; gen_tcp:send(Socket, Data) end,
+     4..|      RecvFun = fun (Size) -&gt; gen_tcp:recv(Socket, Size, Timeout) end,
+     4..|      Result = mysql_protocol:handshake(User, Password, Database, SendFun,
+        |                                        RecvFun),
+     4..|      case Result of
+        |          #ok{} = OK -&gt;
+     4..|              State = #state{socket = Socket, timeout = Timeout},
+     4..|              State1 = update_state(State, OK),
+        |              %% Trap exit so that we can properly disconnect when we die.
+     4..|              process_flag(trap_exit, true),
+     4..|              {ok, State1};
+        |          #error{} = E -&gt;
+<font color=red>     0..|              {stop, error_to_reason(E)}</font>
+        |      end.
+        |  
+        |  %% @private
+        |  handle_call({query, Query}, _From, State) when is_binary(Query);
+        |                                                 is_list(Query) -&gt;
+   231..|      #state{socket = Socket, timeout = Timeout} = State,
+   231..|      SendFun = fun (Data) -&gt; gen_tcp:send(Socket, Data) end,
+   231..|      RecvFun = fun (Size) -&gt; gen_tcp:recv(Socket, Size, Timeout) end,
+   231..|      Rec = mysql_protocol:query(Query, SendFun, RecvFun),
+   231..|      State1 = update_state(State, Rec),
+   231..|      case Rec of
+        |          #ok{} -&gt;
+   150..|              {reply, ok, State1};
+        |          #error{} = E -&gt;
+     1..|              {reply, {error, error_to_reason(E)}, State1};
+        |          #resultset{cols = ColDefs, rows = Rows} -&gt;
+    80..|              Names = [Def#col.name || Def &lt;- ColDefs],
+    80..|              {reply, {ok, Names, Rows}, State1}
+        |      end;
+        |  handle_call({execute, Stmt, Args}, _From, State) when is_atom(Stmt);
+        |                                                        is_integer(Stmt) -&gt;
+   123..|      case dict:find(Stmt, State#state.stmts) of
+        |          {ok, StmtRec} -&gt;
+   122..|              #state{socket = Socket, timeout = Timeout} = State,
+   122..|              SendFun = fun (Data) -&gt; gen_tcp:send(Socket, Data) end,
+   122..|              RecvFun = fun (Size) -&gt; gen_tcp:recv(Socket, Size, Timeout) end,
+   122..|              Rec = mysql_protocol:execute(StmtRec, Args, SendFun, RecvFun),
+   122..|              State1 = update_state(State, Rec),
+   122..|              case Rec of
+        |                  #ok{} -&gt;
+    48..|                      {reply, ok, State1};
+        |                  #error{} = E -&gt;
+<font color=red>     0..|                      {reply, {error, error_to_reason(E)}, State1};</font>
+        |                  #resultset{cols = ColDefs, rows = Rows} -&gt;
+    74..|                      Names = [Def#col.name || Def &lt;- ColDefs],
+    74..|                      {reply, {ok, Names, Rows}, State1}
+        |              end;
+        |          error -&gt;
+     1..|              {reply, {error, not_prepared}, State}
+        |      end;
+        |  handle_call({prepare, Query}, _From, State) -&gt;
+    58..|      #state{socket = Socket, timeout = Timeout} = State,
+    58..|      SendFun = fun (Data) -&gt; gen_tcp:send(Socket, Data) end,
+    58..|      RecvFun = fun (Size) -&gt; gen_tcp:recv(Socket, Size, Timeout) end,
+    58..|      Rec = mysql_protocol:prepare(Query, SendFun, RecvFun),
+    58..|      State1 = update_state(State, Rec),
+    58..|      case Rec of
+        |          #error{} = E -&gt;
+     1..|              {reply, {error, error_to_reason(E)}, State1};
+        |          #prepared{statement_id = Id} = Stmt -&gt;
+    57..|              Stmts1 = dict:store(Id, Stmt, State1#state.stmts),
+    57..|              State2 = State#state{stmts = Stmts1},
+    57..|              {reply, {ok, Id}, State2}
+        |      end;
+        |  handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) -&gt;
+     3..|      #state{socket = Socket, timeout = Timeout} = State,
+     3..|      SendFun = fun (Data) -&gt; gen_tcp:send(Socket, Data) end,
+     3..|      RecvFun = fun (Size) -&gt; gen_tcp:recv(Socket, Size, Timeout) end,
+        |      %% First unprepare if there is an old statement with this name.
+     3..|      State1 = case dict:find(Name, State#state.stmts) of
+        |          {ok, OldStmt} -&gt;
+     1..|              mysql_protocol:unprepare(OldStmt, SendFun, RecvFun),
+     1..|              State#state{stmts = dict:erase(Name, State#state.stmts)};
+        |          error -&gt;
+     2..|              State
+        |      end,
+     3..|      Rec = mysql_protocol:prepare(Query, SendFun, RecvFun),
+     3..|      State2 = update_state(State1, Rec),
+     3..|      case Rec of
+        |          #error{} = E -&gt;
+     1..|              {reply, {error, error_to_reason(E)}, State2};
+        |          #prepared{} = Stmt -&gt;
+     2..|              Stmts1 = dict:store(Name, Stmt, State2#state.stmts),
+     2..|              State3 = State2#state{stmts = Stmts1},
+     2..|              {reply, {ok, Name}, State3}
+        |      end;
+        |  handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);
+        |                                                    is_integer(Stmt) -&gt;
+    56..|      case dict:find(Stmt, State#state.stmts) of
+        |          {ok, StmtRec} -&gt;
+    54..|              #state{socket = Socket, timeout = Timeout} = State,
+    54..|              SendFun = fun (Data) -&gt; gen_tcp:send(Socket, Data) end,
+    54..|              RecvFun = fun (Size) -&gt; gen_tcp:recv(Socket, Size, Timeout) end,
+    54..|              mysql_protocol:unprepare(StmtRec, SendFun, RecvFun),
+    54..|              Stmts1 = dict:erase(Stmt, State#state.stmts),
+    54..|              {reply, ok, State#state{stmts = Stmts1}};
+        |          error -&gt;
+     2..|              {reply, {error, not_prepared}, State}
+        |      end;
+        |  handle_call(warning_count, _From, State) -&gt;
+     2..|      {reply, State#state.warning_count, State};
+        |  handle_call(insert_id, _From, State) -&gt;
+     1..|      {reply, State#state.insert_id, State};
+        |  handle_call(affected_rows, _From, State) -&gt;
+     1..|      {reply, State#state.affected_rows, State};
+        |  handle_call(autocommit, _From, State) -&gt;
+     3..|      {reply, State#state.status band ?SERVER_STATUS_AUTOCOMMIT /= 0, State};
+        |  handle_call(in_transaction, _From, State) -&gt;
+     3..|      {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State}.
+        |  
+        |  %% @private
+        |  handle_cast(_Msg, State) -&gt;
+     1..|      {noreply, State}.
+        |  
+        |  %% @private
+        |  handle_info(_Info, State) -&gt;
+     1..|      {noreply, State}.
+        |  
+        |  %% @private
+        |  terminate(Reason, State) when Reason == normal; Reason == shutdown -&gt;
+        |      %% Send the goodbye message for politeness.
+     4..|      #state{socket = Socket, timeout = Timeout} = State,
+     4..|      SendFun = fun (Data) -&gt; gen_tcp:send(Socket, Data) end,
+     4..|      RecvFun = fun (Size) -&gt; gen_tcp:recv(Socket, Size, Timeout) end,
+     4..|      mysql_protocol:quit(SendFun, RecvFun);
+        |  terminate(_Reason, _State) -&gt;
+     1..|      ok.
+        |  
+        |  code_change(_OldVsn, State = #state{}, _Extra) -&gt;
+     1..|      {ok, State};
+        |  code_change(_OldVsn, _State, _Extra) -&gt;
+     1..|      {error, incompatible_state}.
+        |  
+        |  %% --- Helpers ---
+        |  
+        |  %% @doc Produces a tuple to return as an error reason.
+        |  -spec error_to_reason(#error{}) -&gt; server_reason().
+        |  error_to_reason(#error{code = Code, state = State, msg = Msg}) -&gt;
+     3..|      {Code, State, Msg}.
+        |  
+        |  %% @doc Updates a state with information from a response.
+        |  -spec update_state(#state{}, #ok{} | #eof{} | any()) -&gt; #state{}.
+        |  update_state(State, #ok{status = S, affected_rows = R,
+        |                          insert_id = Id, warning_count = W}) -&gt;
+   202..|      State#state{status = S, affected_rows = R, insert_id = Id,
+        |                  warning_count = W};
+        |  %update_state(State, #eof{status = S, warning_count = W}) -&gt;
+        |  %    State#state{status = S, warning_count = W, affected_rows = 0};
+        |  update_state(State, _Other) -&gt;
+        |      %% This includes errors, resultsets, etc.
+        |      %% Reset warnings, etc. (Note: We don't reset status and insert_id.)
+   216..|      State#state{warning_count = 0, affected_rows = 0}.
 </pre>
 </body>
 </html>
