@@ -23,7 +23,8 @@
 %% gen_server is locally registered.
 -module(mysql).
 
--export([start_link/1, query/2, execute/3, prepare/2, prepare/3, unprepare/2,
+-export([start_link/1, query/2, query/3, execute/3,
+         prepare/2, prepare/3, unprepare/2,
          warning_count/1, affected_rows/1, autocommit/1, insert_id/1,
          in_transaction/1,
          transaction/2, transaction/3]).
@@ -39,6 +40,7 @@
 -define(default_user, <<>>).
 -define(default_password, <<>>).
 -define(default_timeout, infinity).
+-define(default_query_cache_time, 60000). %% for query/3.
 
 %% A connection is a ServerRef as in gen_server:call/2,3.
 -type connection() :: Name :: atom() |
@@ -72,12 +74,16 @@
 %%   <dt>`{database, Database}'</dt>
 %%   <dd>The name of the database AKA schema to use. This can be changed later
 %%       using the query `USE <database>'.</dd>
+%%   <dt>`{query_cache_time, Timeout}'</dt>
+%%   <dd>The minimum number of milliseconds to cache prepared statements used
+%%       for parametrized queries with query/3.</dd>
 %% </dl>
 -spec start_link(Options) -> {ok, pid()} | ignore | {error, term()}
     when Options :: [Option],
          Option :: {name, ServerName} | {host, iodata()} | {port, integer()} | 
                    {user, iodata()} | {password, iodata()} |
-                   {database, iodata()},
+                   {database, iodata()} |
+                   {query_cache_time, non_neg_integer()},
          ServerName :: {local, Name :: atom()} |
                        {global, GlobalName :: term()} |
                        {via, Module :: atom(), ViaName :: term()}.
@@ -98,6 +104,23 @@ start_link(Options) ->
          Reason :: server_reason().
 query(Conn, Query) ->
     gen_server:call(Conn, {query, Query}).
+
+%% @doc Executes a parameterized query. A prepared statement is created,
+%% executed and then cached for a certain time. If the same query is executed
+%% again when it is already cached, it does not need to be prepared again.
+%%
+%% The minimum time the prepared statement is cached can be specified using the
+%% option `{query_cache_time, Milliseconds}' to start_link/1.
+-spec query(Conn, Query, Params) -> ok | {ok, ColumnNames, Rows} |
+                                    {error, Reason}
+    when Conn :: connection(),
+         Query :: iodata(),
+         Params :: [term()],
+         ColumnNames :: [binary()],
+         Rows :: [[term()]],
+         Reason :: server_reason().
+query(Conn, Query, Params) when is_list(Params) ->
+    gen_server:call(Conn, {query, Query, Params}).
 
 %% @doc Executes a prepared statement.
 %% @see prepare/2
@@ -249,7 +272,8 @@ transaction(Conn, Fun, Args) when is_list(Args),
 
 %% Gen_server state
 -record(state, {socket, timeout = infinity, affected_rows = 0, status = 0,
-                warning_count = 0, insert_id = 0, stmts = dict:new()}).
+                warning_count = 0, insert_id = 0, stmts = dict:new(),
+                query_cache_time, query_cache = empty}).
 
 %% @private
 init(Opts) ->
@@ -260,6 +284,8 @@ init(Opts) ->
     Password = proplists:get_value(password, Opts, ?default_password),
     Database = proplists:get_value(database, Opts, undefined),
     Timeout  = proplists:get_value(timeout,  Opts, ?default_timeout),
+    QueryCacheTime = proplists:get_value(query_cache_time, Opts,
+                                         ?default_query_cache_time),
 
     %% Connect socket
     SockOpts = [{active, false}, binary, {packet, raw}],
@@ -272,7 +298,8 @@ init(Opts) ->
                                       RecvFun),
     case Result of
         #ok{} = OK ->
-            State = #state{socket = Socket, timeout = Timeout},
+            State = #state{socket = Socket, timeout = Timeout,
+                           query_cache_time = QueryCacheTime},
             State1 = update_state(State, OK),
             %% Trap exit so that we can properly disconnect when we die.
             process_flag(trap_exit, true),
@@ -298,24 +325,45 @@ handle_call({query, Query}, _From, State) when is_binary(Query);
             Names = [Def#col.name || Def <- ColDefs],
             {reply, {ok, Names, Rows}, State1}
     end;
+handle_call({query, Query, Params}, _From, State) when is_list(Params) ->
+    %% Parametrized query = anonymous prepared statement
+    QueryBin = iolist_to_binary(Query),
+    #state{socket = Socket, timeout = Timeout} = State,
+    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
+    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
+    Cache = State#state.query_cache,
+    {StmtResult, Cache1} = case mysql_cache:lookup(QueryBin, Cache) of
+        {found, FoundStmt, NewCache} ->
+            %% Found
+            {{ok, FoundStmt}, NewCache};
+        not_found ->
+            %% Prepare
+            Rec = mysql_protocol:prepare(Query, SendFun, RecvFun),
+            %State1 = update_state(State, Rec),
+            case Rec of
+                #error{} = E ->
+                    {{error, error_to_reason(E)}, Cache};
+                #prepared{} = Stmt ->
+                    %% If the first entry in the cache, start the timer.
+                    Cache == empty andalso begin
+                        When = State#state.query_cache_time * 2,
+                        erlang:send_after(When, self(), query_cache)
+                    end,
+                    {{ok, Stmt}, mysql_cache:store(QueryBin, Stmt, Cache)}
+            end
+    end,
+    case StmtResult of
+        {ok, StmtRec} ->
+            State1 = State#state{query_cache = Cache1},
+            execute_stmt(StmtRec, Params, State1);
+        PrepareError ->
+            {reply, PrepareError, State}
+    end;
 handle_call({execute, Stmt, Args}, _From, State) when is_atom(Stmt);
                                                       is_integer(Stmt) ->
     case dict:find(Stmt, State#state.stmts) of
         {ok, StmtRec} ->
-            #state{socket = Socket, timeout = Timeout} = State,
-            SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
-            RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
-            Rec = mysql_protocol:execute(StmtRec, Args, SendFun, RecvFun),
-            State1 = update_state(State, Rec),
-            case Rec of
-                #ok{} ->
-                    {reply, ok, State1};
-                #error{} = E ->
-                    {reply, {error, error_to_reason(E)}, State1};
-                #resultset{cols = ColDefs, rows = Rows} ->
-                    Names = [Def#col.name || Def <- ColDefs],
-                    {reply, {ok, Names, Rows}, State1}
-            end;
+            execute_stmt(StmtRec, Args, State);
         error ->
             {reply, {error, not_prepared}, State}
     end;
@@ -384,6 +432,22 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
+handle_info(query_cache, State = #state{query_cache = Cache,
+                                        query_cache_time = CacheTime}) ->
+    %% Evict expired queries/statements in the cache used by query/3.
+    {Evicted, Cache1} = mysql_cache:evict_older_than(Cache, CacheTime),
+    %% Unprepare the evicted statements
+    #state{socket = Socket, timeout = Timeout} = State,
+    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
+    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
+    lists:foreach(fun ({_Query, Stmt}) ->
+                      mysql_protocol:unprepare(Stmt, SendFun, RecvFun)
+                  end,
+                  Evicted),
+    %% If nonempty, schedule eviction again.
+    mysql_cache:size(Cache1) > 0 andalso
+        erlang:send_after(CacheTime, self(), query_cache),
+    {noreply, State#state{query_cache = Cache1}};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -404,6 +468,23 @@ code_change(_OldVsn, _State, _Extra) ->
     {error, incompatible_state}.
 
 %% --- Helpers ---
+
+%% @doc Returns a tuple on the the same form as handle_call/3.
+execute_stmt(StmtRec, Args, State) ->
+    #state{socket = Socket, timeout = Timeout} = State,
+    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
+    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
+    Rec = mysql_protocol:execute(StmtRec, Args, SendFun, RecvFun),
+    State1 = update_state(State, Rec),
+    case Rec of
+        #ok{} ->
+            {reply, ok, State1};
+        #error{} = E ->
+            {reply, {error, error_to_reason(E)}, State1};
+        #resultset{cols = ColDefs, rows = Rows} ->
+            Names = [Def#col.name || Def <- ColDefs],
+            {reply, {ok, Names, Rows}, State1}
+    end.
 
 %% @doc Produces a tuple to return as an error reason.
 -spec error_to_reason(#error{}) -> server_reason().

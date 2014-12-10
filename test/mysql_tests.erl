@@ -351,7 +351,8 @@ write_read_text_binary(Conn, Term, SqlLiteral, Table, Column) ->
 with_table_foo_test_() ->
     {setup,
      fun () ->
-         {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password}]),
+         {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
+                                       {query_cache_time, 50}]),
          ok = mysql:query(Pid, <<"DROP DATABASE IF EXISTS otptest">>),
          ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
          ok = mysql:query(Pid, <<"USE otptest">>),
@@ -363,6 +364,7 @@ with_table_foo_test_() ->
          exit(Pid, normal)
      end,
      {with, [fun prepared_statements/1,
+             fun parameterized_query/1,
              fun transaction_simple_success/1,
              fun transaction_simple_aborted/1]}}.
 
@@ -391,6 +393,13 @@ prepared_statements(Pid) ->
     %% Execute when not prepared
     ?assertEqual({error, not_prepared}, mysql:execute(Pid, not_a_stmt, [])),
     ok.
+
+parameterized_query(Conn) ->
+    %% To see that cache eviction works as expected, look at the code coverage.
+    {ok, _, []} = mysql:query(Conn, "SELECT * FROM foo WHERE bar = ?", [1]),
+    {ok, _, []} = mysql:query(Conn, "SELECT * FROM foo WHERE bar = ?", [2]),
+    receive after 150 -> ok end, %% Now the query cache should emptied
+    {ok, _, []} = mysql:query(Conn, "SELECT * FROM foo WHERE bar = ?", [3]).
 
 transaction_simple_success(Pid) ->
     ?assertNot(mysql:in_transaction(Pid)),
