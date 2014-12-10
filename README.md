@@ -8,8 +8,10 @@ applications. It is a native implementation of the MySQL protocol in Erlang.
 
 Features:
 
-* Works with MySQL 4.1 and later.
-* Mnesia style transactions.
+* Mnesia style transactions. (Currenly transactions cannot be nested and are
+  not retried automatically when deadlocks are detected. These are features of
+  Mnesia style transactions and there are plans to implement them. See
+  [#7](https://github.com/mysql-otp/mysql-otp/issues/7).)
 * Uses the binary protocol for prepared statements.
 * Each connection is a gen_server, which makes it compatible with Poolboy (for
   connection pooling) and ordinary OTP supervisors.
@@ -35,35 +37,18 @@ Opts = [{host, "localhost"}, {user, "foo"}, {password, "hello"},
 {ok, Pid} = mysql:start_link(Opts),
 
 %% Select
-{ok, ColumnNames, Rows} = mysql:query(Pid, <<"SELECT * FROM mytable">>),
+{ok, ColumnNames, Rows} =
+    mysql:query(Pid, <<"SELECT * FROM mytable WHERE id = ?">>, [1]),
 
 %% Manipulate data
-ok = mysql:query(Pid, "INSERT INTO mytable (foo, bar) VALUES (1, 42)"),
-
-%% Named prepared statements
-{ok, foo} = mysql:prepare(Pid, "SELECT * FROM mytable WHERE id=?", foo),
-{ok, Columns, Rows} = mysql:execute(Pid, foo, [42]),
-
-%% Unnamed prepared statements
-{ok, StmtId} = mysql:prepare(Pid, "SELECT * FROM mytable WHERE id=?"),
-{ok, Columns, Rows} = mysql:execute(Pid, StmtId, [42]).
+ok = mysql:query(Pid, "INSERT INTO mytable (id, bar) VALUES (?, ?)", [1, 42]),
 
 %% Separate calls to fetch more info about the last query
 LastInsertId = mysql:insert_id(Pid),
 AffectedRows = mysql:affected_rows(Pid),
 WarningCount = mysql:warning_count(Pid),
 
-%% An "anonymous prepared statement" with parameters, prepared and executed
-%% on the fly. NOT IMPLEMENTED YET.
-{ok, ColumnNames, Rows} =
-    mysql:query(Pid, <<"SELECT * FROM mytable WHERE id=?">>, [42]),
-
-%% Simple Mnesia style transactions.
-%%
-%% Note 1: Cannot be nested.
-%% Note 2: Not automatically restarted when a deadlock is detected.
-%%
-%% There are plans to implement nested and restartable transactions. (Issue #7)
+%% Mnesia style transaction
 Result = mysql:transaction(Pid, fun () ->
     ok = mysql:query(Pid, "INSERT INTO mytable (foo) VALUES (1)"),
     throw(foo),
