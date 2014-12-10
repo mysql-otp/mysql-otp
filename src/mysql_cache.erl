@@ -44,9 +44,9 @@ evict_older_than({cache, StartTs, Dict}, MaxAge) ->
         end,
         {[], dict:new()},
         Dict),
-    Cache1 = case dict:is_empty(Dict1) of
-        true  -> empty;
-        false -> {cache, StartTs, Dict1}
+    Cache1 = case dict:size(Dict1) of
+        0 -> empty;
+        _ -> {cache, StartTs, Dict1}
     end,
     {Evicted, Cache1};
 evict_older_than(empty, _) ->
