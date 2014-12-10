@@ -101,28 +101,44 @@ query(Conn, Query) ->
 
 %% @doc Executes a prepared statement.
 %% @see prepare/2
-execute(Conn, StatementId, Args) ->
-    gen_server:call(Conn, {execute, StatementId, Args}).
+%% @see prepare/3
+-spec execute(Conn, StatementRef, Params) ->
+    ok | {ok, ColumnNames, Rows} | {error, Reason}
+  when Conn :: connection(),
+       StatementRef :: atom() | integer(),
+       Params :: [term()],
+       ColumnNames :: [binary()],
+       Rows :: [[term()]],
+       Reason :: server_reason() | not_prepared.
+execute(Conn, StatementRef, Params) ->
+    gen_server:call(Conn, {execute, StatementRef, Params}).
 
 %% @doc Creates a prepared statement from the passed query.
-%% @see execute/3
--spec prepare(Conn :: connection(), Query :: iodata()) ->
-    {ok, StatementId :: integer()} | {error, Reason :: server_reason()}.
+%% @see prepare/3
+-spec prepare(Conn, Query) -> {ok, StatementId} | {error, Reason}
+  when Conn :: connection(),
+       Query :: iodata(),
+       StatementId :: integer(),
+       Reason :: server_reason().
 prepare(Conn, Query) ->
     gen_server:call(Conn, {prepare, Query}).
 
 %% @doc Creates a prepared statement from the passed query and associates it
 %% with the given name.
-%% @see execute/3
--spec prepare(Conn :: connection(), Name :: term(), Query :: iodata()) ->
-    {ok, Name :: term()} | {error, Reason :: server_reason()}.
+%% @see prepare/2
+-spec prepare(Conn, Name, Query) -> {ok, Name} | {error, Reason}
+  when Conn :: connection(),
+       Name :: atom(),
+       Query :: iodata(),
+       Reason :: server_reason().
 prepare(Conn, Name, Query) ->
     gen_server:call(Conn, {prepare, Name, Query}).
 
 %% @doc Deallocates a prepared statement.
-%% @see prepare/3
--spec unprepare(Conn :: connection(), StatementRef :: term()) ->
-    ok | {error, not_prepared} | {error, Reason :: server_reason()}.
+-spec unprepare(Conn, StatementRef) -> ok | {error, Reason}
+  when Conn :: connection(),
+       StatementRef :: atom() | integer(),
+       Reason :: server_reason() | not_prepared.
 unprepare(Conn, StatementRef) ->
     gen_server:call(Conn, {unprepare, StatementRef}).
 
@@ -381,6 +397,7 @@ terminate(Reason, State) when Reason == normal; Reason == shutdown ->
 terminate(_Reason, _State) ->
     ok.
 
+%% @private
 code_change(_OldVsn, State = #state{}, _Extra) ->
     {ok, State};
 code_change(_OldVsn, _State, _Extra) ->
@@ -401,6 +418,8 @@ update_state(State, #ok{status = S, affected_rows = R,
                 warning_count = W};
 %update_state(State, #eof{status = S, warning_count = W}) ->
 %    State#state{status = S, warning_count = W, affected_rows = 0};
+update_state(State, #prepared{warning_count = W}) ->
+    State#state{warning_count = W};
 update_state(State, _Other) ->
     %% This includes errors, resultsets, etc.
     %% Reset warnings, etc. (Note: We don't reset status and insert_id.)
