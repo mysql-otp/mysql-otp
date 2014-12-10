@@ -1,0 +1,133 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<title>.eunit/mysql_cache.COVER.html</title>
+</head><body style='background-color: white; color: black'>
+<pre>
+File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_cache.erl by COVER 2014-12-10 at 23:00:16
+
+****************************************************************************
+
+        |  %% Minicache. Feel free to rename this module and include it in other projects.
+        |  %%-----------------------------------------------------------------------------
+        |  %% Copyright 2014 Viktor Söderqvist
+        |  %%
+        |  %% Licensed under the Apache License, Version 2.0 (the "License");
+        |  %% you may not use this file except in compliance with the License.
+        |  %% You may obtain a copy of the License at
+        |  %%
+        |  %%     http://www.apache.org/licenses/LICENSE-2.0
+        |  %%
+        |  %% Unless required by applicable law or agreed to in writing, software
+        |  %% distributed under the License is distributed on an "AS IS" BASIS,
+        |  %% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+        |  %% See the License for the specific language governing permissions and
+        |  %% limitations under the License.
+        |  
+        |  %% @doc A minimalistic time triggered dict based cache data structure.
+        |  %%
+        |  %% The cache keeps track of when each key was last used. Elements are evicted
+        |  %% using manual calls to evict_older_than/2. Most of the functions return a new
+        |  %% updated cache object which should be used in subsequent calls.
+        |  %%
+        |  %% A cache can be initialized to 'empty' which represents the empty cache.
+        |  %% @private
+        |  -module(mysql_cache).
+        |  
+        |  -export_type([cache/2]).
+        |  -export([evict_older_than/2, lookup/2, new/0, size/1, store/3]).
+        |  
+        |  -type cache(K, V) ::
+        |      {cache, erlang:timestamp(), dict:dict(K, {V, non_neg_integer()})} | empty.
+        |  
+        |  %% @doc Deletes the entries that have not been used for `MaxAge' milliseconds
+        |  %% and returns them along with the new state.
+        |  -spec evict_older_than(Cache :: cache(K, V), MaxAge :: non_neg_integer()) -&gt;
+        |      {Evicted :: [{K, V}], NewCache :: cache(K, V)}.
+        |  evict_older_than({cache, StartTs, Dict}, MaxAge) -&gt;
+     5..|      MinTime = timer:now_diff(os:timestamp(), StartTs) div 1000 - MaxAge,
+     5..|      {Evicted, Dict1} = dict:fold(
+        |          fun (Key, {Value, Time}, {EvictedAcc, DictAcc}) -&gt;
+     5..|              if Time =&lt; MinTime -&gt; {[{Key, Value} | EvictedAcc], DictAcc};
+     3..|                 Time &gt;  MinTime -&gt; {EvictedAcc, dict:store(Key, Value, DictAcc)}
+        |              end
+        |          end,
+        |          {[], dict:new()},
+        |          Dict),
+     5..|      Cache1 = case dict:is_empty(Dict1) of
+     2..|          true  -&gt; empty;
+     3..|          false -&gt; {cache, StartTs, Dict1}
+        |      end,
+     5..|      {Evicted, Cache1};
+        |  evict_older_than(empty, _) -&gt;
+     1..|      {[], empty}.
+        |  
+        |  %% @doc Looks up a key in a cache. If found, returns the value and a new cache
+        |  %% with the 'last used' timestamp updated for the key.
+        |  -spec lookup(Key :: K, Cache :: cache(K, V)) -&gt;
+        |      {found, Value :: V, UpdatedCache :: cache(K, V)} | not_found.
+        |  lookup(Key, {cache, StartTs, Dict}) -&gt;
+     4..|      case dict:find(Key, Dict) of
+        |          {ok, {Value, _OldTime}} -&gt;
+     3..|              NewTime = timer:now_diff(os:timestamp(), StartTs) div 1000,
+     3..|              Dict1 = dict:store(Key, {Value, NewTime}, Dict),
+     3..|              Cache1 = {cache, StartTs, Dict1},
+     3..|              {found, Value, Cache1};
+        |          error -&gt;
+     1..|              not_found
+        |      end;
+        |  lookup(_Key, empty) -&gt;
+     3..|      not_found.
+        |  
+        |  %% @doc Returns the atom `empty' which represents an empty cache.
+        |  -spec new() -&gt; cache(K :: term(), V :: term()).
+        |  new() -&gt;
+     1..|      empty.
+        |  
+        |  %% @doc Returns the number of elements in the cache.
+        |  -spec size(cache(K :: term(), V :: term())) -&gt; non_neg_integer().
+        |  size({cache, _, Dict}) -&gt;
+     1..|      dict:size(Dict);
+        |  size(empty) -&gt;
+     2..|      0.
+        |  
+        |  %% @doc Stores a key-value pair in the cache. If the key already exists, the
+        |  %% associated value is replaced by `Value'.
+        |  -spec store(Key :: K, Value :: V, Cache :: cache(K, V)) -&gt; cache(K, V)
+        |      when K :: term(), V :: term().
+        |  store(Key, Value, {cache, StartTs, Dict}) -&gt;
+     1..|      Time = timer:now_diff(os:timestamp(), StartTs) div 1000,
+     1..|      {cache, StartTs, dict:store(Key, {Value, Time}, Dict)};
+        |  store(Key, Value, empty) -&gt;
+     3..|      {cache, os:timestamp(), dict:store(Key, {Value, 0}, dict:new())}.
+        |  
+        |  -ifdef(TEST).
+        |  -include_lib("eunit/include/eunit.hrl").
+        |  
+        |  empty_test() -&gt;
+     1..|      ?assertEqual(empty, ?MODULE:new()),
+     1..|      ?assertEqual(0, ?MODULE:size(empty)),
+     1..|      ?assertEqual(not_found, ?MODULE:lookup(foo, empty)),
+     1..|      ?assertMatch({[], empty}, ?MODULE:evict_older_than(empty, 10)).
+        |  
+        |  nonempty_test() -&gt;
+     1..|      Cache = ?MODULE:store(foo, bar, empty),
+     1..|      ?assertMatch({found, bar, _}, ?MODULE:lookup(foo, Cache)),
+     1..|      ?assertMatch(not_found, ?MODULE:lookup(baz, Cache)),
+     1..|      ?assertMatch({[], _}, ?MODULE:evict_older_than(Cache, 10)),
+     1..|      ?assertMatch({cache, _, _}, Cache),
+     1..|      ?assertEqual(1, ?MODULE:size(Cache)),
+     1..|      receive after 11 -&gt; ok end, %% expire cache
+     1..|      ?assertEqual({[{foo, bar}], empty}, ?MODULE:evict_older_than(Cache, 10)),
+        |      %% lookup un-expires cache
+     1..|      {found, bar, NewCache} = ?MODULE:lookup(foo, Cache),
+     1..|      ?assertMatch({[], {cache, _, _}}, ?MODULE:evict_older_than(NewCache, 10)),
+        |      %% store also un-expires
+     1..|      NewCache2 = ?MODULE:store(foo, baz, Cache),
+     1..|      ?assertMatch({[], {cache, _, _}}, ?MODULE:evict_older_than(NewCache2, 10)).
+        |  
+        |  -endif.
+</pre>
+</body>
+</html>

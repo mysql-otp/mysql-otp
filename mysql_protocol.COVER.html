@@ -5,7 +5,7 @@
 <title>.eunit/mysql_protocol.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by COVER 2014-12-09 at 10:47:39
+File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by COVER 2014-12-10 at 23:00:16
 
 ****************************************************************************
 
@@ -109,10 +109,10 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |  %% @doc Prepares a statement.
         |  -spec prepare(iodata(), sendfun(), recvfun()) -&gt; #error{} | #prepared{}.
         |  prepare(Query, SendFun, RecvFun) -&gt;
-    62..|      Req = &lt;&lt;?COM_STMT_PREPARE, (iolist_to_binary(Query))/binary&gt;&gt;,
-    62..|      {ok, SeqNum1} = send_packet(SendFun, Req, 0),
-    62..|      {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
-    62..|      case Resp of
+    64..|      Req = &lt;&lt;?COM_STMT_PREPARE, (iolist_to_binary(Query))/binary&gt;&gt;,
+    64..|      {ok, SeqNum1} = send_packet(SendFun, Req, 0),
+    64..|      {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
+    64..|      case Resp of
         |          ?error_pattern -&gt;
      2..|              parse_error_packet(Resp);
         |          &lt;&lt;?OK,
@@ -126,14 +126,14 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |              %% contain any useful data at all. They are always TYPE_VAR_STRING
         |              %% with charset 'binary' so we have to select a type ourselves for
         |              %% the parameters we have in execute/4.
-    60..|              {_ParamDefs, SeqNum3} =
+    62..|              {_ParamDefs, SeqNum3} =
         |                  fetch_column_definitions_if_any(NumParams, RecvFun, SeqNum2),
         |              %% Column Definition Block. We get column definitions in execute
         |              %% too, so we don't need them here. We *could* store them to be able
         |              %% to provide the user with some info about a prepared statement.
-    60..|              {_ColDefs, _SeqNum4} =
+    62..|              {_ColDefs, _SeqNum4} =
         |                  fetch_column_definitions_if_any(NumColumns, RecvFun, SeqNum3),
-    60..|              #prepared{statement_id = StmtId,
+    62..|              #prepared{statement_id = StmtId,
         |                        param_count = NumParams,
         |                        warning_count = WarningCount}
         |      end.
@@ -141,8 +141,8 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |  %% @doc Deallocates a prepared statement.
         |  -spec unprepare(#prepared{}, sendfun(), recvfun()) -&gt; ok.
         |  unprepare(#prepared{statement_id = Id}, SendFun, _RecvFun) -&gt;
-    55..|      {ok, _SeqNum} = send_packet(SendFun, &lt;&lt;?COM_STMT_CLOSE, Id:32/little&gt;&gt;, 0),
-    55..|      ok.
+    56..|      {ok, _SeqNum} = send_packet(SendFun, &lt;&lt;?COM_STMT_CLOSE, Id:32/little&gt;&gt;, 0),
+    56..|      ok.
         |  
         |  %% @doc Executes a prepared statement.
         |  -spec execute(#prepared{}, [term()], sendfun(), recvfun()) -&gt; #resultset{}.
@@ -153,37 +153,37 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |      %% 0x01 CURSOR_TYPE_READ_ONLY
         |      %% 0x02 CURSOR_TYPE_FOR_UPDATE
         |      %% 0x04 CURSOR_TYPE_SCROLLABLE
-   122..|      Flags = 0,
-   122..|      Req0 = &lt;&lt;?COM_STMT_EXECUTE, Id:32/little, Flags, 1:32/little&gt;&gt;,
-   122..|      Req = case ParamCount of
+   125..|      Flags = 0,
+   125..|      Req0 = &lt;&lt;?COM_STMT_EXECUTE, Id:32/little, Flags, 1:32/little&gt;&gt;,
+   125..|      Req = case ParamCount of
         |          0 -&gt;
     73..|              Req0;
         |          _ -&gt;
         |              %% We can't use the parameter types returned by the prepare call.
         |              %% They are all reported as ?TYPE_VAR_STRING with character
         |              %% set 'binary'.
-    49..|              NullBitMap = build_null_bitmap(ParamValues),
+    52..|              NullBitMap = build_null_bitmap(ParamValues),
         |              %% What does it mean to *not* bind new params? To use the same
         |              %% params as last time? Right now we always bind params each time.
-    49..|              NewParamsBoundFlag = 1,
-    49..|              Req1 = &lt;&lt;Req0/binary, NullBitMap/binary, NewParamsBoundFlag&gt;&gt;,
+    52..|              NewParamsBoundFlag = 1,
+    52..|              Req1 = &lt;&lt;Req0/binary, NullBitMap/binary, NewParamsBoundFlag&gt;&gt;,
         |              %% For each value, first append type and signedness (16#80 signed or
         |              %% 00 unsigned) for all values and then the binary encoded values.
-    49..|              EncodedParams = lists:map(fun encode_param/1, ParamValues),
-    49..|              {TypesAndSigns, EncValues} = lists:unzip(EncodedParams),
-    49..|              iolist_to_binary([Req1, TypesAndSigns, EncValues])
+    52..|              EncodedParams = lists:map(fun encode_param/1, ParamValues),
+    52..|              {TypesAndSigns, EncValues} = lists:unzip(EncodedParams),
+    52..|              iolist_to_binary([Req1, TypesAndSigns, EncValues])
         |      end,
-   122..|      {ok, SeqNum1} = send_packet(SendFun, Req, 0),
-   122..|      {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
-   122..|      case Resp of
+   125..|      {ok, SeqNum1} = send_packet(SendFun, Req, 0),
+   125..|      {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
+   125..|      case Resp of
         |          ?ok_pattern -&gt;
     48..|              parse_ok_packet(Resp);
         |          ?error_pattern -&gt;
 <font color=red>     0..|              parse_error_packet(Resp);</font>
         |          _ResultPacket -&gt;
         |              %% The first packet in a resultset is only the column count.
-    74..|              {ColumnCount, &lt;&lt;&gt;&gt;} = lenenc_int(Resp),
-    74..|              case fetch_resultset(RecvFun, ColumnCount, SeqNum2) of
+    77..|              {ColumnCount, &lt;&lt;&gt;&gt;} = lenenc_int(Resp),
+    77..|              case fetch_resultset(RecvFun, ColumnCount, SeqNum2) of
         |                  #error{} = E -&gt;
         |                      %% TODO: Find a way to get here and write a testcase.
         |                      %% This can happen for the text protocol but maybe not for
@@ -192,9 +192,9 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |                  #resultset{cols = ColDefs, rows = Rows} = R -&gt;
         |                      %% Parse the rows according to the 'binary protocol'
         |                      %% representation.
-    74..|                      Rows1 = [decode_binary_row(ColumnCount, ColDefs, Row)
-    74..|                               || Row &lt;- Rows],
-    74..|                      R#resultset{rows = Rows1}
+    77..|                      Rows1 = [decode_binary_row(ColumnCount, ColDefs, Row)
+    77..|                               || Row &lt;- Rows],
+    77..|                      R#resultset{rows = Rows1}
         |              end
         |      end.
         |  
@@ -317,14 +317,14 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |  -spec fetch_resultset(recvfun(), integer(), integer()) -&gt;
         |      #resultset{} | #error{}.
         |  fetch_resultset(RecvFun, FieldCount, SeqNum) -&gt;
-   156..|      {ok, ColDefs, SeqNum1} = fetch_column_definitions(RecvFun, SeqNum,
+   159..|      {ok, ColDefs, SeqNum1} = fetch_column_definitions(RecvFun, SeqNum,
         |                                                        FieldCount, []),
-   156..|      {ok, DelimiterPacket, SeqNum2} = recv_packet(RecvFun, SeqNum1),
-   156..|      #eof{} = parse_eof_packet(DelimiterPacket),
-   156..|      case fetch_resultset_rows(RecvFun, SeqNum2, []) of
+   159..|      {ok, DelimiterPacket, SeqNum2} = recv_packet(RecvFun, SeqNum1),
+   159..|      #eof{} = parse_eof_packet(DelimiterPacket),
+   159..|      case fetch_resultset_rows(RecvFun, SeqNum2, []) of
         |          {ok, Rows, _SeqNum3} -&gt;
-   155..|              ColDefs1 = lists:map(fun parse_column_definition/1, ColDefs),
-   155..|              #resultset{cols = ColDefs1, rows = Rows};
+   158..|              ColDefs1 = lists:map(fun parse_column_definition/1, ColDefs),
+   158..|              #resultset{cols = ColDefs1, rows = Rows};
         |          #error{} = E -&gt;
      1..|              E
         |      end.
@@ -335,10 +335,10 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |                                 NumLeft :: integer(), Acc :: [binary()]) -&gt;
         |      {ok, ColDefPackets :: [binary()], NextSeqNum :: integer()}.
         |  fetch_column_definitions(RecvFun, SeqNum, NumLeft, Acc) when NumLeft &gt; 0 -&gt;
-   262..|      {ok, Packet, SeqNum1} = recv_packet(RecvFun, SeqNum),
-   262..|      fetch_column_definitions(RecvFun, SeqNum1, NumLeft - 1, [Packet | Acc]);
+   269..|      {ok, Packet, SeqNum1} = recv_packet(RecvFun, SeqNum),
+   269..|      fetch_column_definitions(RecvFun, SeqNum1, NumLeft - 1, [Packet | Acc]);
         |  fetch_column_definitions(_RecvFun, SeqNum, 0, Acc) -&gt;
-   221..|      {ok, lists:reverse(Acc), SeqNum}.
+   228..|      {ok, lists:reverse(Acc), SeqNum}.
         |  
         |  %% @doc Fetches rows in a result set. There is a packet per row. The row packets
         |  %% are not decoded. This function can be used for both the binary and the text
@@ -348,25 +348,25 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |      when Acc :: [binary()],
         |           Rows :: [binary()].
         |  fetch_resultset_rows(RecvFun, SeqNum, Acc) -&gt;
-   311..|      {ok, Packet, SeqNum1} = recv_packet(RecvFun, SeqNum),
-   311..|      case Packet of
+   314..|      {ok, Packet, SeqNum1} = recv_packet(RecvFun, SeqNum),
+   314..|      case Packet of
         |          ?error_pattern -&gt;
      1..|              parse_error_packet(Packet);
         |          ?eof_pattern -&gt;
-   155..|              {ok, lists:reverse(Acc), SeqNum1};
+   158..|              {ok, lists:reverse(Acc), SeqNum1};
         |          Row -&gt;
    155..|              fetch_resultset_rows(RecvFun, SeqNum1, [Row | Acc])
         |      end.
         |  
         |  %% Parses a packet containing a column definition (part of a result set)
         |  parse_column_definition(Data) -&gt;
-   172..|      {&lt;&lt;"def"&gt;&gt;, Rest1} = lenenc_str(Data),   %% catalog (always "def")
-   172..|      {_Schema, Rest2} = lenenc_str(Rest1),    %% schema-name 
-   172..|      {_Table, Rest3} = lenenc_str(Rest2),     %% virtual table-name 
-   172..|      {_OrgTable, Rest4} = lenenc_str(Rest3),  %% physical table-name 
-   172..|      {Name, Rest5} = lenenc_str(Rest4),       %% virtual column name
-   172..|      {_OrgName, Rest6} = lenenc_str(Rest5),   %% physical column name
-   172..|      {16#0c, Rest7} = lenenc_int(Rest6),      %% length of the following fields
+   175..|      {&lt;&lt;"def"&gt;&gt;, Rest1} = lenenc_str(Data),   %% catalog (always "def")
+   175..|      {_Schema, Rest2} = lenenc_str(Rest1),    %% schema-name 
+   175..|      {_Table, Rest3} = lenenc_str(Rest2),     %% virtual table-name 
+   175..|      {_OrgTable, Rest4} = lenenc_str(Rest3),  %% physical table-name 
+   175..|      {Name, Rest5} = lenenc_str(Rest4),       %% virtual column name
+   175..|      {_OrgName, Rest6} = lenenc_str(Rest5),   %% physical column name
+   175..|      {16#0c, Rest7} = lenenc_int(Rest6),      %% length of the following fields
         |                                               %% (always 0x0c)
         |      &lt;&lt;Charset:16/little,        %% column character set
         |        Length:32/little,         %% maximum length of the field
@@ -375,12 +375,12 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |        Decimals:8,               %% max shown decimal digits:
         |        0,  %% "filler"           %%   - 0x00 for integers and static strings
         |        0,                        %%   - 0x1f for dynamic strings, double, float
-   172..|        Rest8/binary&gt;&gt; = Rest7,   %%   - 0x00 to 0x51 for decimals
+   175..|        Rest8/binary&gt;&gt; = Rest7,   %%   - 0x00 to 0x51 for decimals
         |      %% Here, if command was COM_FIELD_LIST {
         |      %%   default values: lenenc_str
         |      %% }
-   172..|      &lt;&lt;&gt;&gt; = Rest8,
-   172..|      #col{name = Name, type = Type, charset = Charset, length = Length,
+   175..|      &lt;&lt;&gt;&gt; = Rest8,
+   175..|      #col{name = Name, type = Type, charset = Charset, length = Length,
         |           decimals = Decimals, flags = Flags}.
         |  
         |  %% -- text protocol --
@@ -488,9 +488,9 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |  fetch_column_definitions_if_any(0, _RecvFun, SeqNum) -&gt;
     55..|      {[], SeqNum};
         |  fetch_column_definitions_if_any(N, RecvFun, SeqNum) -&gt;
-    65..|      {ok, Defs, SeqNum1} = fetch_column_definitions(RecvFun, SeqNum, N, []),
-    65..|      {ok, ?eof_pattern, SeqNum2} = recv_packet(RecvFun, SeqNum1),
-    65..|      {Defs, SeqNum2}.
+    69..|      {ok, Defs, SeqNum1} = fetch_column_definitions(RecvFun, SeqNum, N, []),
+    69..|      {ok, ?eof_pattern, SeqNum2} = recv_packet(RecvFun, SeqNum1),
+    69..|      {Defs, SeqNum2}.
         |  
         |  %% @doc Decodes a packet representing a row in a binary result set.
         |  %% It consists of a 0 byte, then a null bitmap, then the values.
@@ -537,23 +537,23 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |  %% be inserted before the other bits.
         |  -spec null_bitmap_encode(bitstring(), integer()) -&gt; binary().
         |  null_bitmap_encode(NullBitstring, BitOffset) -&gt;
-    50..|      PayloadLength = bit_size(NullBitstring) + BitOffset,
+    53..|      PayloadLength = bit_size(NullBitstring) + BitOffset,
         |      %% Round up to a multiple of 8.
-    50..|      BitMapLength = (PayloadLength + 7) band bnot 7,
-    50..|      PadBitsLength = BitMapLength - PayloadLength,
-    50..|      PaddedBitstring = &lt;&lt;0:BitOffset, NullBitstring/bitstring, 0:PadBitsLength&gt;&gt;,
-    50..|      &lt;&lt; &lt;&lt;(reverse_byte(B))/binary&gt;&gt; || &lt;&lt;B:1/binary&gt;&gt; &lt;= PaddedBitstring &gt;&gt;.
+    53..|      BitMapLength = (PayloadLength + 7) band bnot 7,
+    53..|      PadBitsLength = BitMapLength - PayloadLength,
+    53..|      PaddedBitstring = &lt;&lt;0:BitOffset, NullBitstring/bitstring, 0:PadBitsLength&gt;&gt;,
+    53..|      &lt;&lt; &lt;&lt;(reverse_byte(B))/binary&gt;&gt; || &lt;&lt;B:1/binary&gt;&gt; &lt;= PaddedBitstring &gt;&gt;.
         |  
         |  %% Reverses the bits in a byte.
         |  reverse_byte(&lt;&lt;A:1, B:1, C:1, D:1, E:1, F:1, G:1, H:1&gt;&gt;) -&gt;
-   128..|      &lt;&lt;H:1, G:1, F:1, E:1, D:1, C:1, B:1, A:1&gt;&gt;.
+   131..|      &lt;&lt;H:1, G:1, F:1, E:1, D:1, C:1, B:1, A:1&gt;&gt;.
         |  
         |  %% @doc Used for executing prepared statements. The bit offset whould be 0 in
         |  %% this case.
         |  -spec build_null_bitmap([any()]) -&gt; binary().
         |  build_null_bitmap(Values) -&gt;
-    49..|      Bits = &lt;&lt; &lt;&lt;(case V of null -&gt; 1; _ -&gt; 0 end):1&gt;&gt; || V &lt;- Values &gt;&gt;,
-    49..|      null_bitmap_encode(Bits, 0).
+    52..|      Bits = &lt;&lt; &lt;&lt;(case V of null -&gt; 1; _ -&gt; 0 end):1&gt;&gt; || V &lt;- Values &gt;&gt;,
+    52..|      null_bitmap_encode(Bits, 0).
         |  
         |  %% Decodes a value as received in the 'binary protocol' result set.
         |  %%
@@ -701,9 +701,9 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
      6..|      {&lt;&lt;?TYPE_VAR_STRING, 0&gt;&gt;, &lt;&lt;EncLength/binary, Value/binary&gt;&gt;};
         |  encode_param(Value) when is_integer(Value), Value &gt;= 0 -&gt;
         |      %% We send positive integers with the 'unsigned' flag set.
-     5..|      if
+     8..|      if
         |          Value =&lt; 16#ff -&gt;
-     3..|              {&lt;&lt;?TYPE_TINY, 16#80&gt;&gt;, &lt;&lt;Value:8&gt;&gt;};
+     6..|              {&lt;&lt;?TYPE_TINY, 16#80&gt;&gt;, &lt;&lt;Value:8&gt;&gt;};
         |          Value =&lt; 16#ffff -&gt;
 <font color=red>     0..|              {&lt;&lt;?TYPE_SHORT, 16#80&gt;&gt;, &lt;&lt;Value:16/little&gt;&gt;};</font>
         |          Value =&lt; 16#ffffffff -&gt;
@@ -818,16 +818,16 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |  -spec send_packet(sendfun(), Data :: binary(), SeqNum :: integer()) -&gt;
         |      {ok, NextSeqNum :: integer()}.
         |  send_packet(SendFun, Data, SeqNum) -&gt;
-   480..|      {WithHeaders, SeqNum1} = add_packet_headers(Data, SeqNum),
-   480..|      ok = SendFun(WithHeaders),
-   480..|      {ok, SeqNum1}.
+   486..|      {WithHeaders, SeqNum1} = add_packet_headers(Data, SeqNum),
+   486..|      ok = SendFun(WithHeaders),
+   486..|      {ok, SeqNum1}.
         |  
         |  %% @doc Receives data by calling RecvFun and removes the packet headers. Returns
         |  %% the packet contents and the next packet sequence number.
         |  -spec recv_packet(RecvFun :: recvfun(), SeqNum :: integer()) -&gt;
         |      {ok, Data :: binary(), NextSeqNum :: integer()}.
         |  recv_packet(RecvFun, SeqNum) -&gt;
-  1223..|      recv_packet(RecvFun, SeqNum, &lt;&lt;&gt;&gt;).
+  1245..|      recv_packet(RecvFun, SeqNum, &lt;&lt;&gt;&gt;).
         |  
         |  %% @doc Receives data by calling RecvFun and removes packet headers. Returns the
         |  %% data and the next packet sequence number.
@@ -835,14 +835,14 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |                    Acc :: binary()) -&gt;
         |      {ok, Data :: binary(), NextSeqNum :: integer()}.
         |  recv_packet(RecvFun, ExpectSeqNum, Acc) -&gt;
-  1223..|      case RecvFun(4) of
+  1245..|      case RecvFun(4) of
         |          {ok, Header} -&gt;
-  1219..|              {Size, ExpectSeqNum, More} = parse_packet_header(Header),
-  1219..|              {ok, Body} = RecvFun(Size),
-  1219..|              Acc1 = &lt;&lt;Acc/binary, Body/binary&gt;&gt;,
-  1219..|              NextSeqNum = (ExpectSeqNum + 1) band 16#ff,
-  1219..|              case More of
-  1219..|                  false -&gt; {ok, Acc1, NextSeqNum};
+  1241..|              {Size, ExpectSeqNum, More} = parse_packet_header(Header),
+  1241..|              {ok, Body} = RecvFun(Size),
+  1241..|              Acc1 = &lt;&lt;Acc/binary, Body/binary&gt;&gt;,
+  1241..|              NextSeqNum = (ExpectSeqNum + 1) band 16#ff,
+  1241..|              case More of
+  1241..|                  false -&gt; {ok, Acc1, NextSeqNum};
 <font color=red>     0..|                  true  -&gt; recv_packet(RecvFun, NextSeqNum, Acc1)</font>
         |              end;
         |          {error, closed} -&gt;
@@ -864,19 +864,19 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |       SeqNum :: integer(),
         |       MorePacketsExist :: boolean()}.
         |  parse_packet_header(&lt;&lt;PacketLength:24/little-integer, SeqNum:8/integer&gt;&gt;) -&gt;
-  1220..|      {PacketLength, SeqNum, PacketLength == 16#ffffff}.
+  1242..|      {PacketLength, SeqNum, PacketLength == 16#ffffff}.
         |  
         |  %% @doc Splits a packet body into chunks and wraps them in headers. The
         |  %% resulting list is ready to sent to the socket.
         |  -spec add_packet_headers(PacketBody :: iodata(), SeqNum :: integer()) -&gt;
         |      {PacketWithHeaders :: iodata(), NextSeqNum :: integer()}.
         |  add_packet_headers(PacketBody, SeqNum) -&gt;
-   481..|      Bin = iolist_to_binary(PacketBody),
-   481..|      Size = size(Bin),
-   481..|      SeqNum1 = (SeqNum + 1) rem 16#100,
+   487..|      Bin = iolist_to_binary(PacketBody),
+   487..|      Size = size(Bin),
+   487..|      SeqNum1 = (SeqNum + 1) rem 16#100,
         |      %% Todo: implement the case when Size &gt;= 16#ffffff.
-   481..|      if Size &lt; 16#ffffff -&gt;
-   481..|          {[&lt;&lt;Size:24/little, SeqNum:8&gt;&gt;, Bin], SeqNum1}
+   487..|      if Size &lt; 16#ffffff -&gt;
+   487..|          {[&lt;&lt;Size:24/little, SeqNum:8&gt;&gt;, Bin], SeqNum1}
         |      end.
         |  
         |  -spec parse_ok_packet(binary()) -&gt; #ok{}.
@@ -918,7 +918,7 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |  parse_eof_packet(&lt;&lt;?EOF:8, NumWarnings:16/little, StatusFlags:16/little&gt;&gt;) -&gt;
         |      %% EOF packet, 4.1 protocol.
         |      %% (Older protocol: &lt;&lt;?EOF:8&gt;&gt;)
-   157..|      #eof{status = StatusFlags, warning_count = NumWarnings}.
+   160..|      #eof{status = StatusFlags, warning_count = NumWarnings}.
         |  
         |  -spec hash_password(Password :: iodata(), Salt :: binary()) -&gt; Hash :: binary().
         |  hash_password(Password, Salt) -&gt;
@@ -944,7 +944,7 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |  
         |  %% lenenc_int/1 decodes length-encoded-integer values
         |  -spec lenenc_int(Input :: binary()) -&gt; {Value :: integer(), Rest :: binary()}.
-  1880..|  lenenc_int(&lt;&lt;Value:8, Rest/bits&gt;&gt;) when Value &lt; 251 -&gt; {Value, Rest};
+  1904..|  lenenc_int(&lt;&lt;Value:8, Rest/bits&gt;&gt;) when Value &lt; 251 -&gt; {Value, Rest};
      1..|  lenenc_int(&lt;&lt;16#fc:8, Value:16/little, Rest/binary&gt;&gt;) -&gt; {Value, Rest};
      1..|  lenenc_int(&lt;&lt;16#fd:8, Value:24/little, Rest/binary&gt;&gt;) -&gt; {Value, Rest};
      1..|  lenenc_int(&lt;&lt;16#fe:8, Value:64/little, Rest/binary&gt;&gt;) -&gt; {Value, Rest}.
@@ -966,9 +966,9 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_protocol.erl by CO
         |  %% lenenc_str/1 decodes length-encoded-string values
         |  -spec lenenc_str(Input :: binary()) -&gt; {String :: binary(), Rest :: binary()}.
         |  lenenc_str(Bin) -&gt;
-  1145..|      {Length, Rest} = lenenc_int(Bin),
-  1145..|      &lt;&lt;String:Length/binary, Rest1/binary&gt;&gt; = Rest,
-  1145..|      {String, Rest1}.
+  1163..|      {Length, Rest} = lenenc_int(Bin),
+  1163..|      &lt;&lt;String:Length/binary, Rest1/binary&gt;&gt; = Rest,
+  1163..|      {String, Rest1}.
         |  
         |  %% nts/1 decodes a nul-terminated string
         |  -spec nulterm_str(Input :: binary()) -&gt; {String :: binary(), Rest :: binary()}.

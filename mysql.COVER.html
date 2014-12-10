@@ -5,7 +5,7 @@
 <title>.eunit/mysql.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-12-09 at 10:47:40
+File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-12-10 at 23:00:16
 
 ****************************************************************************
 
@@ -34,7 +34,8 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |  %% gen_server is locally registered.
         |  -module(mysql).
         |  
-        |  -export([start_link/1, query/2, execute/3, prepare/2, prepare/3, unprepare/2,
+        |  -export([start_link/1, query/2, query/3, execute/3,
+        |           prepare/2, prepare/3, unprepare/2,
         |           warning_count/1, affected_rows/1, autocommit/1, insert_id/1,
         |           in_transaction/1,
         |           transaction/2, transaction/3]).
@@ -50,6 +51,7 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |  -define(default_user, &lt;&lt;&gt;&gt;).
         |  -define(default_password, &lt;&lt;&gt;&gt;).
         |  -define(default_timeout, infinity).
+        |  -define(default_query_cache_time, 60000). %% for query/3.
         |  
         |  %% A connection is a ServerRef as in gen_server:call/2,3.
         |  -type connection() :: Name :: atom() |
@@ -83,12 +85,16 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |  %%   &lt;dt&gt;`{database, Database}'&lt;/dt&gt;
         |  %%   &lt;dd&gt;The name of the database AKA schema to use. This can be changed later
         |  %%       using the query `USE &lt;database&gt;'.&lt;/dd&gt;
+        |  %%   &lt;dt&gt;`{query_cache_time, Timeout}'&lt;/dt&gt;
+        |  %%   &lt;dd&gt;The minimum number of milliseconds to cache prepared statements used
+        |  %%       for parametrized queries with query/3.&lt;/dd&gt;
         |  %% &lt;/dl&gt;
         |  -spec start_link(Options) -&gt; {ok, pid()} | ignore | {error, term()}
         |      when Options :: [Option],
         |           Option :: {name, ServerName} | {host, iodata()} | {port, integer()} | 
         |                     {user, iodata()} | {password, iodata()} |
-        |                     {database, iodata()},
+        |                     {database, iodata()} |
+        |                     {query_cache_time, non_neg_integer()},
         |           ServerName :: {local, Name :: atom()} |
         |                         {global, GlobalName :: term()} |
         |                         {via, Module :: atom(), ViaName :: term()}.
@@ -110,30 +116,63 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |  query(Conn, Query) -&gt;
    231..|      gen_server:call(Conn, {query, Query}).
         |  
+        |  %% @doc Executes a parameterized query. A prepared statement is created,
+        |  %% executed and then cached for a certain time. If the same query is executed
+        |  %% again when it is already cached, it does not need to be prepared again.
+        |  %%
+        |  %% The minimum time the prepared statement is cached can be specified using the
+        |  %% option `{query_cache_time, Milliseconds}' to start_link/1.
+        |  -spec query(Conn, Query, Params) -&gt; ok | {ok, ColumnNames, Rows} |
+        |                                      {error, Reason}
+        |      when Conn :: connection(),
+        |           Query :: iodata(),
+        |           Params :: [term()],
+        |           ColumnNames :: [binary()],
+        |           Rows :: [[term()]],
+        |           Reason :: server_reason().
+        |  query(Conn, Query, Params) when is_list(Params) -&gt;
+     3..|      gen_server:call(Conn, {query, Query, Params}).
+        |  
         |  %% @doc Executes a prepared statement.
         |  %% @see prepare/2
-        |  execute(Conn, StatementId, Args) -&gt;
-   123..|      gen_server:call(Conn, {execute, StatementId, Args}).
+        |  %% @see prepare/3
+        |  -spec execute(Conn, StatementRef, Params) -&gt;
+        |      ok | {ok, ColumnNames, Rows} | {error, Reason}
+        |    when Conn :: connection(),
+        |         StatementRef :: atom() | integer(),
+        |         Params :: [term()],
+        |         ColumnNames :: [binary()],
+        |         Rows :: [[term()]],
+        |         Reason :: server_reason() | not_prepared.
+        |  execute(Conn, StatementRef, Params) -&gt;
+   123..|      gen_server:call(Conn, {execute, StatementRef, Params}).
         |  
         |  %% @doc Creates a prepared statement from the passed query.
-        |  %% @see execute/3
-        |  -spec prepare(Conn :: connection(), Query :: iodata()) -&gt;
-        |      {ok, StatementId :: integer()} | {error, Reason :: server_reason()}.
+        |  %% @see prepare/3
+        |  -spec prepare(Conn, Query) -&gt; {ok, StatementId} | {error, Reason}
+        |    when Conn :: connection(),
+        |         Query :: iodata(),
+        |         StatementId :: integer(),
+        |         Reason :: server_reason().
         |  prepare(Conn, Query) -&gt;
     58..|      gen_server:call(Conn, {prepare, Query}).
         |  
         |  %% @doc Creates a prepared statement from the passed query and associates it
         |  %% with the given name.
-        |  %% @see execute/3
-        |  -spec prepare(Conn :: connection(), Name :: term(), Query :: iodata()) -&gt;
-        |      {ok, Name :: term()} | {error, Reason :: server_reason()}.
+        |  %% @see prepare/2
+        |  -spec prepare(Conn, Name, Query) -&gt; {ok, Name} | {error, Reason}
+        |    when Conn :: connection(),
+        |         Name :: atom(),
+        |         Query :: iodata(),
+        |         Reason :: server_reason().
         |  prepare(Conn, Name, Query) -&gt;
      3..|      gen_server:call(Conn, {prepare, Name, Query}).
         |  
         |  %% @doc Deallocates a prepared statement.
-        |  %% @see prepare/3
-        |  -spec unprepare(Conn :: connection(), StatementRef :: term()) -&gt;
-        |      ok | {error, not_prepared} | {error, Reason :: server_reason()}.
+        |  -spec unprepare(Conn, StatementRef) -&gt; ok | {error, Reason}
+        |    when Conn :: connection(),
+        |         StatementRef :: atom() | integer(),
+        |         Reason :: server_reason() | not_prepared.
         |  unprepare(Conn, StatementRef) -&gt;
     56..|      gen_server:call(Conn, {unprepare, StatementRef}).
         |  
@@ -244,7 +283,8 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |  
         |  %% Gen_server state
         |  -record(state, {socket, timeout = infinity, affected_rows = 0, status = 0,
-        |                  warning_count = 0, insert_id = 0, stmts = dict:new()}).
+        |                  warning_count = 0, insert_id = 0, stmts = dict:new(),
+        |                  query_cache_time, query_cache = empty}).
         |  
         |  %% @private
         |  init(Opts) -&gt;
@@ -255,6 +295,8 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
      4..|      Password = proplists:get_value(password, Opts, ?default_password),
      4..|      Database = proplists:get_value(database, Opts, undefined),
      4..|      Timeout  = proplists:get_value(timeout,  Opts, ?default_timeout),
+     4..|      QueryCacheTime = proplists:get_value(query_cache_time, Opts,
+        |                                           ?default_query_cache_time),
         |  
         |      %% Connect socket
      4..|      SockOpts = [{active, false}, binary, {packet, raw}],
@@ -267,7 +309,8 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |                                        RecvFun),
      4..|      case Result of
         |          #ok{} = OK -&gt;
-     4..|              State = #state{socket = Socket, timeout = Timeout},
+     4..|              State = #state{socket = Socket, timeout = Timeout,
+        |                             query_cache_time = QueryCacheTime},
      4..|              State1 = update_state(State, OK),
         |              %% Trap exit so that we can properly disconnect when we die.
      4..|              process_flag(trap_exit, true),
@@ -293,24 +336,45 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
     80..|              Names = [Def#col.name || Def &lt;- ColDefs],
     80..|              {reply, {ok, Names, Rows}, State1}
         |      end;
+        |  handle_call({query, Query, Params}, _From, State) when is_list(Params) -&gt;
+        |      %% Parametrized query = anonymous prepared statement
+     3..|      QueryBin = iolist_to_binary(Query),
+     3..|      #state{socket = Socket, timeout = Timeout} = State,
+     3..|      SendFun = fun (Data) -&gt; gen_tcp:send(Socket, Data) end,
+     3..|      RecvFun = fun (Size) -&gt; gen_tcp:recv(Socket, Size, Timeout) end,
+     3..|      Cache = State#state.query_cache,
+     3..|      {StmtResult, Cache1} = case mysql_cache:lookup(QueryBin, Cache) of
+        |          {found, FoundStmt, NewCache} -&gt;
+        |              %% Found
+     1..|              {{ok, FoundStmt}, NewCache};
+        |          not_found -&gt;
+        |              %% Prepare
+     2..|              Rec = mysql_protocol:prepare(Query, SendFun, RecvFun),
+        |              %State1 = update_state(State, Rec),
+     2..|              case Rec of
+        |                  #error{} = E -&gt;
+<font color=red>     0..|                      {{error, error_to_reason(E)}, Cache};</font>
+        |                  #prepared{} = Stmt -&gt;
+        |                      %% If the first entry in the cache, start the timer.
+     2..|                      Cache == empty andalso begin
+     2..|                          When = State#state.query_cache_time * 2,
+     2..|                          erlang:send_after(When, self(), query_cache)
+        |                      end,
+     2..|                      {{ok, Stmt}, mysql_cache:store(QueryBin, Stmt, Cache)}
+        |              end
+        |      end,
+     3..|      case StmtResult of
+        |          {ok, StmtRec} -&gt;
+     3..|              State1 = State#state{query_cache = Cache1},
+     3..|              execute_stmt(StmtRec, Params, State1);
+        |          PrepareError -&gt;
+<font color=red>     0..|              {reply, PrepareError, State}</font>
+        |      end;
         |  handle_call({execute, Stmt, Args}, _From, State) when is_atom(Stmt);
         |                                                        is_integer(Stmt) -&gt;
    123..|      case dict:find(Stmt, State#state.stmts) of
         |          {ok, StmtRec} -&gt;
-   122..|              #state{socket = Socket, timeout = Timeout} = State,
-   122..|              SendFun = fun (Data) -&gt; gen_tcp:send(Socket, Data) end,
-   122..|              RecvFun = fun (Size) -&gt; gen_tcp:recv(Socket, Size, Timeout) end,
-   122..|              Rec = mysql_protocol:execute(StmtRec, Args, SendFun, RecvFun),
-   122..|              State1 = update_state(State, Rec),
-   122..|              case Rec of
-        |                  #ok{} -&gt;
-    48..|                      {reply, ok, State1};
-        |                  #error{} = E -&gt;
-<font color=red>     0..|                      {reply, {error, error_to_reason(E)}, State1};</font>
-        |                  #resultset{cols = ColDefs, rows = Rows} -&gt;
-    74..|                      Names = [Def#col.name || Def &lt;- ColDefs],
-    74..|                      {reply, {ok, Names, Rows}, State1}
-        |              end;
+   122..|              execute_stmt(StmtRec, Args, State);
         |          error -&gt;
      1..|              {reply, {error, not_prepared}, State}
         |      end;
@@ -379,6 +443,22 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
      1..|      {noreply, State}.
         |  
         |  %% @private
+        |  handle_info(query_cache, State = #state{query_cache = Cache,
+        |                                          query_cache_time = CacheTime}) -&gt;
+        |      %% Evict expired queries/statements in the cache used by query/3.
+     1..|      {Evicted, Cache1} = mysql_cache:evict_older_than(Cache, CacheTime),
+        |      %% Unprepare the evicted statements
+     1..|      #state{socket = Socket, timeout = Timeout} = State,
+     1..|      SendFun = fun (Data) -&gt; gen_tcp:send(Socket, Data) end,
+     1..|      RecvFun = fun (Size) -&gt; gen_tcp:recv(Socket, Size, Timeout) end,
+     1..|      lists:foreach(fun ({_Query, Stmt}) -&gt;
+     1..|                        mysql_protocol:unprepare(Stmt, SendFun, RecvFun)
+        |                    end,
+        |                    Evicted),
+        |      %% If nonempty, schedule eviction again.
+     1..|      mysql_cache:size(Cache1) &gt; 0 andalso
+<font color=red>     0..|          erlang:send_after(CacheTime, self(), query_cache),</font>
+     1..|      {noreply, State#state{query_cache = Cache1}};
         |  handle_info(_Info, State) -&gt;
      1..|      {noreply, State}.
         |  
@@ -392,12 +472,30 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |  terminate(_Reason, _State) -&gt;
      1..|      ok.
         |  
+        |  %% @private
         |  code_change(_OldVsn, State = #state{}, _Extra) -&gt;
      1..|      {ok, State};
         |  code_change(_OldVsn, _State, _Extra) -&gt;
      1..|      {error, incompatible_state}.
         |  
         |  %% --- Helpers ---
+        |  
+        |  %% @doc Returns a tuple on the the same form as handle_call/3.
+        |  execute_stmt(StmtRec, Args, State) -&gt;
+   125..|      #state{socket = Socket, timeout = Timeout} = State,
+   125..|      SendFun = fun (Data) -&gt; gen_tcp:send(Socket, Data) end,
+   125..|      RecvFun = fun (Size) -&gt; gen_tcp:recv(Socket, Size, Timeout) end,
+   125..|      Rec = mysql_protocol:execute(StmtRec, Args, SendFun, RecvFun),
+   125..|      State1 = update_state(State, Rec),
+   125..|      case Rec of
+        |          #ok{} -&gt;
+    48..|              {reply, ok, State1};
+        |          #error{} = E -&gt;
+<font color=red>     0..|              {reply, {error, error_to_reason(E)}, State1};</font>
+        |          #resultset{cols = ColDefs, rows = Rows} -&gt;
+    77..|              Names = [Def#col.name || Def &lt;- ColDefs],
+    77..|              {reply, {ok, Names, Rows}, State1}
+        |      end.
         |  
         |  %% @doc Produces a tuple to return as an error reason.
         |  -spec error_to_reason(#error{}) -&gt; server_reason().
@@ -412,10 +510,12 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |                  warning_count = W};
         |  %update_state(State, #eof{status = S, warning_count = W}) -&gt;
         |  %    State#state{status = S, warning_count = W, affected_rows = 0};
+        |  update_state(State, #prepared{warning_count = W}) -&gt;
+    59..|      State#state{warning_count = W};
         |  update_state(State, _Other) -&gt;
         |      %% This includes errors, resultsets, etc.
         |      %% Reset warnings, etc. (Note: We don't reset status and insert_id.)
-   216..|      State#state{warning_count = 0, affected_rows = 0}.
+   160..|      State#state{warning_count = 0, affected_rows = 0}.
 </pre>
 </body>
 </html>
