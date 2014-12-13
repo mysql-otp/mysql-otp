@@ -5,7 +5,7 @@
 <title>.eunit/mysql_cache.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_cache.erl by COVER 2014-12-10 at 23:06:44
+File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_cache.erl by COVER 2014-12-13 at 23:03:56
 
 ****************************************************************************
 
@@ -55,9 +55,9 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_cache.erl by COVER
         |          end,
         |          {[], dict:new()},
         |          Dict),
-     5..|      Cache1 = case dict:is_empty(Dict1) of
-     2..|          true  -&gt; empty;
-     3..|          false -&gt; {cache, StartTs, Dict1}
+     5..|      Cache1 = case dict:size(Dict1) of
+     2..|          0 -&gt; empty;
+     3..|          _ -&gt; {cache, StartTs, Dict1}
         |      end,
      5..|      {Evicted, Cache1};
         |  evict_older_than(empty, _) -&gt;
@@ -78,7 +78,7 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_cache.erl by COVER
      1..|              not_found
         |      end;
         |  lookup(_Key, empty) -&gt;
-     3..|      not_found.
+     4..|      not_found.
         |  
         |  %% @doc Returns the atom `empty' which represents an empty cache.
         |  -spec new() -&gt; cache(K :: term(), V :: term()).
@@ -100,7 +100,7 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_cache.erl by COVER
      1..|      Time = timer:now_diff(os:timestamp(), StartTs) div 1000,
      1..|      {cache, StartTs, dict:store(Key, {Value, Time}, Dict)};
         |  store(Key, Value, empty) -&gt;
-     3..|      {cache, os:timestamp(), dict:store(Key, {Value, 0}, dict:new())}.
+     4..|      {cache, os:timestamp(), dict:store(Key, {Value, 0}, dict:new())}.
         |  
         |  -ifdef(TEST).
         |  -include_lib("eunit/include/eunit.hrl").
