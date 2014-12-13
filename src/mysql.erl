@@ -23,7 +23,7 @@
 %% gen_server is locally registered.
 -module(mysql).
 
--export([start_link/1, query/2, query/3, execute/3,
+-export([start_link/1, query/2, query/3, query/4, execute/3, execute/4,
          prepare/2, prepare/3, unprepare/2,
          warning_count/1, affected_rows/1, autocommit/1, insert_id/1,
          in_transaction/1,
@@ -39,7 +39,8 @@
 -define(default_port, 3306).
 -define(default_user, <<>>).
 -define(default_password, <<>>).
--define(default_timeout, infinity).
+-define(default_connect_timeout, 5000).
+-define(default_query_timeout, infinity).
 -define(default_query_cache_time, 60000). %% for query/3.
 
 %% A connection is a ServerRef as in gen_server:call/2,3.
@@ -74,6 +75,12 @@
 %%   <dt>`{database, Database}'</dt>
 %%   <dd>The name of the database AKA schema to use. This can be changed later
 %%       using the query `USE <database>'.</dd>
+%%   <dt>`{connect_timeout, Timeout}'</dt>
+%%   <dd>The maximum time to spend for start_link/1.</dd>
+%%   <dt>`{query_timeout, Timeout}'</dt>
+%%   <dd>The default time to wait for a response when executing a query or a
+%%       prepared statement. This can be given per query using `query/3,4' and
+%%       `execute/4'. The default is `infinity'.</dd>
 %%   <dt>`{query_cache_time, Timeout}'</dt>
 %%   <dd>The minimum number of milliseconds to cache prepared statements used
 %%       for parametrized queries with query/3.</dd>
@@ -83,19 +90,23 @@
          Option :: {name, ServerName} | {host, iodata()} | {port, integer()} | 
                    {user, iodata()} | {password, iodata()} |
                    {database, iodata()} |
+                   {connect_timeout, timeout()} |
+                   {query_timeout, timeout()} |
                    {query_cache_time, non_neg_integer()},
          ServerName :: {local, Name :: atom()} |
                        {global, GlobalName :: term()} |
                        {via, Module :: atom(), ViaName :: term()}.
 start_link(Options) ->
+    GenSrvOpts = [{timeout, proplists:get_value(connect_timeout, Options,
+                                                ?default_connect_timeout)}],
     case proplists:get_value(name, Options) of
         undefined ->
-            gen_server:start_link(?MODULE, Options, []);
+            gen_server:start_link(?MODULE, Options, GenSrvOpts);
         ServerName ->
-            gen_server:start_link(ServerName, ?MODULE, Options, [])
+            gen_server:start_link(ServerName, ?MODULE, Options, GenSrvOpts)
     end.
 
-%% @doc Executes a query.
+%% @doc Executes a query with the query timeout as given to start_link/1.
 -spec query(Conn, Query) -> ok | {ok, ColumnNames, Rows} | {error, Reason}
     when Conn :: connection(),
          Query :: iodata(),
@@ -103,26 +114,53 @@ start_link(Options) ->
          Rows :: [[term()]],
          Reason :: server_reason().
 query(Conn, Query) ->
-    gen_server:call(Conn, {query, Query}).
+    gen_server:call(Conn, {query, Query}, infinity).
 
-%% @doc Executes a parameterized query. A prepared statement is created,
-%% executed and then cached for a certain time. If the same query is executed
-%% again when it is already cached, it does not need to be prepared again.
+%% @doc Depending on the 3rd argument this function does different things.
 %%
-%% The minimum time the prepared statement is cached can be specified using the
-%% option `{query_cache_time, Milliseconds}' to start_link/1.
--spec query(Conn, Query, Params) -> ok | {ok, ColumnNames, Rows} |
-                                    {error, Reason}
+%% If the 3rd argument is a list, it executes a parameterized query. This is
+%% equivallent to query/4 with the query timeout as given to start_link/1.
+%%
+%% If the 3rd argument is a timeout, it executes a plain query with this
+%% timeout.
+%% @see query/2.
+%% @see query/4.
+-spec query(Conn, Query, Params | Timeout) -> ok | {ok, ColumnNames, Rows} |
+                                              {error, Reason}
     when Conn :: connection(),
          Query :: iodata(),
+         Timeout :: timeout(),
          Params :: [term()],
          ColumnNames :: [binary()],
          Rows :: [[term()]],
          Reason :: server_reason().
 query(Conn, Query, Params) when is_list(Params) ->
-    gen_server:call(Conn, {query, Query, Params}).
+    gen_server:call(Conn, {param_query, Query, Params}, infinity);
+query(Conn, Query, Timeout) when is_integer(Timeout); Timeout == infinity ->
+    gen_server:call(Conn, {query, Query, Timeout}, infinity).
 
-%% @doc Executes a prepared statement.
+%% @doc Executes a parameterized query with a timeout.
+%%
+%% A prepared statement is created, executed and then cached for a certain
+%% time. If the same query is executed again when it is already cached, it does
+%% not need to be prepared again.
+%%
+%% The minimum time the prepared statement is cached can be specified using the
+%% option `{query_cache_time, Milliseconds}' to start_link/1.
+-spec query(Conn, Query, Params, Timeout) -> ok | {ok, ColumnNames, Rows} |
+                                             {error, Reason}
+    when Conn :: connection(),
+         Query :: iodata(),
+         Timeout :: timeout(),
+         Params :: [term()],
+         ColumnNames :: [binary()],
+         Rows :: [[term()]],
+         Reason :: server_reason().
+query(Conn, Query, Params, Timeout) ->
+    gen_server:call(Conn, {param_query, Query, Params, Timeout}, infinity).
+
+%% @doc Executes a prepared statement with the default query timeout as given
+%% to start_link/1.
 %% @see prepare/2
 %% @see prepare/3
 -spec execute(Conn, StatementRef, Params) ->
@@ -134,7 +172,22 @@ query(Conn, Query, Params) when is_list(Params) ->
        Rows :: [[term()]],
        Reason :: server_reason() | not_prepared.
 execute(Conn, StatementRef, Params) ->
-    gen_server:call(Conn, {execute, StatementRef, Params}).
+    gen_server:call(Conn, {execute, StatementRef, Params}, infinity).
+
+%% @doc Executes a prepared statement.
+%% @see prepare/2
+%% @see prepare/3
+-spec execute(Conn, StatementRef, Params, Timeout) ->
+    ok | {ok, ColumnNames, Rows} | {error, Reason}
+  when Conn :: connection(),
+       StatementRef :: atom() | integer(),
+       Params :: [term()],
+       Timeout :: timeout(),
+       ColumnNames :: [binary()],
+       Rows :: [[term()]],
+       Reason :: server_reason() | not_prepared.
+execute(Conn, StatementRef, Params, Timeout) ->
+    gen_server:call(Conn, {execute, StatementRef, Params, Timeout}, infinity).
 
 %% @doc Creates a prepared statement from the passed query.
 %% @see prepare/3
@@ -271,19 +324,21 @@ transaction(Conn, Fun, Args) when is_list(Args),
 -include("server_status.hrl").
 
 %% Gen_server state
--record(state, {socket, timeout = infinity, affected_rows = 0, status = 0,
-                warning_count = 0, insert_id = 0, stmts = dict:new(),
-                query_cache_time, query_cache = empty}).
+-record(state, {server_version, connection_id, socket,
+                host, port, user, password,
+                query_timeout, query_cache_time,
+                affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
+                stmts = dict:new(), query_cache = empty}).
 
 %% @private
 init(Opts) ->
     %% Connect
-    Host     = proplists:get_value(host,     Opts, ?default_host),
-    Port     = proplists:get_value(port,     Opts, ?default_port),
-    User     = proplists:get_value(user,     Opts, ?default_user),
-    Password = proplists:get_value(password, Opts, ?default_password),
-    Database = proplists:get_value(database, Opts, undefined),
-    Timeout  = proplists:get_value(timeout,  Opts, ?default_timeout),
+    Host     = proplists:get_value(host,          Opts, ?default_host),
+    Port     = proplists:get_value(port,          Opts, ?default_port),
+    User     = proplists:get_value(user,          Opts, ?default_user),
+    Password = proplists:get_value(password,      Opts, ?default_password),
+    Database = proplists:get_value(database,      Opts, undefined),
+    Timeout  = proplists:get_value(query_timeout, Opts, ?default_query_timeout),
     QueryCacheTime = proplists:get_value(query_cache_time, Opts,
                                          ?default_query_cache_time),
 
@@ -292,29 +347,40 @@ init(Opts) ->
     {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
 
     %% Exchange handshake communication.
-    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
-    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
-    Result = mysql_protocol:handshake(User, Password, Database, SendFun,
-                                      RecvFun),
+    Result = mysql_protocol:handshake(User, Password, Database, gen_tcp,
+                                      Socket),
     case Result of
-        #ok{} = OK ->
-            State = #state{socket = Socket, timeout = Timeout,
+        #handshake{server_version = Version, connection_id = ConnId,
+                   status = Status} ->
+            State = #state{server_version = Version, connection_id = ConnId,
+                           socket = Socket,
+                           host = Host, port = Port, user = User,
+                           password = Password, status = Status,
+                           query_timeout = Timeout,
                            query_cache_time = QueryCacheTime},
-            State1 = update_state(State, OK),
             %% Trap exit so that we can properly disconnect when we die.
             process_flag(trap_exit, true),
-            {ok, State1};
+            {ok, State};
         #error{} = E ->
             {stop, error_to_reason(E)}
     end.
 
 %% @private
-handle_call({query, Query}, _From, State) when is_binary(Query);
-                                               is_list(Query) ->
-    #state{socket = Socket, timeout = Timeout} = State,
-    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
-    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
-    Rec = mysql_protocol:query(Query, SendFun, RecvFun),
+handle_call({query, Query}, From, State) ->
+    handle_call({query, Query, State#state.query_timeout}, From, State);
+handle_call({query, Query, Timeout}, _From, State) ->
+    Socket = State#state.socket,
+    Rec = case mysql_protocol:query(Query, gen_tcp, Socket, Timeout) of
+        {error, timeout} when State#state.server_version >= [5, 0, 0] ->
+            kill_query(State),
+            mysql_protocol:fetch_query_response(gen_tcp, Socket, infinity);
+        {error, timeout} ->
+            %% For MySQL 4.x.x there is no way to recover from timeout except
+            %% killing the connection itself.
+            exit(timeout);
+        QueryResult ->
+            QueryResult
+    end,
     State1 = update_state(State, Rec),
     case Rec of
         #ok{} ->
@@ -325,12 +391,13 @@ handle_call({query, Query}, _From, State) when is_binary(Query);
             Names = [Def#col.name || Def <- ColDefs],
             {reply, {ok, Names, Rows}, State1}
     end;
-handle_call({query, Query, Params}, _From, State) when is_list(Params) ->
-    %% Parametrized query = anonymous prepared statement
+handle_call({param_query, Query, Params}, From, State) ->
+    handle_call({param_query, Query, Params, State#state.query_timeout}, From,
+                State);
+handle_call({param_query, Query, Params, Timeout}, _From, State) ->
+    %% Parametrized query: Prepared statement cached with the query as the key
     QueryBin = iolist_to_binary(Query),
-    #state{socket = Socket, timeout = Timeout} = State,
-    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
-    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
+    #state{socket = Socket} = State,
     Cache = State#state.query_cache,
     {StmtResult, Cache1} = case mysql_cache:lookup(QueryBin, Cache) of
         {found, FoundStmt, NewCache} ->
@@ -338,7 +405,7 @@ handle_call({query, Query, Params}, _From, State) when is_list(Params) ->
             {{ok, FoundStmt}, NewCache};
         not_found ->
             %% Prepare
-            Rec = mysql_protocol:prepare(Query, SendFun, RecvFun),
+            Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
             %State1 = update_state(State, Rec),
             case Rec of
                 #error{} = E ->
@@ -355,23 +422,22 @@ handle_call({query, Query, Params}, _From, State) when is_list(Params) ->
     case StmtResult of
         {ok, StmtRec} ->
             State1 = State#state{query_cache = Cache1},
-            execute_stmt(StmtRec, Params, State1);
+            execute_stmt(StmtRec, Params, Timeout, State1);
         PrepareError ->
             {reply, PrepareError, State}
     end;
-handle_call({execute, Stmt, Args}, _From, State) when is_atom(Stmt);
-                                                      is_integer(Stmt) ->
+handle_call({execute, Stmt, Args}, From, State) ->
+    handle_call({execute, Stmt, Args, State#state.query_timeout}, From, State);
+handle_call({execute, Stmt, Args, Timeout}, _From, State) ->
     case dict:find(Stmt, State#state.stmts) of
         {ok, StmtRec} ->
-            execute_stmt(StmtRec, Args, State);
+            execute_stmt(StmtRec, Args, Timeout, State);
         error ->
             {reply, {error, not_prepared}, State}
     end;
 handle_call({prepare, Query}, _From, State) ->
-    #state{socket = Socket, timeout = Timeout} = State,
-    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
-    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
-    Rec = mysql_protocol:prepare(Query, SendFun, RecvFun),
+    #state{socket = Socket} = State,
+    Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
     State1 = update_state(State, Rec),
     case Rec of
         #error{} = E ->
@@ -382,18 +448,16 @@ handle_call({prepare, Query}, _From, State) ->
             {reply, {ok, Id}, State2}
     end;
 handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) ->
-    #state{socket = Socket, timeout = Timeout} = State,
-    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
-    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
+    #state{socket = Socket} = State,
     %% First unprepare if there is an old statement with this name.
     State1 = case dict:find(Name, State#state.stmts) of
         {ok, OldStmt} ->
-            mysql_protocol:unprepare(OldStmt, SendFun, RecvFun),
+            mysql_protocol:unprepare(OldStmt, gen_tcp, Socket),
             State#state{stmts = dict:erase(Name, State#state.stmts)};
         error ->
             State
     end,
-    Rec = mysql_protocol:prepare(Query, SendFun, RecvFun),
+    Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
     State2 = update_state(State1, Rec),
     case Rec of
         #error{} = E ->
@@ -407,10 +471,8 @@ handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);
                                                   is_integer(Stmt) ->
     case dict:find(Stmt, State#state.stmts) of
         {ok, StmtRec} ->
-            #state{socket = Socket, timeout = Timeout} = State,
-            SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
-            RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
-            mysql_protocol:unprepare(StmtRec, SendFun, RecvFun),
+            #state{socket = Socket} = State,
+            mysql_protocol:unprepare(StmtRec, gen_tcp, Socket),
             Stmts1 = dict:erase(Stmt, State#state.stmts),
             {reply, ok, State#state{stmts = Stmts1}};
         error ->
@@ -437,11 +499,9 @@ handle_info(query_cache, State = #state{query_cache = Cache,
     %% Evict expired queries/statements in the cache used by query/3.
     {Evicted, Cache1} = mysql_cache:evict_older_than(Cache, CacheTime),
     %% Unprepare the evicted statements
-    #state{socket = Socket, timeout = Timeout} = State,
-    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
-    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
+    #state{socket = Socket} = State,
     lists:foreach(fun ({_Query, Stmt}) ->
-                      mysql_protocol:unprepare(Stmt, SendFun, RecvFun)
+                      mysql_protocol:unprepare(Stmt, gen_tcp, Socket)
                   end,
                   Evicted),
     %% If nonempty, schedule eviction again.
@@ -454,10 +514,8 @@ handle_info(_Info, State) ->
 %% @private
 terminate(Reason, State) when Reason == normal; Reason == shutdown ->
     %% Send the goodbye message for politeness.
-    #state{socket = Socket, timeout = Timeout} = State,
-    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
-    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
-    mysql_protocol:quit(SendFun, RecvFun);
+    #state{socket = Socket} = State,
+    mysql_protocol:quit(gen_tcp, Socket);
 terminate(_Reason, _State) ->
     ok.
 
@@ -470,11 +528,18 @@ code_change(_OldVsn, _State, _Extra) ->
 %% --- Helpers ---
 
 %% @doc Returns a tuple on the the same form as handle_call/3.
-execute_stmt(StmtRec, Args, State) ->
-    #state{socket = Socket, timeout = Timeout} = State,
-    SendFun = fun (Data) -> gen_tcp:send(Socket, Data) end,
-    RecvFun = fun (Size) -> gen_tcp:recv(Socket, Size, Timeout) end,
-    Rec = mysql_protocol:execute(StmtRec, Args, SendFun, RecvFun),
+execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket}) ->
+    Rec = case mysql_protocol:execute(Stmt, Args, gen_tcp, Socket, Timeout) of
+        {error, timeout} when State#state.server_version >= [5, 0, 0] ->
+            kill_query(State),
+            mysql_protocol:fetch_execute_response(gen_tcp, Socket, infinity);
+        {error, timeout} ->
+            %% For MySQL 4.x.x there is no way to recover from timeout except
+            %% killing the connection itself.
+            exit(timeout);
+        QueryResult ->
+            QueryResult
+    end,
     State1 = update_state(State, Rec),
     case Rec of
         #ok{} ->
@@ -505,3 +570,26 @@ update_state(State, _Other) ->
     %% This includes errors, resultsets, etc.
     %% Reset warnings, etc. (Note: We don't reset status and insert_id.)
     State#state{warning_count = 0, affected_rows = 0}.
+
+%% @doc Makes a separate connection and execute KILL QUERY. We do this to get
+%% our main connection back to normal. KILL QUERY appeared in MySQL 5.0.0.
+kill_query(#state{connection_id = ConnId, host = Host, port = Port,
+                  user = User, password = Password}) ->
+    %% Connect socket
+    SockOpts = [{active, false}, binary, {packet, raw}],
+    {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
+
+    %% Exchange handshake communication.
+    Result = mysql_protocol:handshake(User, Password, undefined, gen_tcp,
+                                      Socket),
+    case Result of
+        #handshake{} ->
+            %% Kill and disconnect
+            IdBin = integer_to_binary(ConnId),
+            #ok{} = mysql_protocol:query(<<"KILL QUERY ", IdBin/binary>>,
+                                         gen_tcp, Socket, 3000),
+            mysql_protocol:quit(gen_tcp, Socket);
+        #error{} = E ->
+            error_logger:error_msg("Failed to connect to kill query: ~p",
+                                   [error_to_reason(E)])
+    end.

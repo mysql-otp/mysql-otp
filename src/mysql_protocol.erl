@@ -27,13 +27,8 @@
 -module(mysql_protocol).
 
 -export([handshake/5, quit/2,
-         query/3,
-         prepare/3, unprepare/3, execute/4]).
-
--export_type([sendfun/0, recvfun/0]).
-
--type sendfun() :: fun((binary()) -> ok).
--type recvfun() :: fun((integer()) -> {ok, binary()}).
+         query/4, fetch_query_response/3,
+         prepare/3, unprepare/3, execute/5, fetch_execute_response/3]).
 
 %% How much data do we want to send at most?
 -define(MAX_BYTES_PER_PACKET, 50000000).
@@ -49,41 +44,51 @@
 %% @doc Performs a handshake using the supplied functions for communication.
 %% Returns an ok or an error record. Raises errors when various unimplemented
 %% features are requested.
--spec handshake(iodata(), iodata(), iodata() | undefined, sendfun(),
-                recvfun()) -> #ok{} | #error{}.
-handshake(Username, Password, Database, SendFun, RecvFun) ->
+-spec handshake(iodata(), iodata(), iodata() | undefined, atom(), term()) ->
+    #handshake{} | #error{}.
+handshake(Username, Password, Database, TcpModule, Socket) ->
     SeqNum0 = 0,
-    {ok, HandshakePacket, SeqNum1} = recv_packet(RecvFun, SeqNum0),
+    {ok, HandshakePacket, SeqNum1} = recv_packet(TcpModule, Socket, SeqNum0),
     Handshake = parse_handshake(HandshakePacket),
     Response = build_handshake_response(Handshake, Username, Password,
                                         Database),
-    {ok, SeqNum2} = send_packet(SendFun, Response, SeqNum1),
-    {ok, ConfirmPacket, _SeqNum3} = recv_packet(RecvFun, SeqNum2),
-    parse_handshake_confirm(ConfirmPacket).
+    {ok, SeqNum2} = send_packet(TcpModule, Socket, Response, SeqNum1),
+    {ok, ConfirmPacket, _SeqNum3} = recv_packet(TcpModule, Socket, SeqNum2),
+    case parse_handshake_confirm(ConfirmPacket) of
+        #ok{status = OkStatus} ->
+            OkStatus = Handshake#handshake.status,
+            Handshake;
+        Error ->
+            Error
+    end.
 
-quit(SendFun, RecvFun) ->
-    {ok, SeqNum1} = send_packet(SendFun, <<?COM_QUIT>>, 0),
-    case recv_packet(RecvFun, SeqNum1) of
+quit(TcpModule, Socket) ->
+    {ok, SeqNum1} = send_packet(TcpModule, Socket, <<?COM_QUIT>>, 0),
+    case recv_packet(TcpModule, Socket, SeqNum1) of
         {error, closed} -> ok;
         {ok, ?ok_pattern, _SeqNum2} -> ok
     end.
 
--spec query(Query :: iodata(), sendfun(), recvfun()) ->
-    #ok{} | #error{} | #resultset{}.
-query(Query, SendFun, RecvFun) ->
+-spec query(Query :: iodata(), atom(), term(), timeout()) ->
+    #ok{} | #resultset{} | #error{} | {error, timeout}.
+query(Query, TcpModule, Socket, Timeout) ->
     Req = <<?COM_QUERY, (iolist_to_binary(Query))/binary>>,
     SeqNum0 = 0,
-    {ok, SeqNum1} = send_packet(SendFun, Req, SeqNum0),
-    {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
-    case Resp of
-        ?ok_pattern ->
-            parse_ok_packet(Resp);
-        ?error_pattern ->
-            parse_error_packet(Resp);
-        _ResultSet ->
+    {ok, _SeqNum1} = send_packet(TcpModule, Socket, Req, SeqNum0),
+    fetch_query_response(TcpModule, Socket, Timeout).
+
+%% @doc This is used by query/4. If query/4 returns {error, timeout}, this
+%% function can be called to retry to fetch the results of the query. 
+fetch_query_response(TcpModule, Socket, Timeout) ->
+    case recv_packet(TcpModule, Socket, Timeout, any) of
+        {ok, ?ok_pattern = Ok, _} ->
+            parse_ok_packet(Ok);
+        {ok, ?error_pattern = Error, _} ->
+            parse_error_packet(Error);
+        {ok, ResultPacket, SeqNum2} ->
             %% The first packet in a resultset is only the column count.
-            {ColumnCount, <<>>} = lenenc_int(Resp),
-            case fetch_resultset(RecvFun, ColumnCount, SeqNum2) of
+            {ColumnCount, <<>>} = lenenc_int(ResultPacket),
+            case fetch_resultset(TcpModule, Socket, ColumnCount, SeqNum2) of
                 #error{} = E ->
                     E;
                 #resultset{cols = ColDefs, rows = Rows} = R ->
@@ -92,15 +97,17 @@ query(Query, SendFun, RecvFun) ->
                     Rows1 = [decode_text_row(ColumnCount, ColDefs, Row)
                              || Row <- Rows],
                     R#resultset{rows = Rows1}
-            end
+            end;
+        {error, timeout} ->
+            {error, timeout}
     end.
 
 %% @doc Prepares a statement.
--spec prepare(iodata(), sendfun(), recvfun()) -> #error{} | #prepared{}.
-prepare(Query, SendFun, RecvFun) ->
+-spec prepare(iodata(), atom(), term()) -> #error{} | #prepared{}.
+prepare(Query, TcpModule, Socket) ->
     Req = <<?COM_STMT_PREPARE, (iolist_to_binary(Query))/binary>>,
-    {ok, SeqNum1} = send_packet(SendFun, Req, 0),
-    {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
+    {ok, SeqNum1} = send_packet(TcpModule, Socket, Req, 0),
+    {ok, Resp, SeqNum2} = recv_packet(TcpModule, Socket, SeqNum1),
     case Resp of
         ?error_pattern ->
             parse_error_packet(Resp);
@@ -116,27 +123,30 @@ prepare(Query, SendFun, RecvFun) ->
             %% with charset 'binary' so we have to select a type ourselves for
             %% the parameters we have in execute/4.
             {_ParamDefs, SeqNum3} =
-                fetch_column_definitions_if_any(NumParams, RecvFun, SeqNum2),
+                fetch_column_definitions_if_any(NumParams, TcpModule, Socket,
+                                                SeqNum2),
             %% Column Definition Block. We get column definitions in execute
             %% too, so we don't need them here. We *could* store them to be able
             %% to provide the user with some info about a prepared statement.
             {_ColDefs, _SeqNum4} =
-                fetch_column_definitions_if_any(NumColumns, RecvFun, SeqNum3),
+                fetch_column_definitions_if_any(NumColumns, TcpModule, Socket, SeqNum3),
             #prepared{statement_id = StmtId,
                       param_count = NumParams,
                       warning_count = WarningCount}
     end.
 
 %% @doc Deallocates a prepared statement.
--spec unprepare(#prepared{}, sendfun(), recvfun()) -> ok.
-unprepare(#prepared{statement_id = Id}, SendFun, _RecvFun) ->
-    {ok, _SeqNum} = send_packet(SendFun, <<?COM_STMT_CLOSE, Id:32/little>>, 0),
+-spec unprepare(#prepared{}, atom(), term()) -> ok.
+unprepare(#prepared{statement_id = Id}, TcpModule, Socket) ->
+    {ok, _SeqNum} = send_packet(TcpModule, Socket,
+                                <<?COM_STMT_CLOSE, Id:32/little>>, 0),
     ok.
 
 %% @doc Executes a prepared statement.
--spec execute(#prepared{}, [term()], sendfun(), recvfun()) -> #resultset{}.
+-spec execute(#prepared{}, [term()], atom(), term(), timeout()) ->
+    #ok{} | #resultset{} | #error{} | {error, timeout}.
 execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
-        SendFun, RecvFun) when ParamCount == length(ParamValues) ->
+        TcpModule, Socket, Timeout) when ParamCount == length(ParamValues) ->
     %% Flags Constant Name
     %% 0x00 CURSOR_TYPE_NO_CURSOR
     %% 0x01 CURSOR_TYPE_READ_ONLY
@@ -162,21 +172,23 @@ execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
             {TypesAndSigns, EncValues} = lists:unzip(EncodedParams),
             iolist_to_binary([Req1, TypesAndSigns, EncValues])
     end,
-    {ok, SeqNum1} = send_packet(SendFun, Req, 0),
-    {ok, Resp, SeqNum2} = recv_packet(RecvFun, SeqNum1),
-    case Resp of
-        ?ok_pattern ->
-            parse_ok_packet(Resp);
-        ?error_pattern ->
-            parse_error_packet(Resp);
-        _ResultPacket ->
+    {ok, _SeqNum1} = send_packet(TcpModule, Socket, Req, 0),
+    fetch_execute_response(TcpModule, Socket, Timeout).
+
+%% @doc This is used by execute/5. If execute/5 returns {error, timeout}, this
+%% function can be called to retry to fetch the results of the query.
+fetch_execute_response(TcpModule, Socket, Timeout) ->
+    case recv_packet(TcpModule, Socket, Timeout, any) of
+        {ok, ?ok_pattern = Ok, _} ->
+            parse_ok_packet(Ok);
+        {ok, ?error_pattern = Error, _} ->
+            parse_error_packet(Error);
+        {ok, ResultPacket, SeqNum2} ->
             %% The first packet in a resultset is only the column count.
-            {ColumnCount, <<>>} = lenenc_int(Resp),
-            case fetch_resultset(RecvFun, ColumnCount, SeqNum2) of
+            {ColumnCount, <<>>} = lenenc_int(ResultPacket),
+            case fetch_resultset(TcpModule, Socket, ColumnCount, SeqNum2) of
                 #error{} = E ->
                     %% TODO: Find a way to get here and write a testcase.
-                    %% This can happen for the text protocol but maybe not for
-                    %% the binary protocol.
                     E;
                 #resultset{cols = ColDefs, rows = Rows} = R ->
                     %% Parse the rows according to the 'binary protocol'
@@ -184,7 +196,9 @@ execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
                     Rows1 = [decode_binary_row(ColumnCount, ColDefs, Row)
                              || Row <- Rows],
                     R#resultset{rows = Rows1}
-            end
+            end;
+        {error, timeout} ->
+            {error, timeout}
     end.
 
 %% --- internal ---
@@ -221,15 +235,23 @@ parse_handshake(<<10, Rest/binary>>) ->
         <<NameNoNul:NameLen/binary-unit:8, 0>> -> NameNoNul;
         _ -> AuthPluginName
     end,
-    #handshake{server_version = ServerVersion,
-              connection_id = ConnectionId,
-              capabilities = Capabilities,
-              character_set = CharacterSet,
-              status = StatusFlags,
-              auth_plugin_data = AuthPluginData,
-              auth_plugin_name = AuthPluginName1};
+    #handshake{server_version = server_version_to_list(ServerVersion),
+               connection_id = ConnectionId,
+               capabilities = Capabilities,
+               character_set = CharacterSet,
+               status = StatusFlags,
+               auth_plugin_data = AuthPluginData,
+               auth_plugin_name = AuthPluginName1};
 parse_handshake(<<Protocol:8, _/binary>>) when Protocol /= 10 ->
     error(unknown_protocol).
+
+%% @doc Converts a version on the form `<<"5.6.21">' to a list `[5, 6, 21]'.
+-spec server_version_to_list(binary()) -> [integer()].
+server_version_to_list(ServerVersion) ->
+    %% Remove stuff after dash for e.g. "5.5.40-0ubuntu0.12.04.1-log"
+    [ServerVersion1 | _] = binary:split(ServerVersion, <<"-">>),
+    lists:map(fun binary_to_integer/1,
+              binary:split(ServerVersion1, <<".">>, [global])).
 
 %% @doc The response sent by the client to the server after receiving the
 %% initial handshake from the server
@@ -303,14 +325,14 @@ parse_handshake_confirm(Packet) ->
 %% the rows are unparsed binary packages. This function is used for both the
 %% text protocol and the binary protocol. This affects the way the rows need to
 %% be parsed.
--spec fetch_resultset(recvfun(), integer(), integer()) ->
+-spec fetch_resultset(atom(), term(), integer(), integer()) ->
     #resultset{} | #error{}.
-fetch_resultset(RecvFun, FieldCount, SeqNum) ->
-    {ok, ColDefs, SeqNum1} = fetch_column_definitions(RecvFun, SeqNum,
+fetch_resultset(TcpModule, Socket, FieldCount, SeqNum) ->
+    {ok, ColDefs, SeqNum1} = fetch_column_definitions(TcpModule, Socket, SeqNum,
                                                       FieldCount, []),
-    {ok, DelimiterPacket, SeqNum2} = recv_packet(RecvFun, SeqNum1),
+    {ok, DelimiterPacket, SeqNum2} = recv_packet(TcpModule, Socket, SeqNum1),
     #eof{} = parse_eof_packet(DelimiterPacket),
-    case fetch_resultset_rows(RecvFun, SeqNum2, []) of
+    case fetch_resultset_rows(TcpModule, Socket, SeqNum2, []) of
         {ok, Rows, _SeqNum3} ->
             ColDefs1 = lists:map(fun parse_column_definition/1, ColDefs),
             #resultset{cols = ColDefs1, rows = Rows};
@@ -320,31 +342,33 @@ fetch_resultset(RecvFun, FieldCount, SeqNum) ->
 
 %% @doc Receives NumLeft column definition packets. They are not parsed.
 %% @see parse_column_definition/1
--spec fetch_column_definitions(recvfun(), SeqNum :: integer(),
+-spec fetch_column_definitions(atom(), term(), SeqNum :: integer(),
                                NumLeft :: integer(), Acc :: [binary()]) ->
     {ok, ColDefPackets :: [binary()], NextSeqNum :: integer()}.
-fetch_column_definitions(RecvFun, SeqNum, NumLeft, Acc) when NumLeft > 0 ->
-    {ok, Packet, SeqNum1} = recv_packet(RecvFun, SeqNum),
-    fetch_column_definitions(RecvFun, SeqNum1, NumLeft - 1, [Packet | Acc]);
-fetch_column_definitions(_RecvFun, SeqNum, 0, Acc) ->
+fetch_column_definitions(TcpModule, Socket, SeqNum, NumLeft, Acc)
+  when NumLeft > 0 ->
+    {ok, Packet, SeqNum1} = recv_packet(TcpModule, Socket, SeqNum),
+    fetch_column_definitions(TcpModule, Socket, SeqNum1, NumLeft - 1,
+                             [Packet | Acc]);
+fetch_column_definitions(_TcpModule, _Socket, SeqNum, 0, Acc) ->
     {ok, lists:reverse(Acc), SeqNum}.
 
 %% @doc Fetches rows in a result set. There is a packet per row. The row packets
 %% are not decoded. This function can be used for both the binary and the text
 %% protocol result sets.
--spec fetch_resultset_rows(recvfun(), SeqNum :: integer(), Acc) ->
+-spec fetch_resultset_rows(atom(), term(), SeqNum :: integer(), Acc) ->
     {ok, Rows, integer()} | #error{}
     when Acc :: [binary()],
          Rows :: [binary()].
-fetch_resultset_rows(RecvFun, SeqNum, Acc) ->
-    {ok, Packet, SeqNum1} = recv_packet(RecvFun, SeqNum),
+fetch_resultset_rows(TcpModule, Socket, SeqNum, Acc) ->
+    {ok, Packet, SeqNum1} = recv_packet(TcpModule, Socket, SeqNum),
     case Packet of
         ?error_pattern ->
             parse_error_packet(Packet);
         ?eof_pattern ->
             {ok, lists:reverse(Acc), SeqNum1};
         Row ->
-            fetch_resultset_rows(RecvFun, SeqNum1, [Row | Acc])
+            fetch_resultset_rows(TcpModule, Socket, SeqNum1, [Row | Acc])
     end.
 
 %% Parses a packet containing a column definition (part of a result set)
@@ -474,11 +498,12 @@ decode_text(#col{type = T}, Text) when T == ?TYPE_FLOAT;
 
 %% @doc If NumColumns is non-zero, fetches this number of column definitions
 %% and an EOF packet. Used by prepare/3.
-fetch_column_definitions_if_any(0, _RecvFun, SeqNum) ->
+fetch_column_definitions_if_any(0, _TcpModule, _Socket, SeqNum) ->
     {[], SeqNum};
-fetch_column_definitions_if_any(N, RecvFun, SeqNum) ->
-    {ok, Defs, SeqNum1} = fetch_column_definitions(RecvFun, SeqNum, N, []),
-    {ok, ?eof_pattern, SeqNum2} = recv_packet(RecvFun, SeqNum1),
+fetch_column_definitions_if_any(N, TcpModule, Socket, SeqNum) ->
+    {ok, Defs, SeqNum1} = fetch_column_definitions(TcpModule, Socket, SeqNum,
+                                                   N, []),
+    {ok, ?eof_pattern, SeqNum2} = recv_packet(TcpModule, Socket, SeqNum1),
     {Defs, SeqNum2}.
 
 %% @doc Decodes a packet representing a row in a binary result set.
@@ -493,7 +518,7 @@ decode_binary_row(NumColumns, ColumnDefs, <<0, Data/binary>>) ->
     decode_binary_row_acc(ColumnDefs, NullBitMap, Rest, []).
 
 %% @doc Accumulating helper for decode_binary_row/3.
-decode_binary_row_acc([_ | ColDefs], <<1:1, NullBitMap/bitstring>>, Data, Acc) ->
+decode_binary_row_acc([_|ColDefs], <<1:1, NullBitMap/bitstring>>, Data, Acc) ->
     %% NULL
     decode_binary_row_acc(ColDefs, NullBitMap, Data, [null | Acc]);
 decode_binary_row_acc([ColDef | ColDefs], <<0:1, NullBitMap/bitstring>>, Data,
@@ -802,40 +827,43 @@ set_to_binary(Set) ->
 
 %% -- Protocol basics: packets --
 
-%% @doc Wraps Data in packet headers, sends it by calling SendFun and returns
-%% {ok, SeqNum1} where SeqNum1 is the next sequence number.
--spec send_packet(sendfun(), Data :: binary(), SeqNum :: integer()) ->
+%% @doc Wraps Data in packet headers, sends it by calling TcpModule:send/2 with
+%% Socket and returns {ok, SeqNum1} where SeqNum1 is the next sequence number.
+-spec send_packet(atom(), term(), Data :: binary(), SeqNum :: integer()) ->
     {ok, NextSeqNum :: integer()}.
-send_packet(SendFun, Data, SeqNum) ->
+send_packet(TcpModule, Socket, Data, SeqNum) ->
     {WithHeaders, SeqNum1} = add_packet_headers(Data, SeqNum),
-    ok = SendFun(WithHeaders),
+    ok = TcpModule:send(Socket, WithHeaders),
     {ok, SeqNum1}.
 
-%% @doc Receives data by calling RecvFun and removes the packet headers. Returns
-%% the packet contents and the next packet sequence number.
--spec recv_packet(RecvFun :: recvfun(), SeqNum :: integer()) ->
-    {ok, Data :: binary(), NextSeqNum :: integer()}.
-recv_packet(RecvFun, SeqNum) ->
-    recv_packet(RecvFun, SeqNum, <<>>).
+%% @see recv_packet/4
+recv_packet(TcpModule, Socket, SeqNum) ->
+    recv_packet(TcpModule, Socket, infinity, SeqNum).
 
-%% @doc Receives data by calling RecvFun and removes packet headers. Returns the
-%% data and the next packet sequence number.
--spec recv_packet(RecvFun :: recvfun(), ExpectSeqNum :: integer(),
-                  Acc :: binary()) ->
+%% @doc Receives data by calling TcpModule:recv/2 and removes the packet
+%% headers. Returns the packet contents and the next packet sequence number.
+-spec recv_packet(atom(), term(), timeout(), integer() | any) ->
     {ok, Data :: binary(), NextSeqNum :: integer()}.
-recv_packet(RecvFun, ExpectSeqNum, Acc) ->
-    case RecvFun(4) of
+recv_packet(TcpModule, Socket, Timeout, SeqNum) ->
+    recv_packet(TcpModule, Socket, Timeout, SeqNum, <<>>).
+
+%% @doc Accumulating helper for recv_packet/4
+-spec recv_packet(atom(), term(), timeout(), integer() | any, binary()) ->
+    {ok, Data :: binary(), NextSeqNum :: integer()}.
+recv_packet(TcpModule, Socket, Timeout, ExpectSeqNum, Acc) ->
+    case TcpModule:recv(Socket, 4, Timeout) of
         {ok, Header} ->
-            {Size, ExpectSeqNum, More} = parse_packet_header(Header),
-            {ok, Body} = RecvFun(Size),
+            {Size, SeqNum, More} = parse_packet_header(Header),
+            true = SeqNum == ExpectSeqNum orelse ExpectSeqNum == any,
+            {ok, Body} = TcpModule:recv(Socket, Size),
             Acc1 = <<Acc/binary, Body/binary>>,
-            NextSeqNum = (ExpectSeqNum + 1) band 16#ff,
+            NextSeqNum = (SeqNum + 1) band 16#ff,
             case More of
                 false -> {ok, Acc1, NextSeqNum};
-                true  -> recv_packet(RecvFun, NextSeqNum, Acc1)
+                true  -> recv_packet(TcpModule, Socket, NextSeqNum, Acc1)
             end;
-        {error, closed} ->
-            {error, closed}
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% @doc Parses a packet header (32 bits) and returns a tuple.

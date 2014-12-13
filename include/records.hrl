@@ -19,7 +19,7 @@
 %% --- Records ---
 
 %% Returned by parse_handshake/1.
--record(handshake, {server_version :: binary(),
+-record(handshake, {server_version :: [integer()],
                     connection_id :: integer(),
                     capabilities :: integer(),
                     character_set :: integer(),

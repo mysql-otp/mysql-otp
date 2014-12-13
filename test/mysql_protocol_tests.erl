@@ -38,11 +38,9 @@ resultset_test() ->
         "00 02 00                                              ..."),
     ExpectedCommunication = [{send, ExpectedReq},
                              {recv, ExpectedResponse}],
-    FakeSock = fakesocket_create(ExpectedCommunication),
-    SendFun = fun (Data) -> fakesocket_send(FakeSock, Data) end,
-    RecvFun = fun (Size) -> fakesocket_recv(FakeSock, Size) end,
-    ResultSet = mysql_protocol:query(Query, SendFun, RecvFun),
-    fakesocket_close(FakeSock),
+    Sock = mock_tcp:create(ExpectedCommunication),
+    ResultSet = mysql_protocol:query(Query, mock_tcp, Sock, infinity),
+    mock_tcp:close(Sock),
     ?assertMatch(#resultset{cols = [#col{name = <<"@@version_comment">>}],
                             rows = [[<<"MySQL Community Server (GPL)">>]]},
                  ResultSet),
@@ -77,12 +75,10 @@ resultset_error_test() ->
         "00 00 05 00 00 0c fe 00    00 02 00 17 00 00 0d ff    ................"
         "48 04 23 48 59 30 30 30    4e 6f 20 74 61 62 6c 65    H.#HY000No table"
         "73 20 75 73 65 64                                     s used"),
-    Sock = fakesocket_create([{send, ExpectedReq}, {recv, ExpectedResponse}]),
-    SendFun = fun (Data) -> fakesocket_send(Sock, Data) end,
-    RecvFun = fun (Size) -> fakesocket_recv(Sock, Size) end,
-    Result = mysql_protocol:query(Query, SendFun, RecvFun),
+    Sock = mock_tcp:create([{send, ExpectedReq}, {recv, ExpectedResponse}]),
+    Result = mysql_protocol:query(Query, mock_tcp, Sock, infinity),
     ?assertMatch(#error{}, Result),
-    fakesocket_close(Sock),
+    mock_tcp:close(Sock),
     ok.
 
 prepare_test() ->
@@ -102,11 +98,9 @@ prepare_test() ->
         "00 00 05 03 64 65 66 00    00 00 04 63 6f 6c 31 00    ....def....col1."
         "0c 3f 00 00 00 00 00 fd    80 00 1f 00 00|05 00 00    .?.............."
         "06 fe 00 00 02 00                                     ......"),
-    Sock = fakesocket_create([{send, ExpectedReq}, {recv, ExpectedResp}]),
-    SendFun = fun (Data) -> fakesocket_send(Sock, Data) end,
-    RecvFun = fun (Size) -> fakesocket_recv(Sock, Size) end,
-    Result = mysql_protocol:prepare(Query, SendFun, RecvFun),
-    fakesocket_close(Sock),
+    Sock = mock_tcp:create([{send, ExpectedReq}, {recv, ExpectedResp}]),
+    Result = mysql_protocol:prepare(Query, mock_tcp, Sock),
+    mock_tcp:close(Sock),
     ?assertMatch(#prepared{statement_id = StmtId,
                            param_count = 2,
                            warning_count = 0} when is_integer(StmtId),
@@ -150,94 +144,5 @@ hexdump_to_bin_test() ->
 
 %% --- Fake socket ---
 %%
-%% A "fake socket" is used in test where we need to mock socket communication.
-%% It is a pid maintaining a list of expected send and recv events.
 
-%% @doc Creates a fakesocket process with a buffer of expected recv and send
-%% calls. The pid of the fakesocket process is returned.
--spec fakesocket_create([{recv, binary()} | {send, binary()}]) -> pid().
-fakesocket_create(ExpectedEvents) ->
-    spawn_link(fun () -> fakesocket_loop(ExpectedEvents) end).
 
-%% @doc Receives NumBytes bytes from fakesocket Pid. This function can be used
-%% as a replacement for gen_tcp:recv/2 in unit tests. If there not enough data
-%% in the fakesocket's buffer, an error is raised.
-fakesocket_recv(Pid, NumBytes) ->
-    Pid ! {recv, NumBytes, self()},
-    receive
-        {ok, Data} -> {ok, Data};
-        error -> error({unexpected_recv, NumBytes})
-    after 100 ->
-        error(noreply)
-    end.
-
-%% @doc Sends data to fa fakesocket. This can be used as replacement for
-%% gen_tcp:send/2 in unit tests. If the data sent is not what the fakesocket
-%% expected, an error is raised.
-fakesocket_send(Pid, Data) ->
-    Pid ! {send, iolist_to_binary(Data), self()},
-    receive
-        ok -> ok;
-        error -> error({unexpected_send, Data})
-    after 100 ->
-        error(noreply)
-    end.
-
-%% Stops the fakesocket process. If the fakesocket's buffer is not empty,
-%% an error is raised.
-fakesocket_close(Pid) ->
-    Pid ! {done, self()},
-    receive
-        ok -> ok;
-        {remains, Remains} -> error({unexpected_close, Remains})
-    after 100 ->
-        error(noreply)
-    end.
-
-%% Used by fakesocket_create/1.
-fakesocket_loop(AllEvents = [{Func, Data} | Events]) ->
-    receive
-        {recv, NumBytes, FromPid} when Func == recv, NumBytes == size(Data) ->
-            FromPid ! {ok, Data},
-            fakesocket_loop(Events);
-        {recv, NumBytes, FromPid} when Func == recv, NumBytes < size(Data) ->
-            <<Data1:NumBytes/binary, Rest/binary>> = Data,
-            FromPid ! {ok, Data1},
-            fakesocket_loop([{recv, Rest} | Events]);
-        {send, Bytes, FromPid} when Func == send, Bytes == Data ->
-            FromPid ! ok,
-            fakesocket_loop(Events);
-        {send, Bytes, FromPid} when Func == send, size(Bytes) < size(Data) ->
-            Size = size(Bytes),
-            case Data of
-                <<Bytes:Size/binary, Rest/binary>> ->
-                    FromPid ! ok,
-                    fakesocket_loop([{send, Rest} | Events]);
-                _ ->
-                    FromPid ! error
-            end;
-        {_, _, FromPid} ->
-            FromPid ! error;
-        {done, FromPid} ->
-            FromPid ! {remains, AllEvents}
-    end;
-fakesocket_loop([]) ->
-    receive
-        {done, FromPid} -> FromPid ! ok;
-        {_, _, FromPid} -> FromPid ! error
-    end.
-
-%% Tests for the fakesocket functions.
-fakesocket_bad_recv_test() ->
-    Pid = fakesocket_create([{recv, <<"foobar">>}]),
-    ?assertError(_, fakesocket_recv(Pid, 10)).
-
-fakesocket_success_test() ->
-    Pid = fakesocket_create([{recv, <<"foobar">>}, {send, <<"baz">>}]),
-    %?assertError({unexpected_close, _}, fakesocket_close(Pid)),
-    ?assertEqual({ok, <<"foo">>}, fakesocket_recv(Pid, 3)),
-    ?assertEqual({ok, <<"bar">>}, fakesocket_recv(Pid, 3)),
-    ?assertEqual(ok, fakesocket_send(Pid, <<"baz">>)),
-    ?assertEqual(ok, fakesocket_close(Pid)),
-    %% The process will exit after close. Another recv will raise noreply.
-    ?assertError(noreply, fakesocket_recv(Pid, 3)).

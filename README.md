@@ -16,6 +16,7 @@ Features:
 * Each connection is a gen_server, which makes it compatible with Poolboy (for
   connection pooling) and ordinary OTP supervisors.
 * No records in the public API.
+* Query timeouts don't kill the connection (MySQL version ≥ 5.0.0).
 
 See also:
 
@@ -60,6 +61,10 @@ case Result of
     {aborted, Reason} ->
         io:format("Inserted 0 rows.~n")
 end
+
+%% Graceful timeout handling: SLEEP() returns 1 when interrupted
+{ok, [<<"SLEEP(5)">>], [[1]]} =
+    mysql:query(Pid, <<"SELECT SLEEP(5)">>, 1000),
 ```
 
 Tests

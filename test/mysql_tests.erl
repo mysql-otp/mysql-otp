@@ -346,6 +346,37 @@ write_read_text_binary(Conn, Term, SqlLiteral, Table, Column) ->
 
 %% --------------------------------------------------------------------------
 
+timeout_test_() ->
+    {setup,
+     fun () ->
+         {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password}]),
+         Pid
+     end,
+     fun (Pid) ->
+         exit(Pid, normal)
+     end,
+     {with, [fun (Pid) ->
+                 %% SLEEP was added in MySQL 5.0.12
+                 ?assertEqual({ok, [<<"SLEEP(5)">>], [[1]]},
+                              mysql:query(Pid, <<"SELECT SLEEP(5)">>, 40)),
+
+                 %% A query after an interrupted query shouldn't get a timeout.
+                 ?assertMatch({ok,[<<"42">>], [[42]]},
+                              mysql:query(Pid, <<"SELECT 42">>)),
+
+                 %% Parametrized query
+                 ?assertEqual({ok, [<<"SLEEP(?)">>], [[1]]},
+                              mysql:query(Pid, <<"SELECT SLEEP(?)">>, [5], 40)),
+
+                 %% Prepared statement
+                 {ok, Stmt} = mysql:prepare(Pid, <<"SELECT SLEEP(?)">>),
+                 ?assertEqual({ok, [<<"SLEEP(?)">>], [[1]]},
+                              mysql:execute(Pid, Stmt, [5], 40)),
+                 ok = mysql:unprepare(Pid, Stmt)
+             end]}}.
+
+%% --------------------------------------------------------------------------
+
 %% Prepared statements and transactions
 
 with_table_foo_test_() ->
