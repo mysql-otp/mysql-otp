@@ -29,7 +29,9 @@
                           "  bl BLOB,"
                           "  tx TEXT NOT NULL," %% No default value
                           "  f FLOAT,"
+                          "  d DOUBLE,"
                           "  dc DECIMAL(5,3),"
+                          "  y YEAR,"
                           "  ti TIME,"
                           "  ts TIMESTAMP,"
                           "  da DATE,"
@@ -74,7 +76,9 @@ query_test_() ->
              fun decimal/1,
              fun int/1,
              fun bit/1,
+             fun date/1,
              fun time/1,
+             fun datetime/1,
              fun microseconds/1]}}.
 
 connect_with_db(_Pid) ->
@@ -110,9 +114,9 @@ basic_queries(Pid) ->
 
 text_protocol(Pid) ->
     ok = mysql:query(Pid, ?create_table_t),
-    ok = mysql:query(Pid, <<"INSERT INTO t (bl, f, dc, ti, ts, da, c)"
-                            " VALUES ('blob', 3.14, 3.14, '00:22:11',"
-                            " '2014-11-03 00:22:24', '2014-11-03',"
+    ok = mysql:query(Pid, <<"INSERT INTO t (bl, f, d, dc, y, ti, ts, da, c)"
+                            " VALUES ('blob', 3.14, 3.14, 3.14, 2014,"
+                            "'00:22:11', '2014-11-03 00:22:24', '2014-11-03',"
                             " NULL)">>),
     ?assertEqual(1, mysql:warning_count(Pid)), %% tx has no default value
     ?assertEqual(1, mysql:insert_id(Pid)),     %% auto_increment starts from 1
@@ -120,44 +124,36 @@ text_protocol(Pid) ->
 
     %% select
     {ok, Columns, Rows} = mysql:query(Pid, <<"SELECT * FROM t">>),
-    ?assertEqual([<<"id">>, <<"bl">>, <<"tx">>, <<"f">>, <<"dc">>, <<"ti">>,
-                  <<"ts">>, <<"da">>, <<"c">>], Columns),
-    ?assertEqual([[1, <<"blob">>, <<>>, 3.14, 3.14, {0, {0, 22, 11}},
+    ?assertEqual([<<"id">>, <<"bl">>, <<"tx">>, <<"f">>, <<"d">>, <<"dc">>,
+                  <<"y">>, <<"ti">>, <<"ts">>, <<"da">>, <<"c">>], Columns),
+    ?assertEqual([[1, <<"blob">>, <<>>, 3.14, 3.14, 3.14,
+                   2014, {0, {0, 22, 11}},
                    {{2014, 11, 03}, {00, 22, 24}}, {2014, 11, 03}, null]],
                  Rows),
-
-    %% TODO:
-    %% * More types: BIT, SET, ENUM, GEOMETRY
 
     ok = mysql:query(Pid, <<"DROP TABLE t">>).
 
 binary_protocol(Pid) ->
     ok = mysql:query(Pid, ?create_table_t),
     %% The same queries as in the text protocol. Expect the same results.
-    {ok, Ins} = mysql:prepare(Pid, <<"INSERT INTO t (bl, f, dc, ti, ts, da, c)"
-                                     " VALUES (?, ?, ?, ?, ?, ?, ?)">>),
+    {ok, Ins} = mysql:prepare(Pid, <<"INSERT INTO t (bl, f, d, dc, y, ti,"
+                                     " ts, da, c)"
+                                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)">>),
 
-    ok = mysql:execute(Pid, Ins, [<<"blob">>, 3.14, 3.14,
-                                  {0, {0, 22, 11}}, 
+    ok = mysql:execute(Pid, Ins, [<<"blob">>, 3.14, 3.14, 3.14,
+                                  2014, {0, {0, 22, 11}}, 
                                   {{2014, 11, 03}, {0, 22, 24}},
                                   {2014, 11, 03}, null]),
 
-    %% TODO: Put the expected result in a macro to make sure they are identical
-    %% for the text and the binary protocol tests.
-
     {ok, Stmt} = mysql:prepare(Pid, <<"SELECT * FROM t WHERE id=?">>),
     {ok, Columns, Rows} = mysql:execute(Pid, Stmt, [1]),
-    ?assertEqual([<<"id">>, <<"bl">>, <<"tx">>, <<"f">>, <<"dc">>, <<"ti">>,
+    ?assertEqual([<<"id">>, <<"bl">>, <<"tx">>, <<"f">>, <<"d">>, <<"dc">>,
+                  <<"y">>, <<"ti">>,
                   <<"ts">>, <<"da">>, <<"c">>], Columns),
-    ?assertEqual([[1, <<"blob">>, <<>>, 3.14, 3.14,
-                   {0, {0, 22, 11}},
+    ?assertEqual([[1, <<"blob">>, <<>>, 3.14, 3.14, 3.14,
+                   2014, {0, {0, 22, 11}},
                    {{2014, 11, 03}, {00, 22, 24}}, {2014, 11, 03}, null]],
                  Rows),
-
-    %% TODO: Both send and receive the following values:
-    %% * Values for all types
-    %% * Negative numbers for all integer types
-    %% * Integer overflow
 
     ok = mysql:query(Pid, <<"DROP TABLE t">>).
 
@@ -254,7 +250,19 @@ int(Pid) ->
     ok = mysql:query(Pid, "CREATE TABLE tint (i TINYINT)"),
     write_read_text_binary(Pid, 127, <<"1000">>, <<"tint">>, <<"i">>),
     write_read_text_binary(Pid, -128, <<"-1000">>, <<"tint">>, <<"i">>),
-    ok = mysql:query(Pid, "DROP TABLE tint").
+    ok = mysql:query(Pid, "DROP TABLE tint"),
+    %% SMALLINT
+    ok = mysql:query(Pid, "CREATE TABLE sint (i SMALLINT)"),
+    write_read_text_binary(Pid, 32000, <<"32000">>, <<"sint">>, <<"i">>),
+    write_read_text_binary(Pid, -32000, <<"-32000">>, <<"sint">>, <<"i">>),
+    ok = mysql:query(Pid, "DROP TABLE sint"),
+    %% BIGINT
+    ok = mysql:query(Pid, "CREATE TABLE bint (i BIGINT)"),
+    write_read_text_binary(Pid, 123456789012, <<"123456789012">>,
+                           <<"bint">>, <<"i">>),
+    write_read_text_binary(Pid, -123456789012, <<"-123456789012">>,
+                           <<"bint">>, <<"i">>),
+    ok = mysql:query(Pid, "DROP TABLE bint").
 
 %% The BIT(N) datatype in MySQL 5.0.3 and later: the equivallent to bitstring()
 bit(Pid) ->
@@ -264,6 +272,17 @@ bit(Pid) ->
     write_read_text_binary(Pid, <<16#7f, 6:3>>, <<"b'01111111110'">>,
                            <<"bits">>, <<"b">>),
     ok = mysql:query(Pid, "DROP TABLE bits").
+
+date(Pid) ->
+    ok = mysql:query(Pid, "CREATE TABLE d (d DATE)"),
+    lists:foreach(
+        fun ({Value, SqlLiteral}) ->
+            write_read_text_binary(Pid, Value, SqlLiteral, <<"d">>, <<"d">>)
+        end,
+        [{{2014, 11, 03}, <<"'2014-11-03'">>},
+         {{0, 0, 0},      <<"'0000-00-00'">>}]
+    ),
+    ok = mysql:query(Pid, "DROP TABLE d").
 
 %% Test TIME value representation. There are a few things to check.
 time(Pid) ->
@@ -278,9 +297,27 @@ time(Pid) ->
          {{-1, {23, 59, 0}},  <<"'-00:01:00'">>},
          {{-1, {23, 0, 0}},   <<"'-01:00:00'">>},
          {{-1, {0, 0, 0}},    <<"'-24:00:00'">>},
-         {{-5, {10, 0, 0}},  <<"'-110:00:00'">>}]
+         {{-5, {10, 0, 0}},  <<"'-110:00:00'">>},
+         {{0, {0, 0, 0}},      <<"'00:00:00'">>}]
     ),
+    %% Zero seconds as a float.
+    ok = mysql:query(Pid, "INSERT INTO tm (tm) VALUES (?)",
+                     [{-1, {1, 2, 0.0}}]),
+    ?assertEqual({ok, [<<"tm">>], [[{-1, {1, 2, 0}}]]},
+                 mysql:query(Pid, "SELECT tm FROM tm")),
     ok = mysql:query(Pid, "DROP TABLE tm").
+
+datetime(Pid) ->
+    ok = mysql:query(Pid, "CREATE TABLE dt (dt DATETIME)"),
+    lists:foreach(
+        fun ({Value, SqlLiteral}) ->
+            write_read_text_binary(Pid, Value, SqlLiteral, <<"dt">>, <<"dt">>)
+        end,
+        [{{{2014, 12, 14}, {19, 39, 20}},   <<"'2014-12-14 19:39:20'">>},
+         {{{2014, 12, 14}, {0, 0, 0}},      <<"'2014-12-14 00:00:00'">>},
+         {{{0, 0, 0}, {0, 0, 0}},           <<"'0000-00-00 00:00:00'">>}]
+    ),
+    ok = mysql:query(Pid, "DROP TABLE dt").
 
 microseconds(Pid) ->
     %% Check whether we have the required version for this testcase.

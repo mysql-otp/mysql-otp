@@ -890,7 +890,7 @@ parse_packet_header(<<PacketLength:24/little-integer, SeqNum:8/integer>>) ->
 add_packet_headers(PacketBody, SeqNum) ->
     Bin = iolist_to_binary(PacketBody),
     Size = size(Bin),
-    SeqNum1 = (SeqNum + 1) rem 16#100,
+    SeqNum1 = (SeqNum + 1) band 16#ff,
     %% Todo: implement the case when Size >= 16#ffffff.
     if Size < 16#ffffff ->
         {[<<Size:24/little, SeqNum:8>>, Bin], SeqNum1}
@@ -969,16 +969,12 @@ lenenc_int(<<16#fe:8, Value:64/little, Rest/binary>>) -> {Value, Rest}.
 %% Length-encoded-integer encode. Appends the encoded value to Acc.
 %% Values not representable in 64 bits are not accepted.
 -spec lenenc_int_encode(0..16#ffffffffffffffff) -> binary().
-lenenc_int_encode(Value) when Value < 0 ->
-    error(badarg);
-lenenc_int_encode(Value) when Value < 251 ->
-    <<Value>>;
-lenenc_int_encode(Value) when Value =< 16#ffff ->
-    <<16#fc, Value:16/little>>;
-lenenc_int_encode(Value) when Value =< 16#ffffff ->
-    <<16#fd, Value:24/little>>;
-lenenc_int_encode(Value) when Value =< 16#ffffffffffffffff ->
-    <<16#fe, Value:64/little>>.
+lenenc_int_encode(Value) when Value >= 0 ->
+    if Value < 251 -> <<Value>>;
+       Value =< 16#ffff -> <<16#fc, Value:16/little>>;
+       Value =< 16#ffffff -> <<16#fd, Value:24/little>>;
+       Value =< 16#ffffffffffffffff -> <<16#fe, Value:64/little>>
+    end.
 
 %% lenenc_str/1 decodes length-encoded-string values
 -spec lenenc_str(Input :: binary()) -> {String :: binary(), Rest :: binary()}.
