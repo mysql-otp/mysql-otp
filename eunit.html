@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html><head><title>Coverage Summary</title></head>
 <body><h1>Source Summary</h1>
-<h3>Total: 93%</h3>
+<h3>Total: 96%</h3>
 <table><tr><th>Module</th><th>Coverage %</th></tr>
 <tr><td><a href='mysql.COVER.html'>mysql</a></td><td>94%</td>
 <tr><td><a href='mysql_cache.COVER.html'>mysql_cache</a></td><td>100%</td>
-<tr><td><a href='mysql_protocol.COVER.html'>mysql_protocol</a></td><td>93%</td>
+<tr><td><a href='mysql_protocol.COVER.html'>mysql_protocol</a></td><td>96%</td>
 </table>
 <body><h1>Test Summary</h1>
 <h3>Total: 74%</h3>
@@ -13,13 +13,67 @@
 <tr><td><a href='mock_tcp.COVER.html'>mock_tcp</a></td><td>74%</td>
 </table>
 
-<h3>Output</h3><pre>
+<h3>Output of <code>make eunit</code></h3><pre>
 ==&gt; mysql-otp (eunit)
-Compiled src/mysql_protocol.erl
-  All 39 tests passed.
+======================== EUnit ========================
+module 'mysql_protocol'
+  mysql_protocol: decode_text_test...[0.004 s] ok
+  mysql_protocol: decode_binary_test...ok
+  mysql_protocol: encode_param_test...ok
+  mysql_protocol: null_bitmap_test...ok
+  mysql_protocol: lenenc_int_test...ok
+  mysql_protocol: lenenc_str_test...ok
+  mysql_protocol: nulterm_test...ok
+  mysql_protocol: parse_header_test...ok
+  mysql_protocol: add_packet_headers_test...ok
+  mysql_protocol: parse_ok_test...ok
+  mysql_protocol: parse_error_test...ok
+  mysql_protocol: parse_eof_test...[0.001 s] ok
+  mysql_protocol: hash_password_test...ok
+  module 'mysql_protocol_tests'
+    mysql_protocol_tests: resultset_test...[0.005 s] ok
+    mysql_protocol_tests: resultset_error_test...[0.003 s] ok
+    mysql_protocol_tests: prepare_test...[0.002 s] ok
+    mysql_protocol_tests: hexdump_to_bin_test...[0.001 s] ok
+    [done in 0.020 s]
+  [done in 0.065 s]
+module 'mysql_cache'
+  mysql_cache: empty_test...ok
+  mysql_cache: nonempty_test...[0.016 s] ok
+  [done in 0.021 s]
+module 'mysql'
+  module 'mysql_tests'
+    mysql_tests: connect_test...[0.025 s] ok
+    mysql_tests: query_test_...[0.002 s] ok
+    mysql_tests: query_test_...[0.002 s] ok
+    mysql_tests: query_test_...[0.001 s] ok
+    mysql_tests: query_test_...[0.031 s] ok
+    mysql_tests: query_test_...[0.021 s] ok
+    mysql_tests: query_test_...[0.073 s] ok
+    mysql_tests: query_test_...[0.102 s] ok
+    mysql_tests: query_test_...[0.131 s] ok
+    mysql_tests: query_test_...[0.027 s] ok
+    mysql_tests: query_test_...[0.033 s] ok
+    mysql_tests: query_test_...[0.058 s] ok
+    mysql_tests: query_test_...[0.056 s] ok
+    mysql_tests: query_test_...[0.059 s] ok
+    mysql_tests: timeout_test_...[0.131 s] ok
+    mysql_tests: with_table_foo_test_...[0.003 s] ok
+    mysql_tests: with_table_foo_test_...[0.154 s] ok
+    mysql_tests: with_table_foo_test_...[0.004 s] ok
+    mysql_tests: with_table_foo_test_...[0.004 s] ok
+    mysql_tests: gen_server_coverage_test...ok
+    [done in 0.992 s]
+  [done in 0.992 s]
+module 'mock_tcp'
+  mock_tcp: bad_recv_test...ok
+  mock_tcp: success_test...[0.103 s] ok
+  [done in 0.108 s]
+=======================================================
+  All 41 tests passed.
 Cover analysis: /Users/viktor/data/mysql-otp/.eunit/index.html
 </pre>
 <p><em>Generated using EUnit,
-13 Dec 2014 22:03:56 UTC.
+15 Dec 2014 22:06:10 UTC.
 </em></p>
 </body></html>
