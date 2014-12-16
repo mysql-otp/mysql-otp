@@ -19,11 +19,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 @title MySQL/OTP User's Guide
 @doc
-MySQL/OTP is a client library for connecting to MySQL databases from Erlang/OTP
-applications.
+MySQL/OTP is a driver for connecting Erlang/OTP applications to MySQL
+databases. It is a native implementation of the MySQL protocol in Erlang.
 
 This is the documentation generated from the Erlang source code using EDoc.
-The project page is here:
+The project page is on Gitbub:
 <a href="https://github.com/mysql-otp/mysql-otp/"
    target="_top">https://github.com/mysql-otp/mysql-otp/</a>.
 

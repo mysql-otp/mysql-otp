@@ -43,6 +43,8 @@
 -define(default_query_timeout, infinity).
 -define(default_query_cache_time, 60000). %% for query/3.
 
+-define(cmd_timeout, 3000). %% Timeout used for various commands to the server
+
 %% A connection is a ServerRef as in gen_server:call/2,3.
 -type connection() :: Name :: atom() |
                       {Name :: atom(), Node :: atom()} |
@@ -260,21 +262,23 @@ transaction(Conn, Fun) ->
 %% @doc This function executes the functional object Fun with arguments Args as
 %% a transaction. 
 %%
-%% The semantics are the same as for mnesia's transactions.
+%% The semantics are the same as for mnesia's transactions except they are not
+%% automatically retried when deadlocks are detected. Transactions can be
+%% nested. (MySQL savepoints are used to implement nested transactions.)
 %%
 %% The Fun must be a function and Args must be a list with the same length
 %% as the arity of Fun. 
 %%
-%% Current limitations:
-%%
-%% <ul>
-%%   <li>Transactions cannot be nested</li>
-%%   <li>They are not automatically restarted when deadlocks are detected.</li>
-%% </ul>
+%% Current limitation: Transactions is not automatically restarted when
+%% deadlocks are detected.
 %%
 %% If an exception occurs within Fun, the exception is caught and `{aborted,
 %% Reason}' is returned. The value of `Reason' depends on the class of the
 %% exception.
+%%
+%% Note that an error response from a query does not cause a transaction to be
+%% rollbacked. To force a rollback on MySQL errors, you can trigger a `badmatch'
+%% using e.g. `ok = mysql:query(Pid, "SELECT some_non_existent_value")'.
 %%
 %% <table>
 %%   <thead>
@@ -290,7 +294,6 @@ transaction(Conn, Fun) ->
 %%   </tbody>
 %% </table>
 %%
-%% TODO: Implement nested transactions
 %% TODO: Automatic restart on deadlocks
 %% @see in_transaction/1
 -spec transaction(connection(), fun(), list()) -> {atomic, term()} |
@@ -299,16 +302,16 @@ transaction(Conn, Fun, Args) when is_list(Args),
                                   is_function(Fun, length(Args)) ->
     %% The guard makes sure that we can apply Fun to Args. Any error we catch
     %% in the try-catch are actual errors that occurred in Fun.
-    ok = query(Conn, <<"BEGIN">>),
+    ok = gen_server:call(Conn, start_transaction),
     try apply(Fun, Args) of
         ResultOfFun ->
             %% We must be able to rollback. Otherwise let's crash.
-            ok = query(Conn, <<"COMMIT">>),
+            ok = gen_server:call(Conn, commit),
             {atomic, ResultOfFun}
     catch
         Class:Reason ->
             %% We must be able to rollback. Otherwise let's crash.
-            ok = query(Conn, <<"ROLLBACK">>),
+            ok = gen_server:call(Conn, rollback),
             %% These forms for throw, error and exit mirror Mnesia's behaviour.
             Aborted = case Class of
                 throw -> {throw, Reason};
@@ -328,6 +331,7 @@ transaction(Conn, Fun, Args) when is_list(Args),
                 host, port, user, password,
                 query_timeout, query_cache_time,
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
+                transaction_level = 0,
                 stmts = dict:new(), query_cache = empty}).
 
 %% @private
@@ -487,7 +491,44 @@ handle_call(affected_rows, _From, State) ->
 handle_call(autocommit, _From, State) ->
     {reply, State#state.status band ?SERVER_STATUS_AUTOCOMMIT /= 0, State};
 handle_call(in_transaction, _From, State) ->
-    {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State}.
+    {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};
+handle_call(start_transaction, _From,
+            State = #state{socket = Socket, transaction_level = L,
+                           status = Status})
+  when Status band ?SERVER_STATUS_IN_TRANS == 0, L == 0;
+       Status band ?SERVER_STATUS_IN_TRANS /= 0, L > 0 ->
+    Query = case L of
+        0 -> <<"BEGIN">>;
+        _ -> <<"SAVEPOINT s", (integer_to_binary(L))/binary>>
+    end,
+    Res = #ok{} = mysql_protocol:query(Query, gen_tcp, Socket, ?cmd_timeout),
+    State1 = update_state(State, Res),
+    {reply, ok, State1#state{transaction_level = L + 1}};
+handle_call(rollback, _From, State = #state{socket = Socket, status = Status,
+                                            transaction_level = L})
+  when Status band ?SERVER_STATUS_IN_TRANS /= 0, L >= 1 ->
+    Query = case L of
+        1 -> <<"ROLLBACK">>;
+        _ -> <<"ROLLBACK TO s", (integer_to_binary(L - 1))/binary>>
+    end,
+    Res = #ok{} = mysql_protocol:query(Query, gen_tcp, Socket, ?cmd_timeout),
+    State1 = update_state(State, Res),
+    {reply, ok, State1#state{transaction_level = L - 1}};
+handle_call(commit, _From, State = #state{socket = Socket, status = Status,
+                                          transaction_level = L})
+  when Status band ?SERVER_STATUS_IN_TRANS /= 0, L >= 1 ->
+    Query = case L of
+        1 -> <<"COMMIT">>;
+        _ -> <<"RELEASE SAVEPOINT s", (integer_to_binary(L - 1))/binary>>
+    end,
+    Res = #ok{} = mysql_protocol:query(Query, gen_tcp, Socket, ?cmd_timeout),
+    State1 = update_state(State, Res),
+    {reply, ok, State1#state{transaction_level = L - 1}};
+handle_call(Trans, _From, State) when Trans == start_transaction;
+                                      Trans == rollback;
+                                      Trans == commit ->
+    %% The 'in transaction' flag doesn't match the level we have in the state.
+    {reply, {error, incorrectly_nested}, State}.
 
 %% @private
 handle_cast(_Msg, State) ->
@@ -587,7 +628,7 @@ kill_query(#state{connection_id = ConnId, host = Host, port = Port,
             %% Kill and disconnect
             IdBin = integer_to_binary(ConnId),
             #ok{} = mysql_protocol:query(<<"KILL QUERY ", IdBin/binary>>,
-                                         gen_tcp, Socket, 3000),
+                                         gen_tcp, Socket, ?cmd_timeout),
             mysql_protocol:quit(gen_tcp, Socket);
         #error{} = E ->
             error_logger:error_msg("Failed to connect to kill query: ~p",

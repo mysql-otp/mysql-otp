@@ -434,7 +434,9 @@ with_table_foo_test_() ->
      {with, [fun prepared_statements/1,
              fun parameterized_query/1,
              fun transaction_simple_success/1,
-             fun transaction_simple_aborted/1]}}.
+             fun transaction_simple_aborted/1,
+             fun transaction_nested_success/1,
+             fun transaction_inner_rollback/1]}}.
 
 prepared_statements(Pid) ->
     %% Unnamed
@@ -500,6 +502,34 @@ transaction_simple_aborted(Pid) ->
                  mysql:transaction(Pid, fun () -> throw(foo) end)),
     ?assertEqual({aborted, foo},
                  mysql:transaction(Pid, fun () -> exit(foo) end)).
+
+transaction_nested_success(Pid) ->
+    OuterResult = mysql:transaction(Pid, fun () ->
+        ok = mysql:query(Pid, "INSERT INTO foo VALUES (9)"),
+        InnerResult = mysql:transaction(Pid, fun () ->
+            ok = mysql:query(Pid, "INSERT INTO foo VALUES (42)"),
+            inner
+        end),
+        ?assertEqual({atomic, inner}, InnerResult),
+        outer
+    end),
+    ?assertMatch({ok, _, [[2]]}, mysql:query(Pid, "SELECT COUNT(*) FROM foo")),
+    ok = mysql:query(Pid, "DELETE FROM foo"),
+    ?assertEqual({atomic, outer}, OuterResult).
+
+transaction_inner_rollback(Pid) ->
+    OuterResult = mysql:transaction(Pid, fun () ->
+        ok = mysql:query(Pid, "INSERT INTO foo VALUES (9)"),
+        InnerResult = mysql:transaction(Pid, fun () ->
+            ok = mysql:query(Pid, "INSERT INTO foo VALUES (42)"),
+            throw(inner)
+        end),
+        ?assertEqual({aborted, {throw, inner}}, InnerResult),
+        outer
+    end),
+    ?assertMatch({ok, _, [[9]]}, mysql:query(Pid, "SELECT bar FROM foo")),
+    ok = mysql:query(Pid, "DELETE FROM foo"),
+    ?assertEqual({atomic, outer}, OuterResult).
 
 %% --- simple gen_server callbacks ---
 

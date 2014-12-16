@@ -3,15 +3,16 @@ MySQL/OTP
 
 [![Build Status](https://travis-ci.org/mysql-otp/mysql-otp.svg)](https://travis-ci.org/mysql-otp/mysql-otp)
 
-MySQL/OTP is a client library for connecting to MySQL databases from Erlang/OTP
-applications. It is a native implementation of the MySQL protocol in Erlang.
+MySQL/OTP is a driver for connecting Erlang/OTP applications to MySQL
+databases. It is a native implementation of the MySQL protocol in Erlang.
 
 Features:
 
-* Mnesia style transactions. (Currenly transactions cannot be nested and are
-  not retried automatically when deadlocks are detected. These are features of
-  Mnesia style transactions and there are plans to implement them. See
-  [#7](https://github.com/mysql-otp/mysql-otp/issues/7).)
+* Nestable Mnesia style transactions.
+  * Nested transactions are implemented using savepoints (since 0.6.0).
+  * Currenly transactions are not automatically retried when deadlocks are
+    detected but there are plans to implement that too.
+    See [#7](https://github.com/mysql-otp/mysql-otp/issues/7).)
 * Uses the binary protocol for prepared statements.
 * Each connection is a gen_server, which makes it compatible with Poolboy (for
   connection pooling) and ordinary OTP supervisors.
@@ -24,8 +25,12 @@ See also:
 * [Test coverage](//mysql-otp.github.io/mysql-otp/eunit.html) (EUnit)
 * [Why another MySQL driver?](https://github.com/mysql-otp/mysql-otp/wiki#why-another-mysql-driver) in the wiki
 
-This is a work in progress. The API and the value representation may still
-change. Use a tagged version to make sure nothing breaks.
+This is a work in progress. Use a tagged version to make sure nothing breaks.
+
+Todo:
+
+* Ping regularily when inactive
+* Retry transactions when deadlocks are detected
 
 Synopsis
 --------
@@ -49,7 +54,7 @@ LastInsertId = mysql:insert_id(Pid),
 AffectedRows = mysql:affected_rows(Pid),
 WarningCount = mysql:warning_count(Pid),
 
-%% Mnesia style transaction
+%% Mnesia style transaction (nestable)
 Result = mysql:transaction(Pid, fun () ->
     ok = mysql:query(Pid, "INSERT INTO mytable (foo) VALUES (1)"),
     throw(foo),
