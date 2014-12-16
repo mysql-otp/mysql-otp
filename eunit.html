@@ -1,21 +1,30 @@
 <!DOCTYPE html>
 <html><head><title>Coverage Summary</title></head>
 <body><h1>Source Summary</h1>
-<h3>Total: 96%</h3>
+<h3>Total: 92%</h3>
 <table><tr><th>Module</th><th>Coverage %</th></tr>
 <tr><td><a href='mysql.COVER.html'>mysql</a></td><td>94%</td>
 <tr><td><a href='mysql_cache.COVER.html'>mysql_cache</a></td><td>100%</td>
-<tr><td><a href='mysql_protocol.COVER.html'>mysql_protocol</a></td><td>96%</td>
+<tr><td><a href='mysql_protocol.COVER.html'>mysql_protocol</a></td><td>91%</td>
 </table>
 <body><h1>Test Summary</h1>
 <h3>Total: 74%</h3>
 <table><tr><th>Module</th><th>Coverage %</th></tr>
 <tr><td><a href='mock_tcp.COVER.html'>mock_tcp</a></td><td>74%</td>
 </table>
-
 <h3>Output of <code>make eunit</code></h3><pre>
 ==&gt; mysql-otp (eunit)
+Compiled src/mysql.erl
+Compiled test/mysql_tests.erl
 ======================== EUnit ========================
+module 'mysql_cache'
+  mysql_cache: empty_test...ok
+  mysql_cache: nonempty_test...[0.014 s] ok
+  [done in 0.020 s]
+module 'mock_tcp'
+  mock_tcp: bad_recv_test...ok
+  mock_tcp: success_test...[0.101 s] ok
+  [done in 0.107 s]
 module 'mysql_protocol'
   mysql_protocol: decode_text_test...[0.004 s] ok
   mysql_protocol: decode_binary_test...ok
@@ -28,52 +37,49 @@ module 'mysql_protocol'
   mysql_protocol: add_packet_headers_test...ok
   mysql_protocol: parse_ok_test...ok
   mysql_protocol: parse_error_test...ok
-  mysql_protocol: parse_eof_test...[0.001 s] ok
+  mysql_protocol: parse_eof_test...ok
   mysql_protocol: hash_password_test...ok
   module 'mysql_protocol_tests'
-    mysql_protocol_tests: resultset_test...[0.005 s] ok
-    mysql_protocol_tests: resultset_error_test...[0.003 s] ok
-    mysql_protocol_tests: prepare_test...[0.002 s] ok
-    mysql_protocol_tests: hexdump_to_bin_test...[0.001 s] ok
-    [done in 0.020 s]
-  [done in 0.065 s]
-module 'mysql_cache'
-  mysql_cache: empty_test...ok
-  mysql_cache: nonempty_test...[0.016 s] ok
-  [done in 0.021 s]
+    mysql_protocol_tests: resultset_test...[0.004 s] ok
+    mysql_protocol_tests: resultset_error_test...[0.001 s] ok
+    mysql_protocol_tests: prepare_test...ok
+    mysql_protocol_tests: hexdump_to_bin_test...ok
+    [done in 0.017 s]
+  [done in 0.059 s]
 module 'mysql'
   module 'mysql_tests'
-    mysql_tests: connect_test...[0.025 s] ok
-    mysql_tests: query_test_...[0.002 s] ok
-    mysql_tests: query_test_...[0.002 s] ok
+    mysql_tests: connect_test...[0.009 s] ok
     mysql_tests: query_test_...[0.001 s] ok
-    mysql_tests: query_test_...[0.031 s] ok
-    mysql_tests: query_test_...[0.021 s] ok
-    mysql_tests: query_test_...[0.073 s] ok
-    mysql_tests: query_test_...[0.102 s] ok
-    mysql_tests: query_test_...[0.131 s] ok
-    mysql_tests: query_test_...[0.027 s] ok
-    mysql_tests: query_test_...[0.033 s] ok
-    mysql_tests: query_test_...[0.058 s] ok
-    mysql_tests: query_test_...[0.056 s] ok
-    mysql_tests: query_test_...[0.059 s] ok
-    mysql_tests: timeout_test_...[0.131 s] ok
+    mysql_tests: query_test_...ok
+    mysql_tests: query_test_...ok
+    mysql_tests: query_test_...[0.007 s] ok
+    mysql_tests: query_test_...[0.008 s] ok
+    mysql_tests: query_test_...[0.045 s] ok
+    mysql_tests: query_test_...[0.653 s] ok
+    mysql_tests: query_test_...[0.817 s] ok
+    mysql_tests: query_test_...[0.189 s] ok
+    mysql_tests: query_test_...[0.164 s] ok
+    mysql_tests: query_test_...[0.647 s] ok
+    mysql_tests: query_test_...[0.243 s] ok
+    mysql_tests: query_test_...
+=INFO REPORT==== 16-Dec-2014::18:50:46 ===
+Skipping microseconds test. Current MySQL version is 5.5.40-0+wheezy1. Required version is &gt;= 5.6.4.
+ok
+    mysql_tests: timeout_test_...[0.125 s] ok
+    mysql_tests: with_table_foo_test_...[0.080 s] ok
+    mysql_tests: with_table_foo_test_...[0.189 s] ok
+    mysql_tests: with_table_foo_test_...[0.002 s] ok
     mysql_tests: with_table_foo_test_...[0.003 s] ok
-    mysql_tests: with_table_foo_test_...[0.154 s] ok
-    mysql_tests: with_table_foo_test_...[0.004 s] ok
-    mysql_tests: with_table_foo_test_...[0.004 s] ok
+    mysql_tests: with_table_foo_test_...[0.002 s] ok
+    mysql_tests: with_table_foo_test_...[0.002 s] ok
     mysql_tests: gen_server_coverage_test...ok
-    [done in 0.992 s]
-  [done in 0.992 s]
-module 'mock_tcp'
-  mock_tcp: bad_recv_test...ok
-  mock_tcp: success_test...[0.103 s] ok
-  [done in 0.108 s]
+    [done in 3.262 s]
+  [done in 3.262 s]
 =======================================================
-  All 41 tests passed.
-Cover analysis: /Users/viktor/data/mysql-otp/.eunit/index.html
+  All 43 tests passed.
+Cover analysis: /home/viktor/mysql-otp/.eunit/index.html
 </pre>
 <p><em>Generated using EUnit,
-15 Dec 2014 22:06:10 UTC.
+16 dec 2014 17:50:47 UTC.
 </em></p>
 </body></html>
