@@ -79,6 +79,9 @@
 %%       using the query `USE <database>'.</dd>
 %%   <dt>`{connect_timeout, Timeout}'</dt>
 %%   <dd>The maximum time to spend for start_link/1.</dd>
+%%   <dt>`{log_warnings, boolean()}'</dt>
+%%   <dd>Whether to fetch warnings and log them using error_logger; default
+%%       true.</dd>
 %%   <dt>`{query_timeout, Timeout}'</dt>
 %%   <dd>The default time to wait for a response when executing a query or a
 %%       prepared statement. This can be given per query using `query/3,4' and
@@ -93,6 +96,7 @@
                    {user, iodata()} | {password, iodata()} |
                    {database, iodata()} |
                    {connect_timeout, timeout()} |
+                   {log_warnings, boolean()} |
                    {query_timeout, timeout()} |
                    {query_cache_time, non_neg_integer()},
          ServerName :: {local, Name :: atom()} |
@@ -328,7 +332,7 @@ transaction(Conn, Fun, Args) when is_list(Args),
 
 %% Gen_server state
 -record(state, {server_version, connection_id, socket,
-                host, port, user, password,
+                host, port, user, password, log_warnings,
                 query_timeout, query_cache_time,
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
                 transaction_level = 0,
@@ -342,6 +346,7 @@ init(Opts) ->
     User     = proplists:get_value(user,          Opts, ?default_user),
     Password = proplists:get_value(password,      Opts, ?default_password),
     Database = proplists:get_value(database,      Opts, undefined),
+    LogWarn  = proplists:get_value(log_warnings,  Opts, true),
     Timeout  = proplists:get_value(query_timeout, Opts, ?default_query_timeout),
     QueryCacheTime = proplists:get_value(query_cache_time, Opts,
                                          ?default_query_cache_time),
@@ -360,6 +365,7 @@ init(Opts) ->
                            socket = Socket,
                            host = Host, port = Port, user = User,
                            password = Password, status = Status,
+                           log_warnings = LogWarn,
                            query_timeout = Timeout,
                            query_cache_time = QueryCacheTime},
             %% Trap exit so that we can properly disconnect when we die.
@@ -386,6 +392,8 @@ handle_call({query, Query, Timeout}, _From, State) ->
             QueryResult
     end,
     State1 = update_state(State, Rec),
+    State1#state.warning_count > 0 andalso State1#state.log_warnings
+        andalso log_warnings(State1, Query),
     case Rec of
         #ok{} ->
             {reply, ok, State1};
@@ -426,7 +434,10 @@ handle_call({param_query, Query, Params, Timeout}, _From, State) ->
     case StmtResult of
         {ok, StmtRec} ->
             State1 = State#state{query_cache = Cache1},
-            execute_stmt(StmtRec, Params, Timeout, State1);
+            {Reply, State2} = execute_stmt(StmtRec, Params, Timeout, State1),
+            State2#state.warning_count > 0 andalso State2#state.log_warnings
+                andalso log_warnings(State2, Query),
+            {reply, Reply, State2};
         PrepareError ->
             {reply, PrepareError, State}
     end;
@@ -435,7 +446,12 @@ handle_call({execute, Stmt, Args}, From, State) ->
 handle_call({execute, Stmt, Args, Timeout}, _From, State) ->
     case dict:find(Stmt, State#state.stmts) of
         {ok, StmtRec} ->
-            execute_stmt(StmtRec, Args, Timeout, State);
+            {Reply, State1} = execute_stmt(StmtRec, Args, Timeout, State),
+            State1#state.warning_count > 0 andalso State1#state.log_warnings
+                andalso log_warnings(State1,
+                                     io_lib:format("prepared statement ~p",
+                                                   [Stmt])),
+            {reply, Reply, State1};
         error ->
             {reply, {error, not_prepared}, State}
     end;
@@ -568,7 +584,7 @@ code_change(_OldVsn, _State, _Extra) ->
 
 %% --- Helpers ---
 
-%% @doc Returns a tuple on the the same form as handle_call/3.
+%% @doc Executes a prepared statement and returns {Reply, NextState}.
 execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket}) ->
     Rec = case mysql_protocol:execute(Stmt, Args, gen_tcp, Socket, Timeout) of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
@@ -584,12 +600,12 @@ execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket}) ->
     State1 = update_state(State, Rec),
     case Rec of
         #ok{} ->
-            {reply, ok, State1};
+            {ok, State1};
         #error{} = E ->
-            {reply, {error, error_to_reason(E)}, State1};
+            {{error, error_to_reason(E)}, State1};
         #resultset{cols = ColDefs, rows = Rows} ->
             Names = [Def#col.name || Def <- ColDefs],
-            {reply, {ok, Names, Rows}, State1}
+            {{ok, Names, Rows}, State1}
     end.
 
 %% @doc Produces a tuple to return as an error reason.
@@ -611,6 +627,14 @@ update_state(State, _Other) ->
     %% This includes errors, resultsets, etc.
     %% Reset warnings, etc. (Note: We don't reset status and insert_id.)
     State#state{warning_count = 0, affected_rows = 0}.
+
+%% @doc Fetches and logs warnings. Query is the query that gave the warnings.
+log_warnings(#state{socket = Socket}, Query) ->
+    #resultset{rows = Rows} =
+        mysql_protocol:query(<<"SHOW WARNINGS">>, gen_tcp, Socket, infinity),
+    Lines = [[Level, " ", integer_to_binary(Code), ": ", Message, "\n"]
+             || [Level, Code, Message] <- Rows],
+    error_logger:warning_msg("~s in ~s~n", [Lines, Query]).
 
 %% @doc Makes a separate connection and execute KILL QUERY. We do this to get
 %% our main connection back to normal. KILL QUERY appeared in MySQL 5.0.0.
