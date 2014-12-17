@@ -21,6 +21,15 @@
 %% updated cache object which should be used in subsequent calls.
 %%
 %% A cache can be initialized to 'empty' which represents the empty cache.
+%%
+%% Properties:
+%%
+%% <ul>
+%%   <li>Embeddable in a gen_server or other process/li>
+%%   <li>Small overhead when unused (the empty cache is a single atom)</li>
+%%   <li>Evicting K elements is O(N + K * log N) which means low overhead when
+%%       nothing or few elements are evicted</li>
+%% </ul>
 %% @private
 -module(mysql_cache).
 
@@ -38,11 +47,14 @@ evict_older_than({cache, StartTs, Dict}, MaxAge) ->
     MinTime = timer:now_diff(os:timestamp(), StartTs) div 1000 - MaxAge,
     {Evicted, Dict1} = dict:fold(
         fun (Key, {Value, Time}, {EvictedAcc, DictAcc}) ->
-            if Time =< MinTime -> {[{Key, Value} | EvictedAcc], DictAcc};
-               Time >  MinTime -> {EvictedAcc, dict:store(Key, Value, DictAcc)}
+            if
+                Time < MinTime ->
+                    {[{Key, Value} | EvictedAcc], dict:erase(Key, DictAcc)};
+                Time >= MinTime ->
+                    {EvictedAcc, DictAcc}
             end
         end,
-        {[], dict:new()},
+        {[], Dict},
         Dict),
     Cache1 = case dict:size(Dict1) of
         0 -> empty;
@@ -104,16 +116,16 @@ nonempty_test() ->
     Cache = ?MODULE:store(foo, bar, empty),
     ?assertMatch({found, bar, _}, ?MODULE:lookup(foo, Cache)),
     ?assertMatch(not_found, ?MODULE:lookup(baz, Cache)),
-    ?assertMatch({[], _}, ?MODULE:evict_older_than(Cache, 10)),
+    ?assertMatch({Evicted, _}, ?MODULE:evict_older_than(Cache, 50)),
     ?assertMatch({cache, _, _}, Cache),
     ?assertEqual(1, ?MODULE:size(Cache)),
-    receive after 11 -> ok end, %% expire cache
-    ?assertEqual({[{foo, bar}], empty}, ?MODULE:evict_older_than(Cache, 10)),
+    receive after 51 -> ok end, %% expire cache
+    ?assertEqual({[{foo, bar}], empty}, ?MODULE:evict_older_than(Cache, 50)),
     %% lookup un-expires cache
     {found, bar, NewCache} = ?MODULE:lookup(foo, Cache),
-    ?assertMatch({[], {cache, _, _}}, ?MODULE:evict_older_than(NewCache, 10)),
+    ?assertMatch({[], {cache, _, _}}, ?MODULE:evict_older_than(NewCache, 50)),
     %% store also un-expires
     NewCache2 = ?MODULE:store(foo, baz, Cache),
-    ?assertMatch({[], {cache, _, _}}, ?MODULE:evict_older_than(NewCache2, 10)).
+    ?assertMatch({[], {cache, _, _}}, ?MODULE:evict_older_than(NewCache2, 50)).
 
 -endif.
