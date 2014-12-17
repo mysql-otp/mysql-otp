@@ -56,7 +56,8 @@ get_state(Process) ->
 query_test_() ->
     {setup,
      fun () ->
-         {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password}]),
+         {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
+                                       {log_warnings, false}]),
          ok = mysql:query(Pid, <<"DROP DATABASE IF EXISTS otptest">>),
          ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
          ok = mysql:query(Pid, <<"USE otptest">>),
@@ -87,6 +88,8 @@ connect_with_db(_Pid) ->
                                   {database, "otptest"}]),
     ?assertMatch({ok, _, [[<<"otptest">>]]},
                  mysql:query(Pid, "SELECT DATABASE()")),
+    %% Check that we get a warning logged
+    ok = mysql:query(Pid, <<"DROP TABLE IF EXISTS dummy">>),
     exit(Pid, normal).
 
 autocommit(Pid) ->
@@ -386,7 +389,8 @@ write_read_text_binary(Conn, Term, SqlLiteral, Table, Column) ->
 timeout_test_() ->
     {setup,
      fun () ->
-         {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password}]),
+         {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
+                                       {log_warnings, false}]),
          Pid
      end,
      fun (Pid) ->
@@ -420,7 +424,8 @@ with_table_foo_test_() ->
     {setup,
      fun () ->
          {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
-                                       {query_cache_time, 50}]),
+                                       {query_cache_time, 50},
+                                       {log_warnings, false}]),
          ok = mysql:query(Pid, <<"DROP DATABASE IF EXISTS otptest">>),
          ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
          ok = mysql:query(Pid, <<"USE otptest">>),
