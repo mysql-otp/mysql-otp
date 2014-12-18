@@ -40,11 +40,13 @@ single_connection_test_() ->
          ok = mysql:query(Pid, <<"DROP DATABASE otptest">>),
          exit(Pid, normal)
      end,
-     {with, [fun simple_atomic/1,
-             fun simple_aborted/1,
-             fun nested_atomic/1,
-             fun nested_inner_aborted/1,
-             fun implicit_commit/1]}}.
+     fun (Pid) ->
+         [{"Simple atomic",        fun () -> simple_atomic(Pid) end},
+          {"Simple aborted",       fun () -> simple_aborted(Pid) end},
+          {"Nested atomic",        fun () -> nested_atomic(Pid) end},
+          {"Nested inner aborted", fun () -> nested_inner_aborted(Pid) end},
+          {"Implicit commit",      fun () -> implicit_commit(Pid) end}]
+     end}.
 
 simple_atomic(Pid) ->
     ?assertNot(mysql:in_transaction(Pid)),

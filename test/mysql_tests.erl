@@ -68,19 +68,21 @@ query_test_() ->
          ok = mysql:query(Pid, <<"DROP DATABASE otptest">>),
          exit(Pid, normal)
      end,
-     {with, [fun connect_with_db/1,
-             fun autocommit/1,
-             fun basic_queries/1,
-             fun text_protocol/1,
-             fun binary_protocol/1,
-             fun float_rounding/1,
-             fun decimal/1,
-             fun int/1,
-             fun bit/1,
-             fun date/1,
-             fun time/1,
-             fun datetime/1,
-             fun microseconds/1]}}.
+     fun (Pid) ->
+         [{"Select db on connect", fun () -> connect_with_db(Pid) end},
+          {"Autocommit",           fun () -> autocommit(Pid) end},
+          {"Basic queries",        fun () -> basic_queries(Pid) end},
+          {"Text protocol",        fun () -> text_protocol(Pid) end},
+          {"Binary protocol",      fun () -> binary_protocol(Pid) end},
+          {"FLOAT rounding",       fun () -> float_rounding(Pid) end},
+          {"DECIMAL",              fun () -> decimal(Pid) end},
+          {"INT",                  fun () -> int(Pid) end},
+          {"BIT(N)",               fun () -> bit(Pid) end},
+          {"DATE",                 fun () -> date(Pid) end},
+          {"TIME",                 fun () -> time(Pid) end},
+          {"DATETIME",             fun () -> datetime(Pid) end},
+          {"Microseconds",         fun () -> microseconds(Pid) end}]
+     end}.
 
 connect_with_db(_Pid) ->
     %% Make another connection and set the db in the handshake phase
@@ -93,7 +95,7 @@ connect_with_db(_Pid) ->
         mysql:query(Pid, <<"DROP TABLE IF EXISTS dummy">>)
     end),
     ?assertMatch([{_, "Note 1051: Unknown table 'dummy'\n"
-                      " in DROP TABLE IF EXISTS dummy" ++ _}],
+                      " in DROP TABLE IF EXISTS dummy\n"}],
                  LoggedErrors),
     exit(Pid, normal).
 
@@ -441,8 +443,10 @@ with_table_foo_test_() ->
          ok = mysql:query(Pid, <<"DROP DATABASE otptest">>),
          exit(Pid, normal)
      end,
-     {with, [fun prepared_statements/1,
-             fun parameterized_query/1]}}.
+     fun (Pid) ->
+         [{"Prepared statements", fun () -> prepared_statements(Pid) end},
+          {"Parametrized queries", fun () -> parameterized_query(Pid) end}]
+     end}.
 
 prepared_statements(Pid) ->
     %% Unnamed
