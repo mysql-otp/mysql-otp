@@ -25,7 +25,7 @@
 %% Properties:
 %%
 %% <ul>
-%%   <li>Embeddable in a gen_server or other process/li>
+%%   <li>Embeddable in a gen_server or other process</li>
 %%   <li>Small overhead when unused (the empty cache is a single atom)</li>
 %%   <li>Evicting K elements is O(N + K * log N) which means low overhead when
 %%       nothing or few elements are evicted</li>
