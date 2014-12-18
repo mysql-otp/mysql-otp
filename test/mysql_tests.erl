@@ -418,7 +418,7 @@ timeout_test_() ->
 
 %% --------------------------------------------------------------------------
 
-%% Prepared statements and transactions
+%% Prepared statements
 
 with_table_foo_test_() ->
     {setup,
@@ -437,11 +437,7 @@ with_table_foo_test_() ->
          exit(Pid, normal)
      end,
      {with, [fun prepared_statements/1,
-             fun parameterized_query/1,
-             fun transaction_simple_success/1,
-             fun transaction_simple_aborted/1,
-             fun transaction_nested_success/1,
-             fun transaction_inner_rollback/1]}}.
+             fun parameterized_query/1]}}.
 
 prepared_statements(Pid) ->
     %% Unnamed
@@ -475,66 +471,6 @@ parameterized_query(Conn) ->
     {ok, _, []} = mysql:query(Conn, "SELECT * FROM foo WHERE bar = ?", [2]),
     receive after 150 -> ok end, %% Now the query cache should emptied
     {ok, _, []} = mysql:query(Conn, "SELECT * FROM foo WHERE bar = ?", [3]).
-
-transaction_simple_success(Pid) ->
-    ?assertNot(mysql:in_transaction(Pid)),
-    Result = mysql:transaction(Pid, fun () ->
-                 ok = mysql:query(Pid, "INSERT INTO foo VALUES (42)"),
-                 ?assert(mysql:in_transaction(Pid)),
-                 hello
-             end),
-    ?assertEqual({atomic, hello}, Result),
-    ?assertNot(mysql:in_transaction(Pid)),
-    ok = mysql:query(Pid, "DELETE FROM foo").
-
-transaction_simple_aborted(Pid) ->
-    ok = mysql:query(Pid, "INSERT INTO foo VALUES (9)"),
-    ?assertEqual({ok, [<<"bar">>], [[9]]},
-                 mysql:query(Pid, "SELECT bar FROM foo")),
-    Result = mysql:transaction(Pid, fun () ->
-                 ok = mysql:query(Pid, "INSERT INTO foo VALUES (42)"),
-                 ?assertMatch({ok, _, [[2]]},
-                              mysql:query(Pid, "SELECT COUNT(*) FROM foo")),
-                 error(hello)
-             end),
-    ?assertMatch({aborted, {hello, Stacktrace}} when is_list(Stacktrace),
-                 Result),
-    ?assertEqual({ok, [<<"bar">>], [[9]]},
-                 mysql:query(Pid, "SELECT bar FROM foo")),
-    ok = mysql:query(Pid, "DELETE FROM foo"),
-    %% Also check the abort Reason for throw and exit.
-    ?assertEqual({aborted, {throw, foo}},
-                 mysql:transaction(Pid, fun () -> throw(foo) end)),
-    ?assertEqual({aborted, foo},
-                 mysql:transaction(Pid, fun () -> exit(foo) end)).
-
-transaction_nested_success(Pid) ->
-    OuterResult = mysql:transaction(Pid, fun () ->
-        ok = mysql:query(Pid, "INSERT INTO foo VALUES (9)"),
-        InnerResult = mysql:transaction(Pid, fun () ->
-            ok = mysql:query(Pid, "INSERT INTO foo VALUES (42)"),
-            inner
-        end),
-        ?assertEqual({atomic, inner}, InnerResult),
-        outer
-    end),
-    ?assertMatch({ok, _, [[2]]}, mysql:query(Pid, "SELECT COUNT(*) FROM foo")),
-    ok = mysql:query(Pid, "DELETE FROM foo"),
-    ?assertEqual({atomic, outer}, OuterResult).
-
-transaction_inner_rollback(Pid) ->
-    OuterResult = mysql:transaction(Pid, fun () ->
-        ok = mysql:query(Pid, "INSERT INTO foo VALUES (9)"),
-        InnerResult = mysql:transaction(Pid, fun () ->
-            ok = mysql:query(Pid, "INSERT INTO foo VALUES (42)"),
-            throw(inner)
-        end),
-        ?assertEqual({aborted, {throw, inner}}, InnerResult),
-        outer
-    end),
-    ?assertMatch({ok, _, [[9]]}, mysql:query(Pid, "SELECT bar FROM foo")),
-    ok = mysql:query(Pid, "DELETE FROM foo"),
-    ?assertEqual({atomic, outer}, OuterResult).
 
 %% --- simple gen_server callbacks ---
 
