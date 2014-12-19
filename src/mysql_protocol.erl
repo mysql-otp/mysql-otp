@@ -26,7 +26,7 @@
 %% @private
 -module(mysql_protocol).
 
--export([handshake/5, quit/2,
+-export([handshake/5, quit/2, ping/2,
          query/4, fetch_query_response/3,
          prepare/3, unprepare/3, execute/5, fetch_execute_response/3]).
 
@@ -62,12 +62,19 @@ handshake(Username, Password, Database, TcpModule, Socket) ->
             Error
     end.
 
+-spec quit(atom(), term()) -> ok.
 quit(TcpModule, Socket) ->
     {ok, SeqNum1} = send_packet(TcpModule, Socket, <<?COM_QUIT>>, 0),
     case recv_packet(TcpModule, Socket, SeqNum1) of
-        {error, closed} -> ok;
-        {ok, ?ok_pattern, _SeqNum2} -> ok
+        {error, closed} -> ok;            %% MySQL 5.5.40 and more
+        {ok, ?ok_pattern, _SeqNum2} -> ok %% Some older MySQL versions?
     end.
+
+-spec ping(atom(), term()) -> #ok{}.
+ping(TcpModule, Socket) ->
+    {ok, SeqNum1} = send_packet(TcpModule, Socket, <<?COM_PING>>, 0),
+    {ok, OkPacket, _SeqNum2} = recv_packet(TcpModule, Socket, SeqNum1),
+    parse_ok_packet(OkPacket).
 
 -spec query(Query :: iodata(), atom(), term(), timeout()) ->
     #ok{} | #resultset{} | #error{} | {error, timeout}.

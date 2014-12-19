@@ -48,6 +48,31 @@ connect_test() ->
     ?assertMatch({error, _}, mysql:code_change("2.0.0", unknown_state, [])),
     exit(whereis(tardis), normal).
 
+keep_alive_test() ->
+     %% Let the connection send a few pings.
+     process_flag(trap_exit, true),
+     Options = [{user, ?user}, {password, ?password}, {keep_alive, 20}],
+     {ok, Pid} = mysql:start_link(Options),
+     receive after 70 -> ok end,
+     State = get_state(Pid),
+     [state, _Version, _ConnectionId, Socket | _] = tuple_to_list(State),
+     {ok, ExitMessage, LoggedErrors} = error_logger_acc:capture(fun () ->
+         gen_tcp:close(Socket),
+         receive
+            Message -> Message
+         after 1000 ->
+             ping_didnt_crash_connection
+         end
+     end),
+     process_flag(trap_exit, false),
+     %% Check that we got the expected crash report in the error log.
+     ?assertMatch({'EXIT', Pid, _Reason}, ExitMessage),
+     [{error, LoggedMsg}, {error_report, LoggedReport}] = LoggedErrors,
+     ExpectedPrefix = io_lib:format("** Generic server ~p terminating", [Pid]),
+     ?assert(lists:prefix(lists:flatten(ExpectedPrefix), LoggedMsg)),
+     ?assertMatch({crash_report, _}, LoggedReport),
+     exit(Pid, normal).
+
 %% For R16B where sys:get_state/1 is not available.
 get_state(Process) ->
     {status,_,_,[_,_,_,_,Misc]} = sys:get_status(Process),
@@ -57,7 +82,8 @@ query_test_() ->
     {setup,
      fun () ->
          {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
-                                       {log_warnings, false}]),
+                                       {log_warnings, false},
+                                       {keep_alive, true}]),
          ok = mysql:query(Pid, <<"DROP DATABASE IF EXISTS otptest">>),
          ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
          ok = mysql:query(Pid, <<"USE otptest">>),

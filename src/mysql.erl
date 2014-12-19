@@ -42,6 +42,7 @@
 -define(default_connect_timeout, 5000).
 -define(default_query_timeout, infinity).
 -define(default_query_cache_time, 60000). %% for query/3.
+-define(default_ping_timeout, 60000).
 
 -define(cmd_timeout, 3000). %% Timeout used for various commands to the server
 
@@ -86,6 +87,11 @@
 %%   <dt>`{log_warnings, boolean()}'</dt>
 %%   <dd>Whether to fetch warnings and log them using error_logger; default
 %%       true.</dd>
+%%   <dt>`{keep_alive, boolean() | timeout()}'</dt>
+%%   <dd>Send ping when unused for a certain time. Possible values are `true',
+%%       `false' and `integer() > 0' for an explicit interval in milliseconds.
+%%       The default is `false'. For `true' a default ping timeout is used.
+%%       </dt>
 %%   <dt>`{query_timeout, Timeout}'</dt>
 %%   <dd>The default time to wait for a response when executing a query or a
 %%       prepared statement. This can be given per query using `query/3,4' and
@@ -381,23 +387,32 @@ transaction(Conn, Fun, Args, Retries) when is_list(Args),
 %% Gen_server state
 -record(state, {server_version, connection_id, socket,
                 host, port, user, password, log_warnings,
+                ping_timeout,
                 query_timeout, query_cache_time,
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
-                transaction_level = 0,
+                transaction_level = 0, ping_ref = undefined,
                 stmts = dict:new(), query_cache = empty}).
 
 %% @private
 init(Opts) ->
     %% Connect
-    Host     = proplists:get_value(host,          Opts, ?default_host),
-    Port     = proplists:get_value(port,          Opts, ?default_port),
-    User     = proplists:get_value(user,          Opts, ?default_user),
-    Password = proplists:get_value(password,      Opts, ?default_password),
-    Database = proplists:get_value(database,      Opts, undefined),
-    LogWarn  = proplists:get_value(log_warnings,  Opts, true),
-    Timeout  = proplists:get_value(query_timeout, Opts, ?default_query_timeout),
+    Host           = proplists:get_value(host, Opts, ?default_host),
+    Port           = proplists:get_value(port, Opts, ?default_port),
+    User           = proplists:get_value(user, Opts, ?default_user),
+    Password       = proplists:get_value(password, Opts, ?default_password),
+    Database       = proplists:get_value(database, Opts, undefined),
+    LogWarn        = proplists:get_value(log_warnings, Opts, true),
+    KeepAlive      = proplists:get_value(keep_alive, Opts, false),
+    Timeout        = proplists:get_value(query_timeout, Opts,
+                                         ?default_query_timeout),
     QueryCacheTime = proplists:get_value(query_cache_time, Opts,
                                          ?default_query_cache_time),
+
+    PingTimeout = case KeepAlive of
+        true         -> ?default_ping_timeout;
+        false        -> infinity;
+        N when N > 0 -> N
+    end,
 
     %% Connect socket
     SockOpts = [{active, false}, binary, {packet, raw}],
@@ -414,11 +429,13 @@ init(Opts) ->
                            host = Host, port = Port, user = User,
                            password = Password, status = Status,
                            log_warnings = LogWarn,
+                           ping_timeout = PingTimeout,
                            query_timeout = Timeout,
                            query_cache_time = QueryCacheTime},
             %% Trap exit so that we can properly disconnect when we die.
             process_flag(trap_exit, true),
-            {ok, State};
+            State1 = schedule_ping(State),
+            {ok, State1};
         #error{} = E ->
             {stop, error_to_reason(E)}
     end.
@@ -597,8 +614,9 @@ handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);
         {ok, StmtRec} ->
             #state{socket = Socket} = State,
             mysql_protocol:unprepare(StmtRec, gen_tcp, Socket),
-            Stmts1 = dict:erase(Stmt, State#state.stmts),
-            {reply, ok, State#state{stmts = Stmts1}};
+            State1 = State#state{stmts = dict:erase(Stmt, State#state.stmts)},
+            State2 = schedule_ping(State1),
+            {reply, ok, State2};
         error ->
             {reply, {error, not_prepared}, State}
     end;
@@ -669,6 +687,9 @@ handle_info(query_cache, State = #state{query_cache = Cache,
     mysql_cache:size(Cache1) > 0 andalso
         erlang:send_after(CacheTime, self(), query_cache),
     {noreply, State#state{query_cache = Cache1}};
+handle_info(ping, State) ->
+    Ok = mysql_protocol:ping(gen_tcp, State#state.socket),
+    {noreply, update_state(State, Ok)};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -738,20 +759,31 @@ execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket}) ->
 error_to_reason(#error{code = Code, state = State, msg = Msg}) ->
     {Code, State, Msg}.
 
-%% @doc Updates a state with information from a response.
+%% @doc Updates a state with information from a response. Also re-schedules
+%% ping.
 -spec update_state(#state{}, #ok{} | #eof{} | any()) -> #state{}.
-update_state(State, #ok{status = S, affected_rows = R,
-                        insert_id = Id, warning_count = W}) ->
-    State#state{status = S, affected_rows = R, insert_id = Id,
-                warning_count = W};
-%update_state(State, #eof{status = S, warning_count = W}) ->
-%    State#state{status = S, warning_count = W, affected_rows = 0};
-update_state(State, #prepared{warning_count = W}) ->
-    State#state{warning_count = W};
-update_state(State, _Other) ->
-    %% This includes errors, resultsets, etc.
-    %% Reset warnings, etc. (Note: We don't reset status and insert_id.)
-    State#state{warning_count = 0, affected_rows = 0}.
+update_state(State, Rec) ->
+    State1 = case Rec of
+        #ok{status = S, affected_rows = R, insert_id = Id, warning_count = W} ->
+            State#state{status = S, affected_rows = R, insert_id = Id,
+                        warning_count = W};
+        %#eof{status = S, warning_count = W} ->
+        %    State#state{status = S, warning_count = W, affected_rows = 0};
+        #prepared{warning_count = W} ->
+            State#state{warning_count = W};
+        _Other ->
+            %% This includes errors, resultsets, etc.
+            %% Reset some things. (Note: We don't reset status and insert_id.)
+            State#state{warning_count = 0, affected_rows = 0}
+    end,
+    schedule_ping(State1).
+
+%% @doc Schedules (or re-schedules) ping.
+schedule_ping(State = #state{ping_timeout = infinity}) ->
+    State;
+schedule_ping(State = #state{ping_timeout = Timeout, ping_ref = Ref}) ->
+    is_reference(Ref) andalso erlang:cancel_timer(Ref),
+    State#state{ping_ref = erlang:send_after(Timeout, self(), ping)}.
 
 %% @doc Since errors don't return a status but some errors cause an implicit
 %% rollback, we use this function to clear fix the transaction bit in the
