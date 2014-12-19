@@ -46,7 +46,9 @@
 %% received from the server using either the text protocol or the binary
 %% protocol.
 -record(resultset, {cols :: [#col{}],
-                    rows :: [[term()] | binary()]}).
+                    rows :: [[term()] | binary()],
+                    status :: integer(),
+                    warning_count :: integer()}).
 
 %% Response of a successfull prepare call.
 -record(prepared, {statement_id :: integer(),

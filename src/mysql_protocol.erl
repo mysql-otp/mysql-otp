@@ -30,8 +30,8 @@
          query/4, fetch_query_response/3,
          prepare/3, unprepare/3, execute/5, fetch_execute_response/3]).
 
-%% How much data do we want to send at most?
--define(MAX_BYTES_PER_PACKET, 50000000).
+%% How much data do we want per packet?
+-define(MAX_BYTES_PER_PACKET, 16#1000000).
 
 -include("records.hrl").
 -include("protocol.hrl").
@@ -237,9 +237,8 @@ parse_handshake(<<10, Rest/binary>>) ->
     %% "Due to Bug#59453 the auth-plugin-name is missing the terminating
     %% NUL-char in versions prior to 5.5.10 and 5.6.2."
     %% Strip the final NUL byte if any.
-    NameLen = size(AuthPluginName) - 1,
-    AuthPluginName1 = case AuthPluginName of
-        <<NameNoNul:NameLen/binary-unit:8, 0>> -> NameNoNul;
+    AuthPluginName1 = case binary:last(AuthPluginName) of
+        0 -> binary:part(AuthPluginName, 0, byte_size(AuthPluginName) - 1);
         _ -> AuthPluginName
     end,
     #handshake{server_version = server_version_to_list(ServerVersion),
@@ -311,7 +310,7 @@ parse_handshake_confirm(Packet) ->
             %% Connection complete.
             parse_ok_packet(Packet);
         ?error_pattern ->
-            %% "Insufficient Client Capabilities"
+            %% Access denied, insufficient client capabilities, etc.
             parse_error_packet(Packet);
         <<?EOF>> ->
             %% "Old Authentication Method Switch Request Packet consisting of a
@@ -338,11 +337,12 @@ fetch_resultset(TcpModule, Socket, FieldCount, SeqNum) ->
     {ok, ColDefs, SeqNum1} = fetch_column_definitions(TcpModule, Socket, SeqNum,
                                                       FieldCount, []),
     {ok, DelimiterPacket, SeqNum2} = recv_packet(TcpModule, Socket, SeqNum1),
-    #eof{} = parse_eof_packet(DelimiterPacket),
+    #eof{status = S, warning_count = W} = parse_eof_packet(DelimiterPacket),
     case fetch_resultset_rows(TcpModule, Socket, SeqNum2, []) of
         {ok, Rows, _SeqNum3} ->
             ColDefs1 = lists:map(fun parse_column_definition/1, ColDefs),
-            #resultset{cols = ColDefs1, rows = Rows};
+            #resultset{cols = ColDefs1, rows = Rows,
+                       status = S, warning_count = W};
         #error{} = E ->
             E
     end.

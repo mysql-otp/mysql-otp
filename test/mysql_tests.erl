@@ -38,7 +38,18 @@
                           "  c CHAR(2)"
                           ") ENGINE=InnoDB">>).
 
-connect_test() ->
+failing_connect_test() ->
+    process_flag(trap_exit, true),
+    ?assertMatch({error, {1045, <<"28000">>, <<"Access denied", _/binary>>}},
+                 mysql:start_link([{user, "dummy"}, {password, "junk"}])),
+    receive
+        {'EXIT', _Pid, {1045, <<"28000">>, <<"Access denie", _/binary>>}} -> ok
+    after 1000 ->
+        ?assertEqual(ok, no_exit_message)
+    end,
+    process_flag(trap_exit, false).
+
+successful_connect_test() ->
     %% A connection with a registered name
     Options = [{name, {local, tardis}}, {user, ?user}, {password, ?password}],
     {ok, Pid} = mysql:start_link(Options),
@@ -123,6 +134,27 @@ connect_with_db(_Pid) ->
     ?assertMatch([{_, "Note 1051: Unknown table 'dummy'\n"
                       " in DROP TABLE IF EXISTS dummy\n"}],
                  LoggedErrors),
+    exit(Pid, normal).
+
+log_warnings_test() ->
+    {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password}]),
+    ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
+    ok = mysql:query(Pid, <<"USE otptest">>),
+    %% Capture error log to check that we get a warning logged
+    ok = mysql:query(Pid, "CREATE TABLE foo (x INT NOT NULL)"),
+    {ok, insrt} = mysql:prepare(Pid, insrt, "INSERT INTO foo () VALUES ()"),
+    {ok, ok, LoggedErrors} = error_logger_acc:capture(fun () ->
+        ok = mysql:query(Pid, "INSERT INTO foo () VALUES ()"),
+        ok = mysql:query(Pid, "INSeRT INtO foo () VaLUeS ()", []),
+        ok = mysql:execute(Pid, insrt, [])
+    end),
+    [{_, Log1}, {_, Log2}, {_, Log3}] = LoggedErrors,
+    ?assertEqual("Warning 1364: Field 'x' doesn't have a default value\n"
+                 " in INSERT INTO foo () VALUES ()\n", Log1),
+    ?assertEqual("Warning 1364: Field 'x' doesn't have a default value\n"
+                 " in INSeRT INtO foo () VaLUeS ()\n", Log2),
+    ?assertEqual("Warning 1364: Field 'x' doesn't have a default value\n"
+                 " in prepared statement insrt\n", Log3),
     exit(Pid, normal).
 
 autocommit(Pid) ->
@@ -505,7 +537,8 @@ parameterized_query(Conn) ->
     {ok, _, []} = mysql:query(Conn, "SELECT * FROM foo WHERE bar = ?", [1]),
     {ok, _, []} = mysql:query(Conn, "SELECT * FROM foo WHERE bar = ?", [2]),
     receive after 150 -> ok end, %% Now the query cache should emptied
-    {ok, _, []} = mysql:query(Conn, "SELECT * FROM foo WHERE bar = ?", [3]).
+    {ok, _, []} = mysql:query(Conn, "SELECT * FROM foo WHERE bar = ?", [3]),
+    {error, {_, _, _}} = mysql:query(Conn, "Lorem ipsum dolor sit amet", [x]).
 
 %% --- simple gen_server callbacks ---
 

@@ -17,6 +17,10 @@
 %% along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 %% @doc Eunit test cases for the mysql_protocol module.
+%% Most of the hexdump tests are from examples in the protocol documentation.
+%%
+%% TODO: Use ngrep -x -q -d lo '' 'port 3306' to dump traffic using various
+%% server versions.
 -module(mysql_protocol_tests).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -107,6 +111,11 @@ prepare_test() ->
                  Result),
     ok.
     
+bad_protocol_version_test() ->
+    Sock = mock_tcp:create([{recv, <<2, 0, 0, 0, 9, 0>>}]),
+    ?assertError(unknown_protocol,
+                 mysql_protocol:handshake("foo", "bar", "db", mock_tcp, Sock)),
+    mock_tcp:close(Sock).
 
 %% --- Helper functions for the above tests ---
 
@@ -141,8 +150,3 @@ hexdump_to_bin_test() ->
                16#65, 16#63, 16#74, 16#20, 16#55, 16#53, 16#45, 16#52,
                16#28, 16#29>>,
     ?assertEqual(Expect, hexdump_to_bin(HexDump)).
-
-%% --- Fake socket ---
-%%
-
-

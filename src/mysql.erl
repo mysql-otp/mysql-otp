@@ -661,12 +661,7 @@ handle_call(commit, _From, State = #state{socket = Socket, status = Status,
     end,
     Res = #ok{} = mysql_protocol:query(Query, gen_tcp, Socket, ?cmd_timeout),
     State1 = update_state(State, Res),
-    {reply, ok, State1#state{transaction_level = L - 1}};
-handle_call(Trans, _From, State) when Trans == start_transaction;
-                                      Trans == rollback;
-                                      Trans == commit ->
-    %% The 'in transaction' flag doesn't match the level we have in the state.
-    {reply, {error, incorrectly_nested}, State}.
+    {reply, ok, State1#state{transaction_level = L - 1}}.
 
 %% @private
 handle_cast(_Msg, State) ->
@@ -767,12 +762,12 @@ update_state(State, Rec) ->
         #ok{status = S, affected_rows = R, insert_id = Id, warning_count = W} ->
             State#state{status = S, affected_rows = R, insert_id = Id,
                         warning_count = W};
-        %#eof{status = S, warning_count = W} ->
-        %    State#state{status = S, warning_count = W, affected_rows = 0};
+        #resultset{status = S, warning_count = W} ->
+            State#state{status = S, warning_count = W};
         #prepared{warning_count = W} ->
             State#state{warning_count = W};
         _Other ->
-            %% This includes errors, resultsets, etc.
+            %% This includes errors.
             %% Reset some things. (Note: We don't reset status and insert_id.)
             State#state{warning_count = 0, affected_rows = 0}
     end,

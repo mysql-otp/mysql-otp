@@ -225,7 +225,7 @@ deadlock_prepared_statements({Conn1, Conn2}) ->
                 ok = mysql:execute(Conn2, upd, [2, 1])
             end),
             ok
-        end),
+        end, 2),
         MainPid ! done
     end),
 
@@ -241,7 +241,7 @@ deadlock_prepared_statements({Conn1, Conn2}) ->
             ok = mysql:execute(Conn1, upd, [1, 2])
         end),
         ok
-    end),
+    end, 2),
 
     %% Wait for a reply from worker 2.
     receive done -> ok end,
