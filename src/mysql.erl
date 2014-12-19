@@ -353,18 +353,14 @@ transaction(Conn, Fun, Args, Retries) when is_list(Args),
                     erlang:raise(throw, {implicit_rollback, N - 1, Reason},
                                  erlang:get_stacktrace())
             end;
-        throw:{implicit_commit, N, Query} when N >= 1 ->
+        error:{implicit_commit, _Query} = E ->
             %% The called did something like ALTER TABLE which resulted in an
             %% implicit commit. The server has already committed. We need to
             %% jump out of N levels of transactions.
             %%
             %% Returning 'atomic' or 'aborted' would both be wrong. Raise an
             %% exception is the best we can do.
-            case N of
-                1 -> error({implicit_commit, Query});
-                _ -> erlang:raise(throw, {implicit_commit, N - 1, Query},
-                                  erlang:get_stacktrace())
-            end;
+            erlang:raise(error, E, erlang:get_stacktrace());
         Class:Reason ->
             %% We must be able to rollback. Otherwise let's crash.
             ok = gen_server:call(Conn, rollback),
@@ -697,8 +693,8 @@ code_change(_OldVsn, _State, _Extra) ->
 %% of a transaction.
 query_call(Conn, CallReq) ->
     case gen_server:call(Conn, CallReq, infinity) of
-        {implicit_commit, _NestingLevel, _Query} = ImplicitCommit ->
-            throw(ImplicitCommit);
+        {implicit_commit, _NestingLevel, Query} ->
+            error({implicit_commit, Query});
         {implicit_rollback, _NestingLevel, _ServerReason} = ImplicitRollback ->
             throw(ImplicitRollback);
         Result ->
