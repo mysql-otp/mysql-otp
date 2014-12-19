@@ -6,18 +6,17 @@ MySQL/OTP
 MySQL/OTP is a driver for connecting Erlang/OTP applications to MySQL
 databases. It is a native implementation of the MySQL protocol in Erlang.
 
-Features:
+Some of the features:
 
-* Nestable Mnesia style transactions.
-  * Nested transactions are implemented using savepoints (since 0.6.0).
-  * Currenly transactions are not automatically retried when deadlocks are
-    detected but there are plans to implement that too.
-    See [#7](https://github.com/mysql-otp/mysql-otp/issues/7).)
+* Mnesia style transactions:
+  * Nested transactions are implemented using savepoints.
+  * Transactions are automatically retried when deadlocks are detected.
 * Uses the binary protocol for prepared statements.
 * Each connection is a gen_server, which makes it compatible with Poolboy (for
   connection pooling) and ordinary OTP supervisors.
 * No records in the public API.
-* Query timeouts don't kill the connection (MySQL version ≥ 5.0.0).
+* Slow queries are interrupted without killing the connection (MySQL version
+  ≥ 5.0.0).
 
 See also:
 
@@ -26,11 +25,6 @@ See also:
 * [Why another MySQL driver?](https://github.com/mysql-otp/mysql-otp/wiki#why-another-mysql-driver) in the wiki
 
 This is a work in progress. Use a tagged version to make sure nothing breaks.
-
-Todo:
-
-* Ping regularily when inactive
-* Retry transactions when deadlocks are detected
 
 Synopsis
 --------
