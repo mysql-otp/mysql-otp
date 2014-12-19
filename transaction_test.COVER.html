@@ -1,0 +1,300 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<title>.eunit/transaction_test.COVER.html</title>
+</head><body style='background-color: white; color: black'>
+<pre>
+File generated from /Users/viktor/data/mysql-otp/.eunit/transaction_test.erl by COVER 2014-12-19 at 10:59:14
+
+****************************************************************************
+
+        |  %% MySQL/OTP – MySQL client library for Erlang/OTP
+        |  %% Copyright (C) 2014 Viktor Söderqvist
+        |  %%
+        |  %% This file is part of MySQL/OTP.
+        |  %%
+        |  %% MySQL/OTP is free software: you can redistribute it and/or modify it under
+        |  %% the terms of the GNU Lesser General Public License as published by the Free
+        |  %% Software Foundation, either version 3 of the License, or (at your option)
+        |  %% any later version.
+        |  %%
+        |  %% This program is distributed in the hope that it will be useful, but WITHOUT
+        |  %% ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+        |  %% FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+        |  %% more details.
+        |  %%
+        |  %% You should have received a copy of the GNU Lesser General Public License
+        |  %% along with this program. If not, see &lt;https://www.gnu.org/licenses/&gt;.
+        |  
+        |  %% @doc This module performs test to an actual database.
+        |  -module(transaction_test).
+        |  
+        |  -include_lib("eunit/include/eunit.hrl").
+        |  
+        |  -define(user,     "otptest").
+        |  -define(password, "otptest").
+        |  
+        |  single_connection_test_() -&gt;
+     2..|      {setup,
+        |       fun () -&gt;
+     1..|           {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
+        |                                         {query_cache_time, 50},
+        |                                         {log_warnings, false}]),
+     1..|           ok = mysql:query(Pid, &lt;&lt;"DROP DATABASE IF EXISTS otptest"&gt;&gt;),
+     1..|           ok = mysql:query(Pid, &lt;&lt;"CREATE DATABASE otptest"&gt;&gt;),
+     1..|           ok = mysql:query(Pid, &lt;&lt;"USE otptest"&gt;&gt;),
+     1..|           ok = mysql:query(Pid, &lt;&lt;"CREATE TABLE foo (bar INT) engine=InnoDB"&gt;&gt;),
+     1..|           Pid
+        |       end,
+        |       fun (Pid) -&gt;
+     1..|           ok = mysql:query(Pid, &lt;&lt;"DROP DATABASE otptest"&gt;&gt;),
+     1..|           exit(Pid, normal)
+        |       end,
+        |       fun (Pid) -&gt;
+     1..|           [{"Simple atomic",        fun () -&gt; simple_atomic(Pid) end},
+     1..|            {"Simple aborted",       fun () -&gt; simple_aborted(Pid) end},
+     1..|            {"Nested atomic",        fun () -&gt; nested_atomic(Pid) end},
+     1..|            {"Nested inner aborted", fun () -&gt; nested_inner_aborted(Pid) end},
+     1..|            {"Implicit commit",      fun () -&gt; implicit_commit(Pid) end}]
+        |       end}.
+        |  
+        |  simple_atomic(Pid) -&gt;
+     1..|      ?assertNot(mysql:in_transaction(Pid)),
+     1..|      Result = mysql:transaction(Pid, fun () -&gt;
+     1..|                   ok = mysql:query(Pid, "INSERT INTO foo (bar) VALUES (42)"),
+     1..|                   ?assert(mysql:in_transaction(Pid)),
+     1..|                   hello
+        |               end),
+     1..|      ?assertEqual({atomic, hello}, Result),
+     1..|      ?assertNot(mysql:in_transaction(Pid)),
+     1..|      ok = mysql:query(Pid, "DELETE FROM foo").
+        |  
+        |  simple_aborted(Pid) -&gt;
+     1..|      ok = mysql:query(Pid, "INSERT INTO foo VALUES (9)"),
+     1..|      ?assertEqual({ok, [&lt;&lt;"bar"&gt;&gt;], [[9]]},
+     1..|                   mysql:query(Pid, "SELECT bar FROM foo")),
+     1..|      Result = mysql:transaction(Pid, fun () -&gt;
+     1..|                   ok = mysql:query(Pid, "INSERT INTO foo VALUES (42)"),
+     1..|                   ?assertMatch({ok, _, [[2]]},
+        |                                mysql:query(Pid, "SELECT COUNT(*) FROM foo")),
+     1..|                   error(hello)
+        |               end),
+     1..|      ?assertMatch({aborted, {hello, Stacktrace}} when is_list(Stacktrace),
+        |                   Result),
+     1..|      ?assertEqual({ok, [&lt;&lt;"bar"&gt;&gt;], [[9]]},
+     1..|                   mysql:query(Pid, "SELECT bar FROM foo")),
+     1..|      ok = mysql:query(Pid, "DELETE FROM foo"),
+        |      %% Also check the abort Reason for throw and exit.
+     1..|      ?assertEqual({aborted, {throw, foo}},
+     1..|                   mysql:transaction(Pid, fun () -&gt; throw(foo) end)),
+     1..|      ?assertEqual({aborted, foo},
+     1..|                   mysql:transaction(Pid, fun () -&gt; exit(foo) end)).
+        |  
+        |  nested_atomic(Pid) -&gt;
+     1..|      OuterResult = mysql:transaction(Pid, fun () -&gt;
+     1..|          ok = mysql:query(Pid, "INSERT INTO foo VALUES (9)"),
+     1..|          InnerResult = mysql:transaction(Pid, fun () -&gt;
+     1..|              ok = mysql:query(Pid, "INSERT INTO foo VALUES (42)"),
+     1..|              inner
+        |          end),
+     1..|          ?assertEqual({atomic, inner}, InnerResult),
+     1..|          outer
+        |      end),
+     1..|      ?assertMatch({ok, _, [[2]]}, mysql:query(Pid, "SELECT COUNT(*) FROM foo")),
+     1..|      ok = mysql:query(Pid, "DELETE FROM foo"),
+     1..|      ?assertEqual({atomic, outer}, OuterResult).
+        |  
+        |  nested_inner_aborted(Pid) -&gt;
+     1..|      OuterResult = mysql:transaction(Pid, fun () -&gt;
+     1..|          ok = mysql:query(Pid, "INSERT INTO foo VALUES (9)"),
+     1..|          InnerResult = mysql:transaction(Pid, fun () -&gt;
+     1..|              ok = mysql:query(Pid, "INSERT INTO foo VALUES (42)"),
+     1..|              throw(inner)
+        |          end),
+     1..|          ?assertEqual({aborted, {throw, inner}}, InnerResult),
+     1..|          outer
+        |      end),
+     1..|      ?assertMatch({ok, _, [[9]]}, mysql:query(Pid, "SELECT bar FROM foo")),
+     1..|      ok = mysql:query(Pid, "DELETE FROM foo"),
+     1..|      ?assertEqual({atomic, outer}, OuterResult).
+        |  
+        |  implicit_commit(Conn) -&gt;
+        |      %% This causes an implicit commit in a nested transaction.
+     1..|      Query = "ALTER TABLE foo ADD baz INT",
+     1..|      ?assertError({implicit_commit, Query}, mysql:transaction(Conn, fun () -&gt;
+     1..|          mysql:transaction(Conn, fun () -&gt;
+     1..|              mysql:query(Conn, Query)
+        |          end)
+<font color=red>     0..|      end)),</font>
+     1..|      ?assertNot(mysql:in_transaction(Conn)).
+        |  
+        |  %% -----------------------------------------------------------------------------
+        |  
+        |  deadlock_test_() -&gt;
+     2..|      {setup,
+        |       fun () -&gt;
+     1..|           {ok, Conn1} = mysql:start_link([{user, ?user}, {password, ?password}]),
+     1..|           ok = mysql:query(Conn1, &lt;&lt;"CREATE DATABASE IF NOT EXISTS otptest"&gt;&gt;),
+     1..|           ok = mysql:query(Conn1, &lt;&lt;"USE otptest"&gt;&gt;),
+     1..|           ok = mysql:query(Conn1, &lt;&lt;"CREATE TABLE foo (k INT PRIMARY KEY, v INT)"
+        |                                     " engine=InnoDB"&gt;&gt;),
+     1..|           ok = mysql:query(Conn1, "INSERT INTO foo (k,v) VALUES (1,0), (2,0)"),
+     1..|           {ok, Conn2} = mysql:start_link([{user, ?user}, {password, ?password}]),
+     1..|           ok = mysql:query(Conn2, &lt;&lt;"USE otptest"&gt;&gt;),
+     1..|           {Conn1, Conn2}
+        |       end,
+        |       fun ({Conn1, Conn2}) -&gt;
+     1..|           ok = mysql:query(Conn1, &lt;&lt;"DROP DATABASE otptest"&gt;&gt;, 1000),
+     1..|           exit(Conn1, normal),
+     1..|           exit(Conn2, normal)
+        |       end,
+        |       fun (Conns) -&gt;
+     1..|           [{"Plain queries", fun () -&gt; deadlock_plain_queries(Conns) end},
+     1..|            {"Prep stmts", fun () -&gt; deadlock_prepared_statements(Conns) end},
+     1..|            {"Lock wait timeout", fun () -&gt; lock_wait_timeout(Conns) end}]
+        |       end}.
+        |  
+        |  flush_inbox() -&gt;
+     5..|      receive _ -&gt; flush_inbox() after 0 -&gt; ok end.
+        |  
+        |  deadlock_plain_queries({Conn1, Conn2}) -&gt;
+     1..|      {ok, _, [[2]]} = mysql:query(Conn1, "SELECT COUNT(*) FROM foo"),
+     1..|      MainPid = self(),
+        |      %?debugMsg("\nExtra output from the deadlock test:"),
+        |  
+        |      %% Spawn worker 2 to lock rows; first in table foo, then in bar.
+     1..|      Worker2 = spawn_link(fun () -&gt;
+     1..|          {atomic, ok} = mysql:transaction(Conn2, fun () -&gt;
+     1..|              MainPid ! start,
+        |              %?debugMsg("Worker 2: Starting. First get a lock on row 2."),
+     1..|              ok = mysql:query(Conn2, "UPDATE foo SET v = 2 WHERE k = 2"),
+        |              %?debugMsg("Worker 2: Got lock on foo. Now wait for signal from 1."),
+        |              %% Sync. Send 'go' to worker 1 multiple times in case it restarts.
+     1..|              MainPid ! go, MainPid ! go, MainPid ! go,
+     1..|              receive go -&gt; ok after 10000 -&gt; throw(too_long) end,
+        |              %?debugMsg("Worker 2: Got signal from 1. Now get a lock on row 1."),
+     1..|              {atomic, ok} = mysql:transaction(Conn2, fun () -&gt;
+        |                  %% Nested transaction, just to make sure we can handle nested.
+     1..|                  ok = mysql:query(Conn2, "UPDATE foo SET v = 2 WHERE k = 1")
+        |              end),
+        |              %?debugMsg("Worker 2: Got both locks and is done."),
+     1..|              ok
+        |          end),
+     1..|          MainPid ! done
+        |      end),
+        |  
+        |      %% Do worker 1's job and lock the rows in the opposite order.
+     1..|      {atomic, ok} = mysql:transaction(Conn1, fun () -&gt;
+     2..|          MainPid ! start,
+        |          %?debugMsg("Worker 1: Starting. First get a lock on row 1."),
+     2..|          ok = mysql:query(Conn1, "UPDATE foo SET v = 1 WHERE k = 1"),
+        |          %?debugMsg("Worker 1: Got lock on bar. Now wait for signal from 2."),
+        |          %% Sync. Send 'go' to worker 2 multiple times in case it restarts.
+     2..|          Worker2 ! go, Worker2 ! go, Worker2 ! go,
+     2..|          receive go -&gt; ok after 10000 -&gt; throw(too_long) end,
+        |          %?debugMsg("Worker 1: Got signal from 2. Now get lock on row 2."),
+     2..|          {atomic, ok} = mysql:transaction(Conn1, fun () -&gt;
+        |              %% Nested transaction, just to make sure we can handle nested.
+     2..|              ok = mysql:query(Conn1, "UPDATE foo SET v = 1 WHERE k = 2")
+        |          end),
+        |          %?debugMsg("Worker 1: Got both locks and is done."),
+     1..|          ok
+        |      end),
+        |  
+        |      %% Wait for a reply from worker 2 to make sure it is done.
+     1..|      receive done -&gt; ok end,
+        |  
+        |      %% None of the connections should be in a transaction at this point
+     1..|      ?assertNot(mysql:in_transaction(Conn1)),
+     1..|      ?assertNot(mysql:in_transaction(Conn2)),
+        |  
+        |      %% Make sure we got at least 3 start messages, i.e. at least 1 restart.
+     1..|      ?assertEqual(ok, receive start -&gt; ok after 0 -&gt; no_worker_ever_started end),
+     1..|      ?assertEqual(ok, receive start -&gt; ok after 0 -&gt; only_one_worker_started end),
+     1..|      ?assertEqual(ok, receive start -&gt; ok after 0 -&gt; there_was_no_deadlock end),
+     1..|      flush_inbox().
+        |  
+        |  %% This case is very similar to the above test. We use prepared statements
+        |  %% instead of plain queries. (Some lines of code in the implementation differ.)
+        |  deadlock_prepared_statements({Conn1, Conn2}) -&gt;
+     1..|      {ok, _, [[2]]} = mysql:query(Conn1, "SELECT COUNT(*) FROM foo"),
+     1..|      {ok, upd} = mysql:prepare(Conn1, upd, "UPDATE foo SET v = ? WHERE k = ?"),
+     1..|      {ok, upd} = mysql:prepare(Conn2, upd, "UPDATE foo SET v = ? WHERE k = ?"),
+     1..|      MainPid = self(),
+        |  
+        |      %% Spawn worker 2 to lock rows; first in table foo, then in bar.
+     1..|      Worker2 = spawn_link(fun () -&gt;
+     1..|          {atomic, ok} = mysql:transaction(Conn2, fun () -&gt;
+     1..|              MainPid ! start,
+     1..|              ok = mysql:execute(Conn2, upd, [2, 2]),
+        |              %% Sync. Send 'go' to worker 1 multiple times in case it restarts.
+     1..|              MainPid ! go, MainPid ! go, MainPid ! go,
+     1..|              receive go -&gt; ok end,
+     1..|              {atomic, ok} = mysql:transaction(Conn2, fun () -&gt;
+        |                  %% Nested transaction, just to make sure we can handle nested.
+     1..|                  ok = mysql:execute(Conn2, upd, [2, 1])
+        |              end),
+     1..|              ok
+        |          end),
+     1..|          MainPid ! done
+        |      end),
+        |  
+        |      %% Do worker 1's job and lock the rows in the opposite order.
+     1..|      {atomic, ok} = mysql:transaction(Conn1, fun () -&gt;
+     2..|          MainPid ! start,
+     2..|          ok = mysql:execute(Conn1, upd, [1, 1]),
+        |          %% Sync. Send 'go' to worker 2 multiple times in case it restarts.
+     2..|          Worker2 ! go, Worker2 ! go, Worker2 ! go,
+     2..|          receive go -&gt; ok end,
+     2..|          {atomic, ok} = mysql:transaction(Conn1, fun () -&gt;
+        |              %% Nested transaction, just to make sure we can handle nested.
+     2..|              ok = mysql:execute(Conn1, upd, [1, 2])
+        |          end),
+     1..|          ok
+        |      end),
+        |  
+        |      %% Wait for a reply from worker 2.
+     1..|      receive done -&gt; ok end,
+        |  
+        |      %% None of the connections should be in a transaction at this point
+     1..|      ?assertNot(mysql:in_transaction(Conn1)),
+     1..|      ?assertNot(mysql:in_transaction(Conn2)),
+        |  
+        |      %% Make sure we got at least 3 start messages, i.e. at least 1 restart.
+     1..|      ?assertEqual(ok, receive start -&gt; ok after 0 -&gt; no_worker_ever_started end),
+     1..|      ?assertEqual(ok, receive start -&gt; ok after 0 -&gt; only_one_worker_started end),
+     1..|      ?assertEqual(ok, receive start -&gt; ok after 0 -&gt; there_was_no_deadlock end),
+     1..|      flush_inbox().
+        |  
+        |  lock_wait_timeout({Conn1, Conn2}) -&gt;
+        |      %% Set the lowest timeout possible to speed up the test.
+     1..|      ok = mysql:query(Conn2, "SET innodb_lock_wait_timeout = 1"),
+     1..|      {ok, _, [[1]]} = mysql:query(Conn2, "SELECT COUNT(*) FROM foo WHERE k = 1"),
+     1..|      MainPid = self(),
+        |  
+        |      %% Create a worker that takes the lock and sleeps on it.
+     1..|      LockingWorker = spawn_link(fun () -&gt;
+     1..|          {atomic, ok} = mysql:transaction(Conn1, fun () -&gt;
+     1..|              ok = mysql:query(Conn1, "UPDATE foo SET v = 0 WHERE k = 1"),
+     1..|              MainPid ! go,
+     1..|              receive release -&gt; ok end
+        |          end),
+     1..|          MainPid ! done
+        |      end),
+        |  
+        |      %% Wait for the locking worker to take the lock.
+     1..|      receive go -&gt; ok end,
+     1..|      {aborted, Reason} = mysql:transaction(Conn2, fun () -&gt;
+     1..|          ok = mysql:query(Conn2, "UPDATE foo SET v = 42 WHERE k = 1")
+        |      end),
+     1..|      ?assertMatch({{1205, _, &lt;&lt;"Lock wait timeout", _/binary&gt;&gt;}, _Trace},
+        |                   Reason),
+        |  
+        |      %% Wake the sleeping worker.
+     1..|      LockingWorker ! release,
+     1..|      receive done -&gt; ok end,
+     1..|      flush_inbox().
+</pre>
+</body>
+</html>

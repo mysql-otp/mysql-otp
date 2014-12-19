@@ -1,0 +1,105 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<title>/Users/viktor/data/mysql-otp/.eunit/error_logger_acc.COVER.html</title>
+</head><body style='background-color: white; color: black'>
+<pre>
+File generated from /Users/viktor/data/mysql-otp/.eunit/error_logger_acc.erl by COVER 2014-12-19 at 23:31:12
+
+****************************************************************************
+
+        |  %% @doc A error_logger report handler that be used to capture expected errors in
+        |  %% tests. The current error report handlers are disabled during the execution
+        |  %% of a function. Afterwards, they are restored and the errors that occered are
+        |  %% returned along with the return value of the fun.
+        |  -module(error_logger_acc).
+        |  
+        |  %% Public API
+        |  -export([capture/1]).
+        |  
+        |  -behaviour(gen_event).
+        |  -export([init/1, handle_event/2, handle_call/2, handle_info/2, terminate/2,
+        |           code_change/3]).
+        |  
+        |  %% @doc Executes `Fun' and captures all logged errors returns as well as
+        |  %% uncaught errors in `Fun'.
+        |  -spec capture(fun (() -&gt; ResultOfFun)) -&gt;
+        |      {ok, ResultOfFun, AccumulatedErrors} |
+        |      {throw | error | exit, Reason, Trace, AccumulatedErrors}
+        |    when ResultOfFun :: term(),
+        |         Reason :: term(),
+        |         Trace :: list(),
+        |         AccumulatedErrors :: [{error|warning_msg|info_msg, string()} |
+        |                               {error_report|warning_report|info_report, term()}].
+        |  capture(Fun) when is_function(Fun, 0) -&gt;
+     4..|      OldHandlers = gen_event:which_handlers(error_logger),
+     4..|      error_logger:add_report_handler(?MODULE),
+     4..|      lists:foreach(fun error_logger:delete_report_handler/1, OldHandlers),
+     4..|      try Fun() of
+        |          Result -&gt;
+     3..|              lists:foreach(fun error_logger:add_report_handler/1, OldHandlers),
+     3..|              {ok, Result, error_logger:delete_report_handler(?MODULE)}
+        |      catch
+        |          Class:Error -&gt;
+     1..|              Trace = erlang:get_stacktrace(),
+     1..|              lists:foreach(fun error_logger:add_report_handler/1, OldHandlers),
+     1..|              AccumulatedErrors = error_logger:delete_report_handler(?MODULE),
+     1..|              {Class, Error, Trace, AccumulatedErrors}
+        |      end.
+        |  
+        |  %% --- gen_event callbacks ---
+        |  
+        |  init([]) -&gt;
+     4..|      {ok, []}.
+        |  
+        |  handle_event({ErrorType, _Gleader, {_Pid, Format, Data}}, State) -&gt;
+     8..|      ShortError = if
+        |          ErrorType == error; ErrorType == warning_msg; ErrorType == info_msg -&gt;
+     7..|              {ErrorType, lists:flatten(io_lib:format(Format, Data))};
+        |          true -&gt;
+     1..|              {ErrorType, {Format, Data}}
+        |      end,
+     8..|      {ok, [ShortError | State]};
+        |  handle_event(_OtherEvent, State) -&gt;
+<font color=red>     0..|      {ok, State}.</font>
+        |  
+        |  handle_call(_Call, State) -&gt;
+<font color=red>     0..|      {ok, ignored, State}.</font>
+        |  
+        |  handle_info(_Info, State) -&gt;
+<font color=red>     0..|      {ok, State}.</font>
+        |  
+        |  terminate([], State) -&gt;
+        |      %% error_logger:delete_report_handler/1 called
+     4..|      lists:reverse(State);
+        |  terminate(_Arg, _State) -&gt;
+        |      %% terminating for some other reason.
+<font color=red>     0..|      error_logger:info_msg("Accumulating error handler shutting down"),</font>
+<font color=red>     0..|      ok.</font>
+        |  
+        |  code_change(_OldVsn, State, _Extra) -&gt;
+<font color=red>     0..|      {ok, State}.</font>
+        |  
+        |  -ifdef(TEST).
+        |  -include_lib("eunit/include/eunit.hrl").
+        |  
+        |  capture_success_test() -&gt;
+     1..|      Result = ?MODULE:capture(fun () -&gt;
+     1..|          error_logger:info_msg("Hello ~p", [world]),
+     1..|          error_logger:info_msg("Hello ~p", [again]),
+     1..|          foo
+        |      end),
+     1..|      ?assertEqual({ok, foo, [{info_msg, "Hello world"}, {info_msg, "Hello again"}]}, Result).
+        |  
+        |  capture_failure_test() -&gt;
+     1..|      Result = ?MODULE:capture(fun () -&gt;
+     1..|          error_logger:info_msg("Hello ~p", [world]),
+     1..|          throw(foo)
+        |      end),
+     1..|      ?assertMatch({throw, foo, _Trace, [{info_msg, "Hello world"}]}, Result).
+        |  
+        |  -endif.
+</pre>
+</body>
+</html>

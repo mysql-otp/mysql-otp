@@ -2,10 +2,10 @@
 <html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-<title>.eunit/mock_tcp.COVER.html</title>
+<title>/Users/viktor/data/mysql-otp/.eunit/mock_tcp.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/mysql-otp/.eunit/mock_tcp.erl by COVER 2014-12-16 at 18:50:46
+File generated from /Users/viktor/data/mysql-otp/.eunit/mock_tcp.erl by COVER 2014-12-19 at 23:31:12
 
 ****************************************************************************
 
@@ -25,22 +25,22 @@ File generated from /home/viktor/mysql-otp/.eunit/mock_tcp.erl by COVER 2014-12-
         |  %% calls. The pid of the mock_tcp process is returned.
         |  -spec create([{recv, binary()} | {send, binary()}]) -&gt; pid().
         |  create(ExpectedEvents) -&gt;
-     5..|      spawn_link(fun () -&gt; loop(ExpectedEvents) end).
+     6..|      spawn_link(fun () -&gt; loop(ExpectedEvents) end).
         |  
         |  %% @doc Receives NumBytes bytes from mock_tcp Pid. This function can be used
         |  %% as a replacement for gen_tcp:recv/2 in unit tests. If there not enough data
         |  %% in the mock_tcp's buffer, an error is raised.
         |  recv(Pid, NumBytes) -&gt;
-    52..|      Pid ! {recv, NumBytes, self()},
-    52..|      receive
-    50..|          {ok, Data} -&gt; {ok, Data};
+    54..|      Pid ! {recv, NumBytes, self()},
+    54..|      receive
+    52..|          {ok, Data} -&gt; {ok, Data};
      1..|          error -&gt; error({unexpected_recv, NumBytes})
         |      after 100 -&gt;
      1..|          error(noreply)
         |      end.
         |  
         |  recv(Pid, NumBytes, _Timeout) -&gt;
-    24..|      recv(Pid, NumBytes).
+    25..|      recv(Pid, NumBytes).
         |  
         |  %% @doc Sends data to a mock_tcp. This can be used as replacement for
         |  %% gen_tcp:send/2 in unit tests. If the data sent is not what the mock_tcp
@@ -57,9 +57,9 @@ File generated from /home/viktor/mysql-otp/.eunit/mock_tcp.erl by COVER 2014-12-
         |  %% Stops the mock_tcp process. If the mock_tcp's buffer is not empty,
         |  %% an error is raised.
         |  close(Pid) -&gt;
-     4..|      Pid ! {done, self()},
-     4..|      receive
-     4..|          ok -&gt; ok;
+     5..|      Pid ! {done, self()},
+     5..|      receive
+     5..|          ok -&gt; ok;
 <font color=red>     0..|          {remains, Remains} -&gt; error({unexpected_close, Remains})</font>
         |      after 100 -&gt;
 <font color=red>     0..|          error(noreply)</font>
@@ -67,14 +67,14 @@ File generated from /home/viktor/mysql-otp/.eunit/mock_tcp.erl by COVER 2014-12-
         |  
         |  %% Used by create/1.
         |  loop(AllEvents = [{Func, Data} | Events]) -&gt;
-    55..|      receive
+    57..|      receive
         |          {recv, NumBytes, FromPid} when Func == recv, NumBytes == size(Data) -&gt;
-     4..|              FromPid ! {ok, Data},
-     4..|              loop(Events);
+     5..|              FromPid ! {ok, Data},
+     5..|              loop(Events);
         |          {recv, NumBytes, FromPid} when Func == recv, NumBytes &lt; size(Data) -&gt;
-    46..|              &lt;&lt;Data1:NumBytes/binary, Rest/binary&gt;&gt; = Data,
-    46..|              FromPid ! {ok, Data1},
-    46..|              loop([{recv, Rest} | Events]);
+    47..|              &lt;&lt;Data1:NumBytes/binary, Rest/binary&gt;&gt; = Data,
+    47..|              FromPid ! {ok, Data1},
+    47..|              loop([{recv, Rest} | Events]);
         |          {send, Bytes, FromPid} when Func == send, Bytes == Data -&gt;
      4..|              FromPid ! ok,
      4..|              loop(Events);
@@ -93,8 +93,8 @@ File generated from /home/viktor/mysql-otp/.eunit/mock_tcp.erl by COVER 2014-12-
 <font color=red>     0..|              FromPid ! {remains, AllEvents}</font>
         |      end;
         |  loop([]) -&gt;
-     4..|      receive
-     4..|          {done, FromPid} -&gt; FromPid ! ok;
+     5..|      receive
+     5..|          {done, FromPid} -&gt; FromPid ! ok;
 <font color=red>     0..|          {_, _, FromPid} -&gt; FromPid ! error</font>
         |      end.
         |  
