@@ -127,13 +127,6 @@ connect_with_db(_Pid) ->
                                   {database, "otptest"}]),
     ?assertMatch({ok, _, [[<<"otptest">>]]},
                  mysql:query(Pid, "SELECT DATABASE()")),
-    %% Capture error log to check that we get a warning logged
-    {ok, ok, LoggedErrors} = error_logger_acc:capture(fun () ->
-        mysql:query(Pid, <<"DROP TABLE IF EXISTS dummy">>)
-    end),
-    ?assertMatch([{_, "Note 1051: Unknown table 'dummy'\n"
-                      " in DROP TABLE IF EXISTS dummy\n"}],
-                 LoggedErrors),
     exit(Pid, normal).
 
 log_warnings_test() ->

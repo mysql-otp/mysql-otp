@@ -91,7 +91,7 @@
 %%   <dd>Send ping when unused for a certain time. Possible values are `true',
 %%       `false' and `integer() > 0' for an explicit interval in milliseconds.
 %%       The default is `false'. For `true' a default ping timeout is used.
-%%       </dt>
+%%       </dd>
 %%   <dt>`{query_timeout, Timeout}'</dt>
 %%   <dd>The default time to wait for a response when executing a query or a
 %%       prepared statement. This can be given per query using `query/3,4' and
