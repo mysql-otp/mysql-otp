@@ -136,7 +136,8 @@ prepare(Query, TcpModule, Socket) ->
             %% too, so we don't need them here. We *could* store them to be able
             %% to provide the user with some info about a prepared statement.
             {_ColDefs, _SeqNum4} =
-                fetch_column_definitions_if_any(NumColumns, TcpModule, Socket, SeqNum3),
+                fetch_column_definitions_if_any(NumColumns, TcpModule, Socket,
+                                                SeqNum3),
             #prepared{statement_id = StmtId,
                       param_count = NumParams,
                       warning_count = WarningCount}
@@ -427,10 +428,7 @@ decode_text_row_acc([], <<>>, Acc) ->
     lists:reverse(Acc).
 
 %% @doc When receiving data in the text protocol, we get everything as binaries
-%% (except NULL). This function is used to parse these strings values.
-decode_text(_, null) ->
-    %% NULL is the only value not represented as a binary.
-    null;
+%% (except NULL). This function is used to parse these string values.
 decode_text(#col{type = T}, Text)
   when T == ?TYPE_TINY; T == ?TYPE_SHORT; T == ?TYPE_LONG; T == ?TYPE_LONGLONG;
        T == ?TYPE_INT24; T == ?TYPE_YEAR ->
@@ -541,8 +539,8 @@ decode_binary_row_acc([], _, <<>>, Acc) ->
 %%
 %% In the MySQL null bitmap the bits are stored counting bytes from the left and
 %% bits within each byte from the right. (Sort of little endian.)
--spec null_bitmap_decode(NumColumns :: integer(), BitOffset :: integer(),
-                         Data :: binary()) ->
+-spec null_bitmap_decode(NumColumns :: integer(), Data :: binary(),
+                         BitOffset :: integer()) ->
     {NullBitstring :: bitstring(), Rest :: binary()}.
 null_bitmap_decode(NumColumns, Data, BitOffset) ->
     %% Binary shift right by 3 is equivallent to integer division by 8.
@@ -756,11 +754,6 @@ encode_param(Value) when is_bitstring(Value) ->
     Binary = encode_bitstring(Value),
     EncLength = lenenc_int_encode(byte_size(Binary)),
     {<<?TYPE_VAR_STRING, 0>>, <<EncLength/binary, Binary/binary>>};
-encode_param(Set) when is_tuple(Set), element(1, Set) == set ->
-    %% For convenience; encode only. When decoding, a set is returned as binary.
-    Binary = set_to_binary(Set),
-    EncLength = lenenc_int_encode(byte_size(Binary)),
-    {<<?TYPE_SET, 0>>, <<EncLength/binary, Binary/binary>>};
 encode_param({Y, M, D}) ->
     %% calendar:date()
     {<<?TYPE_DATE, 0>>, <<4, Y:16/little, M, D>>};
@@ -820,18 +813,6 @@ decode_decimal(Bin, P, S) when P =< 15, S > 0 ->
 decode_decimal(Bin, P, S) when P >= 16, S > 0 ->
     Bin.
 
-%% @doc Converts a set of atoms (or binaries) to a comma-separated binary.
-set_to_binary(Set) ->
-    List = [if is_atom(X) -> atom_to_binary(X, utf8); is_binary(X) -> X end
-            || X <- sets:to_list(Set)],
-    case List of
-        [] ->
-            <<>>;
-        [First | Rest] ->
-            lists:foldl(fun (X, Acc) -> <<Acc/binary, ",", X/binary>> end,
-                        First, Rest)
-    end.
-
 %% -- Protocol basics: packets --
 
 %% @doc Wraps Data in packet headers, sends it by calling TcpModule:send/2 with
@@ -850,13 +831,13 @@ recv_packet(TcpModule, Socket, SeqNum) ->
 %% @doc Receives data by calling TcpModule:recv/2 and removes the packet
 %% headers. Returns the packet contents and the next packet sequence number.
 -spec recv_packet(atom(), term(), timeout(), integer() | any) ->
-    {ok, Data :: binary(), NextSeqNum :: integer()}.
+    {ok, Data :: binary(), NextSeqNum :: integer()} | {error, term()}.
 recv_packet(TcpModule, Socket, Timeout, SeqNum) ->
     recv_packet(TcpModule, Socket, Timeout, SeqNum, <<>>).
 
 %% @doc Accumulating helper for recv_packet/4
 -spec recv_packet(atom(), term(), timeout(), integer() | any, binary()) ->
-    {ok, Data :: binary(), NextSeqNum :: integer()}.
+    {ok, Data :: binary(), NextSeqNum :: integer()} | {error, term()}.
 recv_packet(TcpModule, Socket, Timeout, ExpectSeqNum, Acc) ->
     case TcpModule:recv(Socket, 4, Timeout) of
         {ok, Header} ->
@@ -867,7 +848,8 @@ recv_packet(TcpModule, Socket, Timeout, ExpectSeqNum, Acc) ->
             NextSeqNum = (SeqNum + 1) band 16#ff,
             case More of
                 false -> {ok, Acc1, NextSeqNum};
-                true  -> recv_packet(TcpModule, Socket, NextSeqNum, Acc1)
+                true  -> recv_packet(TcpModule, Socket, Timeout, NextSeqNum,
+                                     Acc1)
             end;
         {error, Reason} ->
             {error, Reason}
@@ -1049,9 +1031,6 @@ decode_text_test() ->
                   [?TYPE_VARCHAR, ?TYPE_ENUM, ?TYPE_TINY_BLOB,
                    ?TYPE_MEDIUM_BLOB, ?TYPE_LONG_BLOB, ?TYPE_BLOB,
                    ?TYPE_VAR_STRING, ?TYPE_STRING, ?TYPE_GEOMETRY]),
-
-    %% NULL
-    ?assertEqual(null, decode_text(#col{type = ?TYPE_FLOAT}, null)),
     ok.
 
 decode_binary_test() ->
@@ -1072,12 +1051,6 @@ decode_binary_test() ->
                  decode_binary(#col{type = ?TYPE_FLOAT},
                                <<1234.56789:32/float-little>>)),
     ok.
-
-encode_param_test() ->
-    %% Additional representations for common types for convenience
-    {<<?TYPE_SET, 0>>, EncodedSet} = encode_param(sets:from_list([foo, bar])),
-    ?assert(EncodedSet == <<7, "foo,bar">> orelse
-            EncodedSet == <<7, "bar,foo">>).
 
 null_bitmap_test() ->
     ?assertEqual({<<0, 1:1>>, <<>>}, null_bitmap_decode(9, <<0, 4>>, 2)),
