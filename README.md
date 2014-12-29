@@ -30,11 +30,9 @@ Synopsis
 --------
 
 ```Erlang
-Opts = [{host, "localhost"}, {user, "foo"}, {password, "hello"},
-        {database, "test"}],
-
 %% Connect
-{ok, Pid} = mysql:start_link(Opts),
+{ok, Pid} = mysql:start_link([{host, "localhost"}, {user, "foo"},
+                              {password, "hello"}, {database, "test"}]),
 
 %% Select
 {ok, ColumnNames, Rows} =
