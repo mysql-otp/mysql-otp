@@ -5,7 +5,7 @@
 <title>/Users/viktor/data/mysql-otp/.eunit/mysql.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-12-19 at 23:31:12
+File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-12-29 at 16:39:25
 
 ****************************************************************************
 
@@ -37,7 +37,7 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |  -export([start_link/1, query/2, query/3, query/4, execute/3, execute/4,
         |           prepare/2, prepare/3, unprepare/2,
         |           warning_count/1, affected_rows/1, autocommit/1, insert_id/1,
-        |           in_transaction/1,
+        |           encode/2, in_transaction/1,
         |           transaction/2, transaction/3, transaction/4]).
         |  
         |  -export_type([connection/0, server_reason/0]).
@@ -141,7 +141,7 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |           Rows :: [[term()]],
         |           Reason :: server_reason().
         |  query(Conn, Query) -&gt;
-   319..|      query_call(Conn, {query, Query}).
+   322..|      query_call(Conn, {query, Query}).
         |  
         |  %% @doc Depending on the 3rd argument this function does different things.
         |  %%
@@ -162,7 +162,7 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |           Rows :: [[term()]],
         |           Reason :: server_reason().
         |  query(Conn, Query, Params) when is_list(Params) -&gt;
-     6..|      query_call(Conn, {param_query, Query, Params});
+     7..|      query_call(Conn, {param_query, Query, Params});
         |  query(Conn, Query, Timeout) when is_integer(Timeout); Timeout == infinity -&gt;
      2..|      query_call(Conn, {query, Query, Timeout}).
         |  
@@ -390,6 +390,24 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
      4..|              {aborted, Aborted}
         |      end.
         |  
+        |  %% @doc Encodes a term as a MySQL literal so that it can be used to inside a
+        |  %% query. If backslash escapes are enabled, backslashes and single quotes in
+        |  %% strings and binaries are escaped. Otherwise only single quotes are escaped.
+        |  %%
+        |  %% Note that the preferred way of sending values is by prepared statements or
+        |  %% parametrized queries with placeholders.
+        |  %%
+        |  %% @see query/3
+        |  %% @see execute/30
+        |  -spec encode(connection(), term()) -&gt; iodata().
+        |  encode(Conn, Term) -&gt;
+     2..|      Term1 = case (is_list(Term) orelse is_binary(Term)) andalso
+     2..|                   gen_server:call(Conn, backslash_escapes_enabled) of
+     1..|          true  -&gt; mysql_encode:backslash_escape(Term);
+     1..|          false -&gt; Term
+        |      end,
+     2..|      mysql_encode:encode(Term1).
+        |  
         |  %% --- Gen_server callbacks ---
         |  
         |  -include("records.hrl").
@@ -495,10 +513,10 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |  %%       nesting level.&lt;/dd&gt;
         |  %% &lt;/dl&gt;
         |  handle_call({query, Query}, From, State) -&gt;
-   319..|      handle_call({query, Query, State#state.query_timeout}, From, State);
+   322..|      handle_call({query, Query, State#state.query_timeout}, From, State);
         |  handle_call({query, Query, Timeout}, _From, State) -&gt;
-   321..|      Socket = State#state.socket,
-   321..|      Rec = case mysql_protocol:query(Query, gen_tcp, Socket, Timeout) of
+   324..|      Socket = State#state.socket,
+   324..|      Rec = case mysql_protocol:query(Query, gen_tcp, Socket, Timeout) of
         |          {error, timeout} when State#state.server_version &gt;= [5, 0, 0] -&gt;
      1..|              kill_query(State),
      1..|              mysql_protocol:fetch_query_response(gen_tcp, Socket, infinity);
@@ -507,12 +525,12 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |              %% killing the connection itself.
 <font color=red>     0..|              exit(timeout);</font>
         |          QueryResult -&gt;
-   320..|              QueryResult
+   323..|              QueryResult
         |      end,
-   321..|      State1 = update_state(State, Rec),
-   321..|      State1#state.warning_count &gt; 0 andalso State1#state.log_warnings
+   324..|      State1 = update_state(State, Rec),
+   324..|      State1#state.warning_count &gt; 0 andalso State1#state.log_warnings
      1..|          andalso log_warnings(State1, Query),
-   321..|      case Rec of
+   324..|      case Rec of
         |          #ok{status = Status} when Status band ?SERVER_STATUS_IN_TRANS == 0,
         |                                    State1#state.transaction_level &gt; 0 -&gt;
         |              %% DDL statements (e.g. CREATE TABLE, ALTER TABLE, etc.) result in
@@ -520,10 +538,10 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
      1..|              Reply = {implicit_commit, State1#state.transaction_level, Query},
      1..|              {reply, Reply, State1#state{transaction_level = 0}};
         |          #ok{} -&gt;
-   209..|              {reply, ok, State1};
+   211..|              {reply, ok, State1};
         |          #resultset{cols = ColDefs, rows = Rows} -&gt;
-   108..|              Names = [Def#col.name || Def &lt;- ColDefs],
-   108..|              {reply, {ok, Names, Rows}, State1};
+   109..|              Names = [Def#col.name || Def &lt;- ColDefs],
+   109..|              {reply, {ok, Names, Rows}, State1};
         |          #error{code = Code} when State1#state.transaction_level &gt; 0,
         |                                   (Code == ?ERROR_DEADLOCK orelse
         |                                    Code == ?ERROR_LOCK_WAIT_TIMEOUT) -&gt;
@@ -536,40 +554,40 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
      1..|              {reply, {error, error_to_reason(Rec)}, State1}
         |      end;
         |  handle_call({param_query, Query, Params}, From, State) -&gt;
-     6..|      handle_call({param_query, Query, Params, State#state.query_timeout}, From,
+     7..|      handle_call({param_query, Query, Params, State#state.query_timeout}, From,
         |                  State);
         |  handle_call({param_query, Query, Params, Timeout}, _From, State) -&gt;
         |      %% Parametrized query: Prepared statement cached with the query as the key
-     7..|      QueryBin = iolist_to_binary(Query),
-     7..|      #state{socket = Socket} = State,
-     7..|      Cache = State#state.query_cache,
-     7..|      {StmtResult, Cache1} = case mysql_cache:lookup(QueryBin, Cache) of
+     8..|      QueryBin = iolist_to_binary(Query),
+     8..|      #state{socket = Socket} = State,
+     8..|      Cache = State#state.query_cache,
+     8..|      {StmtResult, Cache1} = case mysql_cache:lookup(QueryBin, Cache) of
         |          {found, FoundStmt, NewCache} -&gt;
         |              %% Found
      1..|              {{ok, FoundStmt}, NewCache};
         |          not_found -&gt;
         |              %% Prepare
-     6..|              Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
+     7..|              Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
         |              %State1 = update_state(State, Rec),
-     6..|              case Rec of
+     7..|              case Rec of
         |                  #error{} = E -&gt;
      1..|                      {{error, error_to_reason(E)}, Cache};
         |                  #prepared{} = Stmt -&gt;
         |                      %% If the first entry in the cache, start the timer.
-     5..|                      Cache == empty andalso begin
+     6..|                      Cache == empty andalso begin
      5..|                          When = State#state.query_cache_time * 2,
      5..|                          erlang:send_after(When, self(), query_cache)
         |                      end,
-     5..|                      {{ok, Stmt}, mysql_cache:store(QueryBin, Stmt, Cache)}
+     6..|                      {{ok, Stmt}, mysql_cache:store(QueryBin, Stmt, Cache)}
         |              end
         |      end,
-     7..|      case StmtResult of
+     8..|      case StmtResult of
         |          {ok, StmtRec} -&gt;
-     6..|              State1 = State#state{query_cache = Cache1},
-     6..|              {Reply, State2} = execute_stmt(StmtRec, Params, Timeout, State1),
-     6..|              State2#state.warning_count &gt; 0 andalso State2#state.log_warnings
+     7..|              State1 = State#state{query_cache = Cache1},
+     7..|              {Reply, State2} = execute_stmt(StmtRec, Params, Timeout, State1),
+     7..|              State2#state.warning_count &gt; 0 andalso State2#state.log_warnings
      1..|                  andalso log_warnings(State2, Query),
-     6..|              {reply, Reply, State2};
+     7..|              {reply, Reply, State2};
         |          PrepareError -&gt;
      1..|              {reply, PrepareError, State}
         |      end;
@@ -639,6 +657,8 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
      1..|      {reply, State#state.affected_rows, State};
         |  handle_call(autocommit, _From, State) -&gt;
      3..|      {reply, State#state.status band ?SERVER_STATUS_AUTOCOMMIT /= 0, State};
+        |  handle_call(backslash_escapes_enabled, _From, State = #state{status = S}) -&gt;
+     2..|      {reply, S band ?SERVER_STATUS_NO_BACKSLASH_ESCAPES == 0, State};
         |  handle_call(in_transaction, _From, State) -&gt;
      8..|      {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};
         |  handle_call(start_transaction, _From,
@@ -719,18 +739,18 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |  %% checks the reply and sometimes throws an exception when we need to jump out
         |  %% of a transaction.
         |  query_call(Conn, CallReq) -&gt;
-   489..|      case gen_server:call(Conn, CallReq, infinity) of
+   493..|      case gen_server:call(Conn, CallReq, infinity) of
         |          {implicit_commit, _NestingLevel, Query} -&gt;
      1..|              error({implicit_commit, Query});
         |          {implicit_rollback, _NestingLevel, _ServerReason} = ImplicitRollback -&gt;
      3..|              throw(ImplicitRollback);
         |          Result -&gt;
-   485..|              Result
+   489..|              Result
         |      end.
         |  
         |  %% @doc Executes a prepared statement and returns {Reply, NextState}.
         |  execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket}) -&gt;
-   166..|      Rec = case mysql_protocol:execute(Stmt, Args, gen_tcp, Socket, Timeout) of
+   167..|      Rec = case mysql_protocol:execute(Stmt, Args, gen_tcp, Socket, Timeout) of
         |          {error, timeout} when State#state.server_version &gt;= [5, 0, 0] -&gt;
      2..|              kill_query(State),
      2..|              mysql_protocol:fetch_execute_response(gen_tcp, Socket, infinity);
@@ -739,12 +759,12 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |              %% killing the connection itself.
 <font color=red>     0..|              exit(timeout);</font>
         |          QueryResult -&gt;
-   164..|              QueryResult
+   165..|              QueryResult
         |      end,
-   166..|      State1 = update_state(State, Rec),
-   166..|      case Rec of
+   167..|      State1 = update_state(State, Rec),
+   167..|      case Rec of
         |          #ok{} -&gt;
-    66..|              {ok, State1};
+    67..|              {ok, State1};
         |          #error{code = Code} when State1#state.transaction_level &gt; 0,
         |                                   (Code == ?ERROR_DEADLOCK orelse
         |                                    Code == ?ERROR_LOCK_WAIT_TIMEOUT) -&gt;
@@ -769,12 +789,12 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |  %% ping.
         |  -spec update_state(#state{}, #ok{} | #eof{} | any()) -&gt; #state{}.
         |  update_state(State, Rec) -&gt;
-   616..|      State1 = case Rec of
+   620..|      State1 = case Rec of
         |          #ok{status = S, affected_rows = R, insert_id = Id, warning_count = W} -&gt;
-   320..|              State#state{status = S, affected_rows = R, insert_id = Id,
+   323..|              State#state{status = S, affected_rows = R, insert_id = Id,
         |                          warning_count = W};
         |          #resultset{status = S, warning_count = W} -&gt;
-   207..|              State#state{status = S, warning_count = W};
+   208..|              State#state{status = S, warning_count = W};
         |          #prepared{warning_count = W} -&gt;
     83..|              State#state{warning_count = W};
         |          _Other -&gt;
@@ -782,14 +802,14 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql.erl by COVER 2014-
         |              %% Reset some things. (Note: We don't reset status and insert_id.)
      6..|              State#state{warning_count = 0, affected_rows = 0}
         |      end,
-   616..|      schedule_ping(State1).
+   620..|      schedule_ping(State1).
         |  
         |  %% @doc Schedules (or re-schedules) ping.
         |  schedule_ping(State = #state{ping_timeout = infinity}) -&gt;
    127..|      State;
         |  schedule_ping(State = #state{ping_timeout = Timeout, ping_ref = Ref}) -&gt;
-   574..|      is_reference(Ref) andalso erlang:cancel_timer(Ref),
-   574..|      State#state{ping_ref = erlang:send_after(Timeout, self(), ping)}.
+   578..|      is_reference(Ref) andalso erlang:cancel_timer(Ref),
+   578..|      State#state{ping_ref = erlang:send_after(Timeout, self(), ping)}.
         |  
         |  %% @doc Since errors don't return a status but some errors cause an implicit
         |  %% rollback, we use this function to clear fix the transaction bit in the

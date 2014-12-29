@@ -5,7 +5,7 @@
 <title>/Users/viktor/data/mysql-otp/.eunit/mysql_cache.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_cache.erl by COVER 2014-12-19 at 23:31:13
+File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_cache.erl by COVER 2014-12-29 at 16:39:26
 
 ****************************************************************************
 
@@ -80,14 +80,14 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_cache.erl by COVER
         |  -spec lookup(Key :: K, Cache :: cache(K, V)) -&gt;
         |      {found, Value :: V, UpdatedCache :: cache(K, V)} | not_found.
         |  lookup(Key, {cache, StartTs, Dict}) -&gt;
-     5..|      case dict:find(Key, Dict) of
+     6..|      case dict:find(Key, Dict) of
         |          {ok, {Value, _OldTime}} -&gt;
      3..|              NewTime = timer:now_diff(os:timestamp(), StartTs) div 1000,
      3..|              Dict1 = dict:store(Key, {Value, NewTime}, Dict),
      3..|              Cache1 = {cache, StartTs, Dict1},
      3..|              {found, Value, Cache1};
         |          error -&gt;
-     2..|              not_found
+     3..|              not_found
         |      end;
         |  lookup(_Key, empty) -&gt;
      6..|      not_found.
@@ -109,8 +109,8 @@ File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_cache.erl by COVER
         |  -spec store(Key :: K, Value :: V, Cache :: cache(K, V)) -&gt; cache(K, V)
         |      when K :: term(), V :: term().
         |  store(Key, Value, {cache, StartTs, Dict}) -&gt;
-     1..|      Time = timer:now_diff(os:timestamp(), StartTs) div 1000,
-     1..|      {cache, StartTs, dict:store(Key, {Value, Time}, Dict)};
+     2..|      Time = timer:now_diff(os:timestamp(), StartTs) div 1000,
+     2..|      {cache, StartTs, dict:store(Key, {Value, Time}, Dict)};
         |  store(Key, Value, empty) -&gt;
      6..|      {cache, os:timestamp(), dict:store(Key, {Value, 0}, dict:new())}.
         |  

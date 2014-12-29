@@ -1,0 +1,81 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<title>/Users/viktor/data/mysql-otp/.eunit/mysql_encode.COVER.html</title>
+</head><body style='background-color: white; color: black'>
+<pre>
+File generated from /Users/viktor/data/mysql-otp/.eunit/mysql_encode.erl by COVER 2014-12-29 at 16:39:26
+
+****************************************************************************
+
+        |  %% @private
+        |  %% @doc Functions for encoding a term as an SQL literal. This is not really
+        |  %% part of the protocol; thus the separate module.
+        |  -module(mysql_encode).
+        |  
+        |  -export([encode/1, backslash_escape/1]).
+        |  
+        |  %% @doc Encodes a term as an ANSI SQL literal so that it can be used to inside
+        |  %% a query. In strings only single quotes (') are escaped. If backslash escapes
+        |  %% are enabled for the connection, you should first use backslash_escape/1 to
+        |  %% escape backslashes in strings.
+        |  -spec encode(term()) -&gt; iodata().
+     1..|  encode(null) -&gt; &lt;&lt;"NULL"&gt;&gt;;
+        |  encode(Int) when is_integer(Int) -&gt;
+     1..|      integer_to_binary(Int);
+        |  encode(Float) when is_float(Float) -&gt;
+        |      %% "floats are printed accurately as the shortest, correctly rounded string"
+     1..|      io_lib:format("~w", [Float]);
+        |  encode(String) when is_list(String); is_binary(String) -&gt;
+     4..|      Bin = iolist_to_binary(String),
+     4..|      Escaped = binary:replace(Bin, &lt;&lt;"'"&gt;&gt;, &lt;&lt;"''"&gt;&gt;),
+     4..|      [$', Escaped, $'];
+        |  encode(Bitstring) when is_bitstring(Bitstring) -&gt;
+     1..|      ["b'", [ case B of 0 -&gt; $0; 1 -&gt; $1 end || &lt;&lt;B:1&gt;&gt; &lt;= Bitstring ], $'];
+        |  encode({Y, M, D}) -&gt;
+     2..|      io_lib:format("'~4..0b-~2..0b-~2..0b'", [Y, M, D]);
+        |  encode({{Y, M, D}, {H, Mi, S}}) when is_integer(S) -&gt;
+     3..|      io_lib:format("'~4..0b-~2..0b-~2..0b ~2..0b:~2..0b:~2..0b'",
+        |                    [Y, M, D, H, Mi, S]);
+        |  encode({{Y, M, D}, {H, Mi, S}}) when is_float(S) -&gt;
+     1..|      io_lib:format("'~4..0b-~2..0b-~2..0b ~2..0b:~2..0b:~9.6.0f'",
+        |                    [Y, M, D, H, Mi, S]);
+        |  encode({D, {H, M, S}}) when D &gt;= 0 -&gt;
+     5..|      Args = [H1 = D * 24 + H, M, S],
+     5..|      if
+     1..|          H1 &gt; 99, is_integer(S) -&gt; io_lib:format("'~b:~2..0b:~2..0b'", Args);
+     1..|          H1 &gt; 99, is_float(S)   -&gt; io_lib:format("'~b:~2..0b:~9.6.0f'", Args);
+     2..|          is_integer(S)          -&gt; io_lib:format("'~2..0b:~2..0b:~2..0b'", Args);
+     1..|          is_float(S)            -&gt; io_lib:format("'~2..0b:~2..0b:~9.6.0f'", Args)
+        |      end;
+        |  encode({D, {H, M, S}}) when D &lt; 0, is_integer(S) -&gt;
+     5..|      Sec = (D * 24 + H) * 3600 + M * 60 + S,
+     5..|      {D1, {H1, M1, S1}} = calendar:seconds_to_daystime(-Sec),
+     5..|      Args = [H2 = D1 * 24 + H1, M1, S1],
+     5..|      if
+     1..|          H2 &gt; 99 -&gt; io_lib:format("'-~b:~2..0b:~2..0b'", Args);
+     4..|          true    -&gt; io_lib:format("'-~2..0b:~2..0b:~2..0b'", Args)
+        |      end;
+        |  encode({D, {H, M, S}}) when D &lt; 0, is_float(S) -&gt;
+     3..|      SInt = trunc(S), % trunc(57.654321) = 57
+     3..|      {SInt1, Frac} = case S - SInt of % 57.6543 - 57 = 0.654321
+     2..|          0.0  -&gt; {SInt, 0.0};
+     1..|          Rest -&gt; {SInt + 1, 1 - Rest} % {58, 0.345679}
+        |      end,
+     3..|      Sec = (D * 24 + H) * 3600 + M * 60 + SInt1,
+     3..|      {D1, {H1, M1, S1}} = calendar:seconds_to_daystime(-Sec),
+     3..|      Args = [H2 = D1 * 24 + H1, M1, S1 + Frac],
+     3..|      if
+     1..|          H2 &gt; 99 -&gt; io_lib:format("'-~b:~2..0b:~9.6.0f'", Args);
+     2..|          true    -&gt; io_lib:format("'-~2..0b:~2..0b:~9.6.0f'", Args)
+        |      end.
+        |  
+        |  %% @doc Escapes backslashes with an extra backslash. This is necessary if
+        |  %% backslash escapes are enabled in the session.
+        |  backslash_escape(String) -&gt;
+     2..|      Bin = iolist_to_binary(String),
+     2..|      binary:replace(Bin, &lt;&lt;"\\"&gt;&gt;, &lt;&lt;"\\\\"&gt;&gt;).
+</pre>
+</body>
+</html>
