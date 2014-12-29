@@ -26,7 +26,7 @@
 -export([start_link/1, query/2, query/3, query/4, execute/3, execute/4,
          prepare/2, prepare/3, unprepare/2,
          warning_count/1, affected_rows/1, autocommit/1, insert_id/1,
-         in_transaction/1,
+         encode/2, in_transaction/1,
          transaction/2, transaction/3, transaction/4]).
 
 -export_type([connection/0, server_reason/0]).
@@ -379,6 +379,24 @@ transaction(Conn, Fun, Args, Retries) when is_list(Args),
             {aborted, Aborted}
     end.
 
+%% @doc Encodes a term as a MySQL literal so that it can be used to inside a
+%% query. If backslash escapes are enabled, backslashes and single quotes in
+%% strings and binaries are escaped. Otherwise only single quotes are escaped.
+%%
+%% Note that the preferred way of sending values is by prepared statements or
+%% parametrized queries with placeholders.
+%%
+%% @see query/3
+%% @see execute/30
+-spec encode(connection(), term()) -> iodata().
+encode(Conn, Term) ->
+    Term1 = case (is_list(Term) orelse is_binary(Term)) andalso
+                 gen_server:call(Conn, backslash_escapes_enabled) of
+        true  -> mysql_encode:backslash_escape(Term);
+        false -> Term
+    end,
+    mysql_encode:encode(Term1).
+
 %% --- Gen_server callbacks ---
 
 -include("records.hrl").
@@ -628,6 +646,8 @@ handle_call(affected_rows, _From, State) ->
     {reply, State#state.affected_rows, State};
 handle_call(autocommit, _From, State) ->
     {reply, State#state.status band ?SERVER_STATUS_AUTOCOMMIT /= 0, State};
+handle_call(backslash_escapes_enabled, _From, State = #state{status = S}) ->
+    {reply, S band ?SERVER_STATUS_NO_BACKSLASH_ESCAPES == 0, State};
 handle_call(in_transaction, _From, State) ->
     {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};
 handle_call(start_transaction, _From,

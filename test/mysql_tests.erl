@@ -108,6 +108,7 @@ query_test_() ->
      fun (Pid) ->
          [{"Select db on connect", fun () -> connect_with_db(Pid) end},
           {"Autocommit",           fun () -> autocommit(Pid) end},
+          {"Encode",               fun () -> encode(Pid) end},
           {"Basic queries",        fun () -> basic_queries(Pid) end},
           {"Text protocol",        fun () -> text_protocol(Pid) end},
           {"Binary protocol",      fun () -> binary_protocol(Pid) end},
@@ -156,6 +157,17 @@ autocommit(Pid) ->
     ?assertNot(mysql:autocommit(Pid)),
     ok = mysql:query(Pid, <<"SET autocommit = 1">>),
     ?assert(mysql:autocommit(Pid)).
+
+encode(Pid) ->
+    %% Test with backslash escapes enabled and disabled.
+    {ok, _, [[OldMode]]} = mysql:query(Pid, "SELECT @@sql_mode"),
+    ok = mysql:query(Pid, "SET sql_mode = ''"),
+    ?assertEqual(<<"'foo\\\\bar''baz'">>,
+                 iolist_to_binary(mysql:encode(Pid, "foo\\bar'baz"))),
+    ok = mysql:query(Pid, "SET sql_mode = 'NO_BACKSLASH_ESCAPES'"),
+    ?assertEqual(<<"'foo\\bar''baz'">>,
+                 iolist_to_binary(mysql:encode(Pid, "foo\\bar'baz"))),
+    ok = mysql:query(Pid, "SET sql_mode = ?", [OldMode]).
 
 basic_queries(Pid) ->
 
