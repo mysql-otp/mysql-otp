@@ -92,6 +92,13 @@
 %%       `false' and `integer() > 0' for an explicit interval in milliseconds.
 %%       The default is `false'. For `true' a default ping timeout is used.
 %%       </dd>
+%%   <dt>`{prepare, NamedStatements}'</dt>
+%%   <dd>Named prepared statements to be created as soon as the connection is
+%%       ready.</dd>
+%%   <dt>`{queries, Queries}'</dt>
+%%   <dd>Queries to be executed as soon as the connection is ready. Any results
+%%       are discarded. Typically, this is used for setting time zone and other
+%%       session variables.</dd>
 %%   <dt>`{query_timeout, Timeout}'</dt>
 %%   <dd>The default time to wait for a response when executing a query or a
 %%       prepared statement. This can be given per query using `query/3,4' and
@@ -107,20 +114,44 @@
                    {database, iodata()} |
                    {connect_timeout, timeout()} |
                    {log_warnings, boolean()} |
+                   {keep_alive, boolean() | timeout()} |
+                   {prepare, NamedStatements} |
+                   {queries, [iodata()]} |
                    {query_timeout, timeout()} |
                    {query_cache_time, non_neg_integer()},
          ServerName :: {local, Name :: atom()} |
                        {global, GlobalName :: term()} |
-                       {via, Module :: atom(), ViaName :: term()}.
+                       {via, Module :: atom(), ViaName :: term()},
+         NamedStatements :: [{StatementName :: atom(), Statement :: iodata()}].
 start_link(Options) ->
     GenSrvOpts = [{timeout, proplists:get_value(connect_timeout, Options,
                                                 ?default_connect_timeout)}],
-    case proplists:get_value(name, Options) of
+    Ret = case proplists:get_value(name, Options) of
         undefined ->
             gen_server:start_link(?MODULE, Options, GenSrvOpts);
         ServerName ->
             gen_server:start_link(ServerName, ?MODULE, Options, GenSrvOpts)
-    end.
+    end,
+    case Ret of
+        {ok, Pid} ->
+            %% Initial queries
+            Queries = proplists:get_value(queries, Options, []),
+            lists:foreach(fun (Query) ->
+                              case mysql:query(Pid, Query) of
+                                  ok -> ok;
+                                  {ok, _, _} -> ok
+                              end
+                          end,
+                          Queries),
+            %% Prepare
+            Prepare = proplists:get_value(prepare, Options, []),
+            lists:foreach(fun ({Name, Stmt}) ->
+                              {ok, Name} = mysql:prepare(Pid, Name, Stmt)
+                          end,
+                          Prepare);
+        _ -> ok
+    end,
+    Ret.
 
 %% @doc Executes a query with the query timeout as given to start_link/1.
 -spec query(Conn, Query) -> ok | {ok, ColumnNames, Rows} | {error, Reason}

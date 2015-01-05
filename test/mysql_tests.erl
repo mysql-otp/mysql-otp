@@ -50,9 +50,15 @@ failing_connect_test() ->
     process_flag(trap_exit, false).
 
 successful_connect_test() ->
-    %% A connection with a registered name
-    Options = [{name, {local, tardis}}, {user, ?user}, {password, ?password}],
+    %% A connection with a registered name and execute initial queries and
+    %% create prepared statements.
+    Options = [{name, {local, tardis}}, {user, ?user}, {password, ?password},
+               {queries, ["SET @foo = 'bar'"]},
+               {prepare, [{foo, "SELECT @foo"}]}],
     {ok, Pid} = mysql:start_link(Options),
+    %% Check that queries and prepare has been done.
+    ?assertEqual({ok, [<<"@foo">>], [[<<"bar">>]]},
+                 mysql:execute(Pid, foo, [])),
     %% Test some gen_server callbacks not tested elsewhere
     State = get_state(Pid),
     ?assertMatch({ok, State}, mysql:code_change("0.1.0", State, [])),
