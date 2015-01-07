@@ -5,7 +5,7 @@
 <title>.eunit/mysql_cache.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/mysql-otp/.eunit/mysql_cache.erl by COVER 2015-01-05 at 16:19:58
+File generated from /home/viktor/mysql-otp/.eunit/mysql_cache.erl by COVER 2015-01-07 at 12:06:22
 
 ****************************************************************************
 
@@ -127,7 +127,7 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_cache.erl by COVER 2015-
      1..|      Cache = ?MODULE:store(foo, bar, empty),
      1..|      ?assertMatch({found, bar, _}, ?MODULE:lookup(foo, Cache)),
      1..|      ?assertMatch(not_found, ?MODULE:lookup(baz, Cache)),
-     1..|      ?assertMatch({Evicted, _}, ?MODULE:evict_older_than(Cache, 50)),
+     1..|      ?assertMatch({[], _}, ?MODULE:evict_older_than(Cache, 50)),
      1..|      ?assertMatch({cache, _, _}, Cache),
      1..|      ?assertEqual(1, ?MODULE:size(Cache)),
      1..|      receive after 51 -&gt; ok end, %% expire cache
