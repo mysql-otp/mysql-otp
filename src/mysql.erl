@@ -106,6 +106,10 @@
 %%   <dt>`{query_cache_time, Timeout}'</dt>
 %%   <dd>The minimum number of milliseconds to cache prepared statements used
 %%       for parametrized queries with query/3.</dd>
+%%   <dt>`{tcp_options, Options}'</dt>
+%%   <dd>Additional options for `gen_tcp:connect/3'. You may want to set
+%%       `{recbuf, Size}' and `{sndbuf, Size}' if you send or receive more than
+%%       the default (typically 8K) per query.</dd>
 %% </dl>
 -spec start_link(Options) -> {ok, pid()} | ignore | {error, term()}
     when Options :: [Option],
@@ -456,6 +460,7 @@ init(Opts) ->
                                          ?default_query_timeout),
     QueryCacheTime = proplists:get_value(query_cache_time, Opts,
                                          ?default_query_cache_time),
+    TcpOpts        = proplists:get_value(tcp_options, Opts, []),
 
     PingTimeout = case KeepAlive of
         true         -> ?default_ping_timeout;
@@ -464,7 +469,7 @@ init(Opts) ->
     end,
 
     %% Connect socket
-    SockOpts = [{active, false}, binary, {packet, raw}],
+    SockOpts = [{active, false}, binary, {packet, raw} | TcpOpts],
     {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
 
     %% Exchange handshake communication.
