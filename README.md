@@ -64,11 +64,29 @@ end
     mysql:query(Pid, <<"SELECT SLEEP(5)">>, 1000),
 ```
 
+Usage as a dependency
+---------------------
+
+With *erlang.mk*:
+
+    PROJECT = someproject
+    DEPS = mysql-otp
+    dep_mysql-otp = git https://github.com/mysql-otp/mysql-otp master
+    include erlang.mk
+
+With *rebar*:
+
+    {deps, [
+        {mysql, ".*", {git, "https://github.com/mysql-otp/mysql-otp",
+                       {branch, "master"}}}
+    ]}.
+
 Tests
 -----
 
-Run the eunit tests with `rebar eunit`. For the suite `mysql_tests` you need
-MySQL running on localhost and give privileges to the `otptest` user:
+Run the eunit tests with `make eunit`. The tests need an executable `rebar` in
+the `$PATH`. For the suite `mysql_tests` you need MySQL running on localhost
+and give privileges to the `otptest` user:
 
 ```SQL
 grant all privileges on otptest.* to otptest@localhost identified by 'otptest';
