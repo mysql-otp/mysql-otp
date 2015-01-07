@@ -116,7 +116,7 @@ nonempty_test() ->
     Cache = ?MODULE:store(foo, bar, empty),
     ?assertMatch({found, bar, _}, ?MODULE:lookup(foo, Cache)),
     ?assertMatch(not_found, ?MODULE:lookup(baz, Cache)),
-    ?assertMatch({Evicted, _}, ?MODULE:evict_older_than(Cache, 50)),
+    ?assertMatch({[], _}, ?MODULE:evict_older_than(Cache, 50)),
     ?assertMatch({cache, _, _}, Cache),
     ?assertEqual(1, ?MODULE:size(Cache)),
     receive after 51 -> ok end, %% expire cache
