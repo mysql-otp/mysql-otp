@@ -23,8 +23,9 @@ See also:
 * [API documenation](//mysql-otp.github.io/mysql-otp/index.html) (Edoc)
 * [Test coverage](//mysql-otp.github.io/mysql-otp/eunit.html) (EUnit)
 * [Why another MySQL driver?](https://github.com/mysql-otp/mysql-otp/wiki#why-another-mysql-driver) in the wiki
-
-This is a work in progress. Use a tagged version to make sure nothing breaks.
+* [MySQL/OTP + Poolboy](https://github.com/mysql-otp/mysql-otp-poolboy):
+  A simple application that combines MySQL/OTP with Poolboy for connection
+  pooling.
 
 Synopsis
 --------
@@ -67,18 +68,16 @@ end
 Usage as a dependency
 ---------------------
 
-With *erlang.mk*:
+Using *erlang.mk*:
 
-    PROJECT = someproject
     DEPS = mysql-otp
-    dep_mysql-otp = git https://github.com/mysql-otp/mysql-otp master
-    include erlang.mk
+    dep_mysql-otp = git https://github.com/mysql-otp/mysql-otp 0.8.0
 
-With *rebar*:
+Using *rebar*:
 
     {deps, [
         {mysql, ".*", {git, "https://github.com/mysql-otp/mysql-otp",
-                       {branch, "master"}}}
+                       {tag, "0.8.0"}}}
     ]}.
 
 Tests
@@ -91,12 +90,6 @@ and give privileges to the `otptest` user:
 ```SQL
 grant all privileges on otptest.* to otptest@localhost identified by 'otptest';
 ```
-
-Contributing
-------------
-
-Pull request and feature requests are welcome. If you're looking for something
-to do, pick one of the issues and solve it. Remember to include test cases.
 
 License
 -------
