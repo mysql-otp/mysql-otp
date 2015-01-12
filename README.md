@@ -70,8 +70,8 @@ Usage as a dependency
 
 Using *erlang.mk*:
 
-    DEPS = mysql-otp
-    dep_mysql-otp = git https://github.com/mysql-otp/mysql-otp 0.8.0
+    DEPS = mysql
+    dep_mysql = git https://github.com/mysql-otp/mysql-otp 0.8.0
 
 Using *rebar*:
 
