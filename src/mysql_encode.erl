@@ -18,7 +18,7 @@ encode(Float) when is_float(Float) ->
     io_lib:format("~w", [Float]);
 encode(String) when is_list(String); is_binary(String) ->
     Bin = iolist_to_binary(String),
-    Escaped = binary:replace(Bin, <<"'">>, <<"''">>),
+    Escaped = binary:replace(Bin, <<"'">>, <<"''">>, [global]),
     [$', Escaped, $'];
 encode(Bitstring) when is_bitstring(Bitstring) ->
     ["b'", [ case B of 0 -> $0; 1 -> $1 end || <<B:1>> <= Bitstring ], $'];
@@ -64,4 +64,4 @@ encode({D, {H, M, S}}) when D < 0, is_float(S) ->
 %% backslash escapes are enabled in the session.
 backslash_escape(String) ->
     Bin = iolist_to_binary(String),
-    binary:replace(Bin, <<"\\">>, <<"\\\\">>).
+    binary:replace(Bin, <<"\\">>, <<"\\\\">>, [global]).

@@ -11,8 +11,8 @@ encode_test() ->
         [{null,    "NULL"},
          {42,      "42"},
          {3.14,    "3.14"},
-         {"don't", "'don''t'"}, %% Escape single quote using single quote.
-         {"\\n",   "'\\n'"},    %% Don't escape backslash.
+         {"isn't didn't", "'isn''t didn''t'"}, %% Escape single quotes.
+         {"\\n",   "'\\n'"},                   %% Don't escape backslash.
          %% BIT(N)
          {<<255, 2:3>>,   "b'11111111010'"},
          %% DATE
@@ -42,5 +42,5 @@ encode_test() ->
     ).
 
 backslash_escape_test() ->
-    ?assertEqual(<<"a'b\\\\c">>,
-                 iolist_to_binary(mysql_encode:backslash_escape("a'b\\c"))).
+    ?assertEqual(<<"a'b\\\\c'd\\\\e">>,
+                 iolist_to_binary(mysql_encode:backslash_escape("a'b\\c'd\\e"))).
