@@ -1,6 +1,8 @@
 <!DOCTYPE html>
-<html><head><title>Coverage Summary</title></head>
-<body><h1>Source Summary</h1>
+<!DOCTYPE HTML><html>
+<head><meta charset="utf-8"><title>Coverage Summary</title></head>
+<body>
+<h1>Source Summary</h1>
 <h3>Total: 95%</h3>
 <table><tr><th>Module</th><th>Coverage %</th></tr>
 <tr><td><a href='mysql.COVER.html'>mysql</a></td><td>97%</td>
@@ -8,7 +10,7 @@
 <tr><td><a href='mysql_encode.COVER.html'>mysql_encode</a></td><td>100%</td>
 <tr><td><a href='mysql_protocol.COVER.html'>mysql_protocol</a></td><td>92%</td>
 </table>
-<body><h1>Test Summary</h1>
+<h1>Test Summary</h1>
 <h3>Total: 92%</h3>
 <table><tr><th>Module</th><th>Coverage %</th></tr>
 <tr><td><a href='error_logger_acc.COVER.html'>error_logger_acc</a></td><td>80%</td>
@@ -20,14 +22,14 @@
 ======================== EUnit ========================
 module 'mysql_encode'
   module 'mysql_encode_tests'
-    mysql_encode_tests: encode_test...[0.004 s] ok
+    mysql_encode_tests: encode_test...[0.007 s] ok
     mysql_encode_tests: backslash_escape_test...ok
-    [done in 0.010 s]
-  [done in 0.010 s]
+    [done in 0.012 s]
+  [done in 0.012 s]
 module 'mysql_cache'
   mysql_cache: empty_test...ok
-  mysql_cache: nonempty_test...[0.056 s] ok
-  [done in 0.062 s]
+  mysql_cache: nonempty_test...[0.055 s] ok
+  [done in 0.061 s]
 module 'mock_tcp'
   mock_tcp: bad_recv_test...ok
   mock_tcp: success_test...[0.101 s] ok
@@ -46,61 +48,61 @@ module 'mysql_protocol'
   mysql_protocol: parse_eof_test...ok
   mysql_protocol: hash_password_test...ok
   module 'mysql_protocol_tests'
-    mysql_protocol_tests: resultset_test...[0.005 s] ok
+    mysql_protocol_tests: resultset_test...[0.012 s] ok
     mysql_protocol_tests: resultset_error_test...[0.002 s] ok
     mysql_protocol_tests: prepare_test...[0.001 s] ok
     mysql_protocol_tests: bad_protocol_version_test...ok
     mysql_protocol_tests: hexdump_to_bin_test...ok
-    [done in 0.021 s]
-  [done in 0.057 s]
+    [done in 0.028 s]
+  [done in 0.063 s]
 module 'mysql'
   module 'mysql_tests'
-    mysql_tests: failing_connect_test...[0.009 s] ok
+    mysql_tests: failing_connect_test...[0.017 s] ok
     mysql_tests: successful_connect_test...[0.001 s] ok
-    mysql_tests: keep_alive_test...[0.089 s] ok
+    mysql_tests: keep_alive_test...[0.091 s] ok
     mysql_tests: query_test_ (Select db on connect)...[0.001 s] ok
     mysql_tests: query_test_ (Autocommit)...ok
     mysql_tests: query_test_ (Encode)...[0.001 s] ok
-    mysql_tests: query_test_ (Basic queries)...ok
+    mysql_tests: query_test_ (Basic queries)...[0.001 s] ok
     mysql_tests: query_test_ (Text protocol)...[0.007 s] ok
-    mysql_tests: query_test_ (Binary protocol)...[0.009 s] ok
-    mysql_tests: query_test_ (FLOAT rounding)...[0.045 s] ok
-    mysql_tests: query_test_ (DECIMAL)...[0.650 s] ok
-    mysql_tests: query_test_ (INT)...[0.827 s] ok
-    mysql_tests: query_test_ (BIT(N))...[0.171 s] ok
-    mysql_tests: query_test_ (DATE)...[0.165 s] ok
-    mysql_tests: query_test_ (TIME)...[0.647 s] ok
+    mysql_tests: query_test_ (Binary protocol)...[0.012 s] ok
+    mysql_tests: query_test_ (FLOAT rounding)...[0.044 s] ok
+    mysql_tests: query_test_ (DECIMAL)...[0.654 s] ok
+    mysql_tests: query_test_ (INT)...[0.819 s] ok
+    mysql_tests: query_test_ (BIT(N))...[0.165 s] ok
+    mysql_tests: query_test_ (DATE)...[0.166 s] ok
+    mysql_tests: query_test_ (TIME)...[0.648 s] ok
     mysql_tests: query_test_ (DATETIME)...[0.244 s] ok
     mysql_tests: query_test_ (Microseconds)...
-=INFO REPORT==== 7-Jan-2015::12:06:19 ===
+=INFO REPORT==== 15-Jan-2015::11:50:43 ===
 Skipping microseconds test. Current MySQL version is 5.5.40-0+wheezy1. Required version is &gt;= 5.6.4.
 ok
-    mysql_tests: log_warnings_test...[0.009 s] ok
-    mysql_tests: timeout_test_...[0.126 s] ok
-    mysql_tests: with_table_foo_test_ (Prepared statements)...[0.081 s] ok
+    mysql_tests: log_warnings_test...[0.012 s] ok
+    mysql_tests: timeout_test_...[0.125 s] ok
+    mysql_tests: with_table_foo_test_ (Prepared statements)...[0.078 s] ok
     mysql_tests: with_table_foo_test_ (Parametrized queries)...[0.191 s] ok
     mysql_tests: gen_server_coverage_test...ok
-    [done in 3.345 s]
-  [done in 3.345 s]
+    [done in 3.337 s]
+  [done in 3.337 s]
 module 'error_logger_acc'
   error_logger_acc: capture_success_test...ok
   error_logger_acc: capture_failure_test...ok
   [done in 0.006 s]
 module 'transaction_tests'
-  transaction_tests: single_connection_test_ (Simple atomic)...[0.002 s] ok
+  transaction_tests: single_connection_test_ (Simple atomic)...[0.003 s] ok
   transaction_tests: single_connection_test_ (Simple aborted)...[0.004 s] ok
-  transaction_tests: single_connection_test_ (Nested atomic)...[0.002 s] ok
+  transaction_tests: single_connection_test_ (Nested atomic)...[0.003 s] ok
   transaction_tests: single_connection_test_ (Nested inner aborted)...[0.002 s] ok
-  transaction_tests: single_connection_test_ (Implicit commit)...[0.004 s] ok
+  transaction_tests: single_connection_test_ (Implicit commit)...[0.007 s] ok
   transaction_tests: deadlock_test_ (Plain queries)...[0.003 s] ok
-  transaction_tests: deadlock_test_ (Prep stmts)...[0.003 s] ok
-  transaction_tests: deadlock_test_ (Lock wait timeout)...[2.276 s] ok
-  [done in 2.340 s]
+  transaction_tests: deadlock_test_ (Prep stmts)...[0.004 s] ok
+  transaction_tests: deadlock_test_ (Lock wait timeout)...[2.528 s] ok
+  [done in 2.595 s]
 =======================================================
   All 55 tests passed.
 Cover analysis: /home/viktor/mysql-otp/.eunit/index.html
 </pre>
 <p><em>Generated using rebar and EUnit,
-07 jan 2015 11:06:22 UTC.
+15 jan 2015 10:50:47 UTC.
 </em></p>
 </body></html>
