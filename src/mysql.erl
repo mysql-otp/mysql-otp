@@ -544,7 +544,7 @@ handle_call({query, Query, Timeout}, _From, State) ->
     Rec = case mysql_protocol:query(Query, gen_tcp, Socket, Timeout) of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
             kill_query(State),
-            mysql_protocol:fetch_query_response(gen_tcp, Socket, infinity);
+            mysql_protocol:fetch_query_response(gen_tcp, Socket, ?cmd_timeout);
         {error, timeout} ->
             %% For MySQL 4.x.x there is no way to recover from timeout except
             %% killing the connection itself.
@@ -778,7 +778,8 @@ execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket}) ->
     Rec = case mysql_protocol:execute(Stmt, Args, gen_tcp, Socket, Timeout) of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
             kill_query(State),
-            mysql_protocol:fetch_execute_response(gen_tcp, Socket, infinity);
+            mysql_protocol:fetch_execute_response(gen_tcp, Socket,
+                                                  ?cmd_timeout);
         {error, timeout} ->
             %% For MySQL 4.x.x there is no way to recover from timeout except
             %% killing the connection itself.
@@ -845,8 +846,8 @@ clear_transaction_status(State = #state{status = Status}) ->
 
 %% @doc Fetches and logs warnings. Query is the query that gave the warnings.
 log_warnings(#state{socket = Socket}, Query) ->
-    #resultset{rows = Rows} =
-        mysql_protocol:query(<<"SHOW WARNINGS">>, gen_tcp, Socket, infinity),
+    #resultset{rows = Rows} = mysql_protocol:query(<<"SHOW WARNINGS">>, gen_tcp,
+                                                   Socket, ?cmd_timeout),
     Lines = [[Level, " ", integer_to_binary(Code), ": ", Message, "\n"]
              || [Level, Code, Message] <- Rows],
     error_logger:warning_msg("~s in ~s~n", [Lines, Query]).
