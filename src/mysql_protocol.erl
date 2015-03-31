@@ -35,6 +35,7 @@
 
 -include("records.hrl").
 -include("protocol.hrl").
+-include("server_status.hrl").
 
 %% Macros for pattern matching on packets.
 -define(ok_pattern, <<?OK, _/binary>>).
@@ -77,7 +78,7 @@ ping(TcpModule, Socket) ->
     parse_ok_packet(OkPacket).
 
 -spec query(Query :: iodata(), atom(), term(), timeout()) ->
-    #ok{} | #resultset{} | #error{} | {error, timeout}.
+    {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
 query(Query, TcpModule, Socket, Timeout) ->
     Req = <<?COM_QUERY, (iolist_to_binary(Query))/binary>>,
     SeqNum0 = 0,
@@ -87,27 +88,7 @@ query(Query, TcpModule, Socket, Timeout) ->
 %% @doc This is used by query/4. If query/4 returns {error, timeout}, this
 %% function can be called to retry to fetch the results of the query. 
 fetch_query_response(TcpModule, Socket, Timeout) ->
-    case recv_packet(TcpModule, Socket, Timeout, any) of
-        {ok, ?ok_pattern = Ok, _} ->
-            parse_ok_packet(Ok);
-        {ok, ?error_pattern = Error, _} ->
-            parse_error_packet(Error);
-        {ok, ResultPacket, SeqNum2} ->
-            %% The first packet in a resultset is only the column count.
-            {ColumnCount, <<>>} = lenenc_int(ResultPacket),
-            case fetch_resultset(TcpModule, Socket, ColumnCount, SeqNum2) of
-                #error{} = E ->
-                    E;
-                #resultset{cols = ColDefs, rows = Rows} = R ->
-                    %% Parse the rows according to the 'text protocol'
-                    %% representation.
-                    Rows1 = [decode_text_row(ColumnCount, ColDefs, Row)
-                             || Row <- Rows],
-                    R#resultset{rows = Rows1}
-            end;
-        {error, timeout} ->
-            {error, timeout}
-    end.
+    fetch_response(TcpModule, Socket, Timeout, text, []).
 
 %% @doc Prepares a statement.
 -spec prepare(iodata(), atom(), term()) -> #error{} | #prepared{}.
@@ -139,6 +120,7 @@ prepare(Query, TcpModule, Socket) ->
                 fetch_column_definitions_if_any(NumColumns, TcpModule, Socket,
                                                 SeqNum3),
             #prepared{statement_id = StmtId,
+                      orig_query = Query,
                       param_count = NumParams,
                       warning_count = WarningCount}
     end.
@@ -152,7 +134,7 @@ unprepare(#prepared{statement_id = Id}, TcpModule, Socket) ->
 
 %% @doc Executes a prepared statement.
 -spec execute(#prepared{}, [term()], atom(), term(), timeout()) ->
-    #ok{} | #resultset{} | #error{} | {error, timeout}.
+    {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
 execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
         TcpModule, Socket, Timeout) when ParamCount == length(ParamValues) ->
     %% Flags Constant Name
@@ -186,28 +168,7 @@ execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
 %% @doc This is used by execute/5. If execute/5 returns {error, timeout}, this
 %% function can be called to retry to fetch the results of the query.
 fetch_execute_response(TcpModule, Socket, Timeout) ->
-    case recv_packet(TcpModule, Socket, Timeout, any) of
-        {ok, ?ok_pattern = Ok, _} ->
-            parse_ok_packet(Ok);
-        {ok, ?error_pattern = Error, _} ->
-            parse_error_packet(Error);
-        {ok, ResultPacket, SeqNum2} ->
-            %% The first packet in a resultset is only the column count.
-            {ColumnCount, <<>>} = lenenc_int(ResultPacket),
-            case fetch_resultset(TcpModule, Socket, ColumnCount, SeqNum2) of
-                #error{} = E ->
-                    %% TODO: Find a way to get here and write a testcase.
-                    E;
-                #resultset{cols = ColDefs, rows = Rows} = R ->
-                    %% Parse the rows according to the 'binary protocol'
-                    %% representation.
-                    Rows1 = [decode_binary_row(ColumnCount, ColDefs, Row)
-                             || Row <- Rows],
-                    R#resultset{rows = Rows1}
-            end;
-        {error, timeout} ->
-            {error, timeout}
-    end.
+    fetch_response(TcpModule, Socket, Timeout, binary, []).
 
 %% --- internal ---
 
@@ -268,7 +229,10 @@ build_handshake_response(Handshake, Username, Password, Database) ->
     %% We require these capabilities. Make sure the server handles them.
     CapabilityFlags0 = ?CLIENT_PROTOCOL_41 bor
                        ?CLIENT_TRANSACTIONS bor
-                       ?CLIENT_SECURE_CONNECTION,
+                       ?CLIENT_SECURE_CONNECTION bor
+                       ?CLIENT_MULTI_STATEMENTS bor
+                       ?CLIENT_MULTI_RESULTS bor
+                       ?CLIENT_PS_MULTI_RESULTS,
     CapabilityFlags = case Database of
         undefined -> CapabilityFlags0;
         _         -> CapabilityFlags0 bor ?CLIENT_CONNECT_WITH_DB
@@ -328,6 +292,42 @@ parse_handshake_confirm(Packet) ->
 
 %% -- both text and binary protocol --
 
+%% @doc Fetches one or more results and and parses the result set(s) using
+%% either the text format (for plain queries) or the binary format (for
+%% prepared statements).
+-spec fetch_response(atom(), term(), timeout(), text | binary, list()) ->
+    {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
+fetch_response(TcpModule, Socket, Timeout, Proto, Acc) ->
+    case recv_packet(TcpModule, Socket, Timeout, any) of
+        {ok, Packet, SeqNum2} ->
+            Result = case Packet of
+                ?ok_pattern ->
+                    parse_ok_packet(Packet);
+                ?error_pattern ->
+                    parse_error_packet(Packet);
+                ResultPacket ->
+                    %% The first packet in a resultset is only the column count.
+                    {ColCount, <<>>} = lenenc_int(ResultPacket),
+                    R0 = fetch_resultset(TcpModule, Socket, ColCount, SeqNum2),
+                    case R0 of
+                        #error{} = E ->
+                            %% TODO: Find a way to get here + testcase
+                            E;
+                        #resultset{} = R ->
+                            parse_resultset(R, ColCount, Proto)
+                    end
+            end,
+            Acc1 = [Result | Acc],
+            case more_results_exists(Result) of
+                true ->
+                    fetch_response(TcpModule, Socket, Timeout, Proto, Acc1);
+                false ->
+                    {ok, lists:reverse(Acc1)}
+            end;
+        {error, timeout} ->
+            {error, timeout}
+    end.
+
 %% @doc Fetches packets for a result set. The column definitions are parsed but
 %% the rows are unparsed binary packages. This function is used for both the
 %% text protocol and the binary protocol. This affects the way the rows need to
@@ -347,6 +347,22 @@ fetch_resultset(TcpModule, Socket, FieldCount, SeqNum) ->
         #error{} = E ->
             E
     end.
+
+parse_resultset(#resultset{cols = ColDefs, rows = Rows} = R, ColumnCount, text) ->
+    %% Parse the rows according to the 'text protocol' representation.
+    Rows1 = [decode_text_row(ColumnCount, ColDefs, Row) || Row <- Rows],
+    R#resultset{rows = Rows1};
+parse_resultset(#resultset{cols = ColDefs, rows = Rows} = R, ColumnCount, binary) ->
+    %% Parse the rows according to the 'binary protocol' representation.
+    Rows1 = [decode_binary_row(ColumnCount, ColDefs, Row) || Row <- Rows],
+    R#resultset{rows = Rows1}.
+
+more_results_exists(#ok{status = S}) ->
+    S band ?SERVER_MORE_RESULTS_EXISTS /= 0;
+more_results_exists(#error{}) ->
+    false; %% No status bits for error
+more_results_exists(#resultset{status = S}) ->
+    S band ?SERVER_MORE_RESULTS_EXISTS /= 0.
 
 %% @doc Receives NumLeft column definition packets. They are not parsed.
 %% @see parse_column_definition/1
@@ -980,7 +996,6 @@ nulterm_str(Bin) ->
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
--include("server_status.hrl").
 
 %% Testing some of the internal functions, mostly the cases we don't cover in
 %% other tests.

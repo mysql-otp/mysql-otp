@@ -116,6 +116,7 @@ query_test_() ->
           {"Autocommit",           fun () -> autocommit(Pid) end},
           {"Encode",               fun () -> encode(Pid) end},
           {"Basic queries",        fun () -> basic_queries(Pid) end},
+          {"Multi statements",     fun () -> multi_statements(Pid) end},
           {"Text protocol",        fun () -> text_protocol(Pid) end},
           {"Binary protocol",      fun () -> binary_protocol(Pid) end},
           {"FLOAT rounding",       fun () -> float_rounding(Pid) end},
@@ -154,7 +155,7 @@ log_warnings_test() ->
     ?assertEqual("Warning 1364: Field 'x' doesn't have a default value\n"
                  " in INSeRT INtO foo () VaLUeS ()\n", Log2),
     ?assertEqual("Warning 1364: Field 'x' doesn't have a default value\n"
-                 " in prepared statement insrt\n", Log3),
+                 " in INSERT INTO foo () VALUES ()\n", Log3),
     exit(Pid, normal).
 
 autocommit(Pid) ->
@@ -188,6 +189,42 @@ basic_queries(Pid) ->
     %% Simple resultset with various types
     ?assertEqual({ok, [<<"i">>, <<"s">>], [[42, <<"foo">>]]},
                  mysql:query(Pid, <<"SELECT 42 AS i, 'foo' AS s;">>)),
+
+    ok.
+
+multi_statements(Pid) ->
+    %% Multiple statements, no result set
+    ?assertEqual(ok, mysql:query(Pid, "CREATE TABLE foo (bar INT);"
+                                      "DROP TABLE foo;")),
+
+    %% Multiple statements, one result set
+    ?assertEqual({ok, [<<"foo">>], [[42]]},
+                 mysql:query(Pid, "CREATE TABLE foo (bar INT);"
+                                  "DROP TABLE foo;"
+                                  "SELECT 42 AS foo;")),
+
+    %% Multiple statements, multiple result sets
+    ?assertEqual({ok, [{[<<"foo">>], [[42]]}, {[<<"bar">>], [[<<"baz">>]]}]},
+                 mysql:query(Pid, "SELECT 42 AS foo; SELECT 'baz' AS bar;")),
+
+    %% Multiple results in a prepared statement.
+    %% Preparing "SELECT ...; SELECT ...;" gives a syntax error although the
+    %% docs say it should be possible.
+
+    %% Instead, test executing a stored procedure that returns multiple result
+    %% sets using a prepared statement.
+
+    CreateProc = "CREATE PROCEDURE multifoo() BEGIN\n"
+                 "  SELECT 42 AS foo;\n"
+                 "  SELECT 'baz' AS bar;\n"
+                 "END;\n",
+    ok = mysql:query(Pid, CreateProc),
+    ?assertEqual({ok, multifoo},
+                 mysql:prepare(Pid, multifoo, "CALL multifoo();")),
+    ?assertEqual({ok, [{[<<"foo">>], [[42]]}, {[<<"bar">>], [[<<"baz">>]]}]},
+                 mysql:execute(Pid, multifoo, [])),
+    ?assertEqual(ok, mysql:unprepare(Pid, multifoo)),
+    ?assertEqual(ok, mysql:query(Pid, "DROP PROCEDURE multifoo;")),
 
     ok.
 

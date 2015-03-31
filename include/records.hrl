@@ -52,5 +52,6 @@
 
 %% Response of a successfull prepare call.
 -record(prepared, {statement_id :: integer(),
+                   orig_query :: iodata(),
                    param_count :: integer(),
                    warning_count :: integer()}).

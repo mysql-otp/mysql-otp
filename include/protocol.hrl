@@ -30,27 +30,32 @@
 %% Client: Handshake Response Packet contains a schema-name
 -define(CLIENT_CONNECT_WITH_DB, 16#00000008).
 
-%% Server: supports the 4.1 protocol 
-%% Client: uses the 4.1 protocol 
+%% Server: supports the 4.1 protocol
+%% Client: uses the 4.1 protocol
 -define(CLIENT_PROTOCOL_41, 16#00000200).
 
-%% Server: can send status flags in EOF_Packet 
-%% Client: expects status flags in EOF_Packet 
+%% Server: can send status flags in EOF_Packet
+%% Client: expects status flags in EOF_Packet
 -define(CLIENT_TRANSACTIONS, 16#00002000).
 
-%% Server: supports Authentication::Native41 
-%% Client: supports Authentication::Native41 
+%% Server: supports Authentication::Native41
+%% Client: supports Authentication::Native41
 -define(CLIENT_SECURE_CONNECTION, 16#00008000).
 
-%% Server: can handle multiple statements per COM_QUERY and COM_STMT_PREPARE 
-%% Client: may send multiple statements per COM_QUERY and COM_STMT_PREPARE 
+%% Server: can handle multiple statements per COM_QUERY and COM_STMT_PREPARE
+%% Client: may send multiple statements per COM_QUERY and COM_STMT_PREPARE
 %% Requires: CLIENT_PROTOCOL_41
 -define(CLIENT_MULTI_STATEMENTS, 16#00010000).
 
-%% Server: can send multiple resultsets for COM_QUERY 
-%% Client: can handle multiple resultsets for COM_QUERY 
+%% Server: can send multiple resultsets for COM_QUERY
+%% Client: can handle multiple resultsets for COM_QUERY
 %% Requires: CLIENT_PROTOCOL_41
 -define(CLIENT_MULTI_RESULTS, 16#00020000).
+
+%% Server: can send multiple resultsets for COM_STMT_EXECUTE
+%% Client: can handle multiple resultsets for COM_STMT_EXECUTE
+%% Requires: CLIENT_PROTOCOL_41
+-define(CLIENT_PS_MULTI_RESULTS, 16#00040000).
 
 %% Server: sends extra data in Initial Handshake Packet and supports the
 %%         pluggable authentication protocol.

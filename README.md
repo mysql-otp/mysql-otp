@@ -60,6 +60,10 @@ case Result of
         io:format("Inserted 0 rows.~n")
 end
 
+%% Multiple queries and multiple result sets
+{ok, [{[<<"foo">>], [[42]]}, {[<<"bar">>], [[<<"baz">>]]}]} =
+    mysql:query(Pid, "SELECT 42 AS foo; SELECT 'baz' AS bar;"),
+
 %% Graceful timeout handling: SLEEP() returns 1 when interrupted
 {ok, [<<"SLEEP(5)">>], [[1]]} =
     mysql:query(Pid, <<"SELECT SLEEP(5)">>, 1000),
