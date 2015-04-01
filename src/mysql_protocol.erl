@@ -256,7 +256,7 @@ parse_handshake(<<Protocol:8, _/binary>>) when Protocol /= 10 ->
 -spec server_version_to_list(binary()) -> [integer()].
 server_version_to_list(ServerVersion) ->
     %% Remove stuff after dash for e.g. "5.5.40-0ubuntu0.12.04.1-log"
-    [ServerVersion1 | _] = binary:split(ServerVersion, <<"-">>),
+    {match, [ServerVersion1]} = re:run(ServerVersion, "\\d+\\.\\d+\\.\\d+", [{capture,first,binary}]),
     lists:map(fun binary_to_integer/1,
               binary:split(ServerVersion1, <<".">>, [global])).
 
