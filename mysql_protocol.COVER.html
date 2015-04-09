@@ -5,7 +5,7 @@
 <title>/home/viktor/mysql-otp/.eunit/mysql_protocol.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 2015-04-09 at 18:12:52
+File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 2015-04-09 at 18:38:57
 
 ****************************************************************************
 
@@ -91,15 +91,15 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |  -spec query(Query :: iodata(), atom(), term(), timeout()) -&gt;
         |      {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
         |  query(Query, TcpModule, Socket, Timeout) -&gt;
-   379..|      Req = &lt;&lt;?COM_QUERY, (iolist_to_binary(Query))/binary&gt;&gt;,
-   379..|      SeqNum0 = 0,
-   379..|      {ok, _SeqNum1} = send_packet(TcpModule, Socket, Req, SeqNum0),
-   379..|      fetch_query_response(TcpModule, Socket, Timeout).
+   381..|      Req = &lt;&lt;?COM_QUERY, (iolist_to_binary(Query))/binary&gt;&gt;,
+   381..|      SeqNum0 = 0,
+   381..|      {ok, _SeqNum1} = send_packet(TcpModule, Socket, Req, SeqNum0),
+   381..|      fetch_query_response(TcpModule, Socket, Timeout).
         |  
         |  %% @doc This is used by query/4. If query/4 returns {error, timeout}, this
         |  %% function can be called to retry to fetch the results of the query. 
         |  fetch_query_response(TcpModule, Socket, Timeout) -&gt;
-   380..|      fetch_response(TcpModule, Socket, Timeout, text, []).
+   382..|      fetch_response(TcpModule, Socket, Timeout, text, []).
         |  
         |  %% @doc Prepares a statement.
         |  -spec prepare(iodata(), atom(), term()) -&gt; #error{} | #prepared{}.
@@ -311,31 +311,31 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |  -spec fetch_response(atom(), term(), timeout(), text | binary, list()) -&gt;
         |      {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
         |  fetch_response(TcpModule, Socket, Timeout, Proto, Acc) -&gt;
-   557..|      case recv_packet(TcpModule, Socket, Timeout, any) of
+   560..|      case recv_packet(TcpModule, Socket, Timeout, any) of
         |          {ok, Packet, SeqNum2} -&gt;
-   554..|              Result = case Packet of
+   557..|              Result = case Packet of
         |                  ?ok_pattern -&gt;
    331..|                      parse_ok_packet(Packet);
         |                  ?error_pattern -&gt;
      4..|                      parse_error_packet(Packet);
         |                  ResultPacket -&gt;
         |                      %% The first packet in a resultset is only the column count.
-   219..|                      {ColCount, &lt;&lt;&gt;&gt;} = lenenc_int(ResultPacket),
-   219..|                      R0 = fetch_resultset(TcpModule, Socket, ColCount, SeqNum2),
-   219..|                      case R0 of
+   222..|                      {ColCount, &lt;&lt;&gt;&gt;} = lenenc_int(ResultPacket),
+   222..|                      R0 = fetch_resultset(TcpModule, Socket, ColCount, SeqNum2),
+   222..|                      case R0 of
         |                          #error{} = E -&gt;
         |                              %% TODO: Find a way to get here + testcase
      1..|                              E;
         |                          #resultset{} = R -&gt;
-   218..|                              parse_resultset(R, ColCount, Proto)
+   221..|                              parse_resultset(R, ColCount, Proto)
         |                      end
         |              end,
-   554..|              Acc1 = [Result | Acc],
-   554..|              case more_results_exists(Result) of
+   557..|              Acc1 = [Result | Acc],
+   557..|              case more_results_exists(Result) of
         |                  true -&gt;
-     6..|                      fetch_response(TcpModule, Socket, Timeout, Proto, Acc1);
+     7..|                      fetch_response(TcpModule, Socket, Timeout, Proto, Acc1);
         |                  false -&gt;
-   548..|                      {ok, lists:reverse(Acc1)}
+   550..|                      {ok, lists:reverse(Acc1)}
         |              end;
         |          {error, timeout} -&gt;
      3..|              {error, timeout}
@@ -348,14 +348,14 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |  -spec fetch_resultset(atom(), term(), integer(), integer()) -&gt;
         |      #resultset{} | #error{}.
         |  fetch_resultset(TcpModule, Socket, FieldCount, SeqNum) -&gt;
-   219..|      {ok, ColDefs, SeqNum1} = fetch_column_definitions(TcpModule, Socket, SeqNum,
+   222..|      {ok, ColDefs, SeqNum1} = fetch_column_definitions(TcpModule, Socket, SeqNum,
         |                                                        FieldCount, []),
-   219..|      {ok, DelimiterPacket, SeqNum2} = recv_packet(TcpModule, Socket, SeqNum1),
-   219..|      #eof{status = S, warning_count = W} = parse_eof_packet(DelimiterPacket),
-   219..|      case fetch_resultset_rows(TcpModule, Socket, SeqNum2, []) of
+   222..|      {ok, DelimiterPacket, SeqNum2} = recv_packet(TcpModule, Socket, SeqNum1),
+   222..|      #eof{status = S, warning_count = W} = parse_eof_packet(DelimiterPacket),
+   222..|      case fetch_resultset_rows(TcpModule, Socket, SeqNum2, []) of
         |          {ok, Rows, _SeqNum3} -&gt;
-   218..|              ColDefs1 = lists:map(fun parse_column_definition/1, ColDefs),
-   218..|              #resultset{cols = ColDefs1, rows = Rows,
+   221..|              ColDefs1 = lists:map(fun parse_column_definition/1, ColDefs),
+   221..|              #resultset{cols = ColDefs1, rows = Rows,
         |                         status = S, warning_count = W};
         |          #error{} = E -&gt;
      1..|              E
@@ -363,8 +363,8 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |  
         |  parse_resultset(#resultset{cols = ColDefs, rows = Rows} = R, ColumnCount, text) -&gt;
         |      %% Parse the rows according to the 'text protocol' representation.
-   116..|      Rows1 = [decode_text_row(ColumnCount, ColDefs, Row) || Row &lt;- Rows],
-   116..|      R#resultset{rows = Rows1};
+   119..|      Rows1 = [decode_text_row(ColumnCount, ColDefs, Row) || Row &lt;- Rows],
+   119..|      R#resultset{rows = Rows1};
         |  parse_resultset(#resultset{cols = ColDefs, rows = Rows} = R, ColumnCount, binary) -&gt;
         |      %% Parse the rows according to the 'binary protocol' representation.
    102..|      Rows1 = [decode_binary_row(ColumnCount, ColDefs, Row) || Row &lt;- Rows],
@@ -375,7 +375,7 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |  more_results_exists(#error{}) -&gt;
      5..|      false; %% No status bits for error
         |  more_results_exists(#resultset{status = S}) -&gt;
-   218..|      S band ?SERVER_MORE_RESULTS_EXISTS /= 0.
+   221..|      S band ?SERVER_MORE_RESULTS_EXISTS /= 0.
         |  
         |  %% @doc Receives NumLeft column definition packets. They are not parsed.
         |  %% @see parse_column_definition/1
@@ -384,11 +384,11 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |      {ok, ColDefPackets :: [binary()], NextSeqNum :: integer()}.
         |  fetch_column_definitions(TcpModule, Socket, SeqNum, NumLeft, Acc)
         |    when NumLeft &gt; 0 -&gt;
-   374..|      {ok, Packet, SeqNum1} = recv_packet(TcpModule, Socket, SeqNum),
-   374..|      fetch_column_definitions(TcpModule, Socket, SeqNum1, NumLeft - 1,
+   377..|      {ok, Packet, SeqNum1} = recv_packet(TcpModule, Socket, SeqNum),
+   377..|      fetch_column_definitions(TcpModule, Socket, SeqNum1, NumLeft - 1,
         |                               [Packet | Acc]);
         |  fetch_column_definitions(_TcpModule, _Socket, SeqNum, 0, Acc) -&gt;
-   317..|      {ok, lists:reverse(Acc), SeqNum}.
+   320..|      {ok, lists:reverse(Acc), SeqNum}.
         |  
         |  %% @doc Fetches rows in a result set. There is a packet per row. The row packets
         |  %% are not decoded. This function can be used for both the binary and the text
@@ -398,25 +398,25 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |      when Acc :: [binary()],
         |           Rows :: [binary()].
         |  fetch_resultset_rows(TcpModule, Socket, SeqNum, Acc) -&gt;
-   434..|      {ok, Packet, SeqNum1} = recv_packet(TcpModule, Socket, SeqNum),
-   434..|      case Packet of
+   440..|      {ok, Packet, SeqNum1} = recv_packet(TcpModule, Socket, SeqNum),
+   440..|      case Packet of
         |          ?error_pattern -&gt;
      1..|              parse_error_packet(Packet);
         |          ?eof_pattern -&gt;
-   218..|              {ok, lists:reverse(Acc), SeqNum1};
+   221..|              {ok, lists:reverse(Acc), SeqNum1};
         |          Row -&gt;
-   215..|              fetch_resultset_rows(TcpModule, Socket, SeqNum1, [Row | Acc])
+   218..|              fetch_resultset_rows(TcpModule, Socket, SeqNum1, [Row | Acc])
         |      end.
         |  
         |  %% Parses a packet containing a column definition (part of a result set)
         |  parse_column_definition(Data) -&gt;
-   245..|      {&lt;&lt;"def"&gt;&gt;, Rest1} = lenenc_str(Data),   %% catalog (always "def")
-   245..|      {_Schema, Rest2} = lenenc_str(Rest1),    %% schema-name 
-   245..|      {_Table, Rest3} = lenenc_str(Rest2),     %% virtual table-name 
-   245..|      {_OrgTable, Rest4} = lenenc_str(Rest3),  %% physical table-name 
-   245..|      {Name, Rest5} = lenenc_str(Rest4),       %% virtual column name
-   245..|      {_OrgName, Rest6} = lenenc_str(Rest5),   %% physical column name
-   245..|      {16#0c, Rest7} = lenenc_int(Rest6),      %% length of the following fields
+   248..|      {&lt;&lt;"def"&gt;&gt;, Rest1} = lenenc_str(Data),   %% catalog (always "def")
+   248..|      {_Schema, Rest2} = lenenc_str(Rest1),    %% schema-name 
+   248..|      {_Table, Rest3} = lenenc_str(Rest2),     %% virtual table-name 
+   248..|      {_OrgTable, Rest4} = lenenc_str(Rest3),  %% physical table-name 
+   248..|      {Name, Rest5} = lenenc_str(Rest4),       %% virtual column name
+   248..|      {_OrgName, Rest6} = lenenc_str(Rest5),   %% physical column name
+   248..|      {16#0c, Rest7} = lenenc_int(Rest6),      %% length of the following fields
         |                                               %% (always 0x0c)
         |      &lt;&lt;Charset:16/little,        %% column character set
         |        Length:32/little,         %% maximum length of the field
@@ -425,12 +425,12 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |        Decimals:8,               %% max shown decimal digits:
         |        0,  %% "filler"           %%   - 0x00 for integers and static strings
         |        0,                        %%   - 0x1f for dynamic strings, double, float
-   245..|        Rest8/binary&gt;&gt; = Rest7,   %%   - 0x00 to 0x51 for decimals
+   248..|        Rest8/binary&gt;&gt; = Rest7,   %%   - 0x00 to 0x51 for decimals
         |      %% Here, if command was COM_FIELD_LIST {
         |      %%   default values: lenenc_str
         |      %% }
-   245..|      &lt;&lt;&gt;&gt; = Rest8,
-   245..|      #col{name = Name, type = Type, charset = Charset, length = Length,
+   248..|      &lt;&lt;&gt;&gt; = Rest8,
+   248..|      #col{name = Name, type = Type, charset = Charset, length = Length,
         |           decimals = Decimals, flags = Flags}.
         |  
         |  %% -- text protocol --
@@ -439,29 +439,29 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |                        ColumnDefinitions :: [#col{}],
         |                        Data :: binary()) -&gt; [term()].
         |  decode_text_row(_NumColumns, ColumnDefs, Data) -&gt;
-   116..|      decode_text_row_acc(ColumnDefs, Data, []).
+   119..|      decode_text_row_acc(ColumnDefs, Data, []).
         |  
         |  %% parses Data using ColDefs and builds the values Acc.
         |  decode_text_row_acc([ColDef | ColDefs], Data, Acc) -&gt;
-   133..|      case Data of
+   136..|      case Data of
         |          &lt;&lt;16#fb, Rest/binary&gt;&gt; -&gt;
         |              %% NULL
      1..|              decode_text_row_acc(ColDefs, Rest, [null | Acc]);
         |          _ -&gt;
         |              %% Every thing except NULL
-   132..|              {Text, Rest} = lenenc_str(Data),
-   132..|              Term = decode_text(ColDef, Text),
-   132..|              decode_text_row_acc(ColDefs, Rest, [Term | Acc])
+   135..|              {Text, Rest} = lenenc_str(Data),
+   135..|              Term = decode_text(ColDef, Text),
+   135..|              decode_text_row_acc(ColDefs, Rest, [Term | Acc])
         |      end;
         |  decode_text_row_acc([], &lt;&lt;&gt;&gt;, Acc) -&gt;
-   116..|      lists:reverse(Acc).
+   119..|      lists:reverse(Acc).
         |  
         |  %% @doc When receiving data in the text protocol, we get everything as binaries
         |  %% (except NULL). This function is used to parse these string values.
         |  decode_text(#col{type = T}, Text)
         |    when T == ?TYPE_TINY; T == ?TYPE_SHORT; T == ?TYPE_LONG; T == ?TYPE_LONGLONG;
         |         T == ?TYPE_INT24; T == ?TYPE_YEAR -&gt;
-    45..|      binary_to_integer(Text);
+    48..|      binary_to_integer(Text);
         |  decode_text(#col{type = T}, Text)
         |    when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
         |         T == ?TYPE_ENUM; T == ?TYPE_SET; T == ?TYPE_LONG_BLOB;
@@ -849,34 +849,34 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |  -spec send_packet(atom(), term(), Data :: binary(), SeqNum :: integer()) -&gt;
         |      {ok, NextSeqNum :: integer()}.
         |  send_packet(TcpModule, Socket, Data, SeqNum) -&gt;
-   751..|      {WithHeaders, SeqNum1} = add_packet_headers(Data, SeqNum),
-   751..|      ok = TcpModule:send(Socket, WithHeaders),
-   750..|      {ok, SeqNum1}.
+   753..|      {WithHeaders, SeqNum1} = add_packet_headers(Data, SeqNum),
+   753..|      ok = TcpModule:send(Socket, WithHeaders),
+   752..|      {ok, SeqNum1}.
         |  
         |  %% @see recv_packet/4
         |  recv_packet(TcpModule, Socket, SeqNum) -&gt;
-  1264..|      recv_packet(TcpModule, Socket, infinity, SeqNum).
+  1276..|      recv_packet(TcpModule, Socket, infinity, SeqNum).
         |  
         |  %% @doc Receives data by calling TcpModule:recv/2 and removes the packet
         |  %% headers. Returns the packet contents and the next packet sequence number.
         |  -spec recv_packet(atom(), term(), timeout(), integer() | any) -&gt;
         |      {ok, Data :: binary(), NextSeqNum :: integer()} | {error, term()}.
         |  recv_packet(TcpModule, Socket, Timeout, SeqNum) -&gt;
-  1821..|      recv_packet(TcpModule, Socket, Timeout, SeqNum, &lt;&lt;&gt;&gt;).
+  1836..|      recv_packet(TcpModule, Socket, Timeout, SeqNum, &lt;&lt;&gt;&gt;).
         |  
         |  %% @doc Accumulating helper for recv_packet/4
         |  -spec recv_packet(atom(), term(), timeout(), integer() | any, binary()) -&gt;
         |      {ok, Data :: binary(), NextSeqNum :: integer()} | {error, term()}.
         |  recv_packet(TcpModule, Socket, Timeout, ExpectSeqNum, Acc) -&gt;
-  1821..|      case TcpModule:recv(Socket, 4, Timeout) of
+  1836..|      case TcpModule:recv(Socket, 4, Timeout) of
         |          {ok, Header} -&gt;
-  1806..|              {Size, SeqNum, More} = parse_packet_header(Header),
-  1806..|              true = SeqNum == ExpectSeqNum orelse ExpectSeqNum == any,
-  1806..|              {ok, Body} = TcpModule:recv(Socket, Size),
-  1806..|              Acc1 = &lt;&lt;Acc/binary, Body/binary&gt;&gt;,
-  1806..|              NextSeqNum = (SeqNum + 1) band 16#ff,
-  1806..|              case More of
-  1806..|                  false -&gt; {ok, Acc1, NextSeqNum};
+  1821..|              {Size, SeqNum, More} = parse_packet_header(Header),
+  1821..|              true = SeqNum == ExpectSeqNum orelse ExpectSeqNum == any,
+  1821..|              {ok, Body} = TcpModule:recv(Socket, Size),
+  1821..|              Acc1 = &lt;&lt;Acc/binary, Body/binary&gt;&gt;,
+  1821..|              NextSeqNum = (SeqNum + 1) band 16#ff,
+  1821..|              case More of
+  1821..|                  false -&gt; {ok, Acc1, NextSeqNum};
 <font color=red>     0..|                  true  -&gt; recv_packet(TcpModule, Socket, Timeout, NextSeqNum,</font>
         |                                       Acc1)
         |              end;
@@ -899,19 +899,19 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |       SeqNum :: integer(),
         |       MorePacketsExist :: boolean()}.
         |  parse_packet_header(&lt;&lt;PacketLength:24/little-integer, SeqNum:8/integer&gt;&gt;) -&gt;
-  1807..|      {PacketLength, SeqNum, PacketLength == 16#ffffff}.
+  1822..|      {PacketLength, SeqNum, PacketLength == 16#ffffff}.
         |  
         |  %% @doc Splits a packet body into chunks and wraps them in headers. The
         |  %% resulting list is ready to sent to the socket.
         |  -spec add_packet_headers(PacketBody :: iodata(), SeqNum :: integer()) -&gt;
         |      {PacketWithHeaders :: iodata(), NextSeqNum :: integer()}.
         |  add_packet_headers(PacketBody, SeqNum) -&gt;
-   752..|      Bin = iolist_to_binary(PacketBody),
-   752..|      Size = size(Bin),
-   752..|      SeqNum1 = (SeqNum + 1) band 16#ff,
+   754..|      Bin = iolist_to_binary(PacketBody),
+   754..|      Size = size(Bin),
+   754..|      SeqNum1 = (SeqNum + 1) band 16#ff,
         |      %% Todo: implement the case when Size &gt;= 16#ffffff.
-   752..|      if Size &lt; 16#ffffff -&gt;
-   752..|          {[&lt;&lt;Size:24/little, SeqNum:8&gt;&gt;, Bin], SeqNum1}
+   754..|      if Size &lt; 16#ffffff -&gt;
+   754..|          {[&lt;&lt;Size:24/little, SeqNum:8&gt;&gt;, Bin], SeqNum1}
         |      end.
         |  
         |  -spec parse_ok_packet(binary()) -&gt; #ok{}.
@@ -953,7 +953,7 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |  parse_eof_packet(&lt;&lt;?EOF:8, NumWarnings:16/little, StatusFlags:16/little&gt;&gt;) -&gt;
         |      %% EOF packet, 4.1 protocol.
         |      %% (Older protocol: &lt;&lt;?EOF:8&gt;&gt;)
-   220..|      #eof{status = StatusFlags, warning_count = NumWarnings}.
+   223..|      #eof{status = StatusFlags, warning_count = NumWarnings}.
         |  
         |  -spec hash_password(Password :: iodata(), Salt :: binary()) -&gt; Hash :: binary().
         |  hash_password(Password, Salt) -&gt;
@@ -979,7 +979,7 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |  
         |  %% lenenc_int/1 decodes length-encoded-integer values
         |  -spec lenenc_int(Input :: binary()) -&gt; {Value :: integer(), Rest :: binary()}.
-  2789..|  lenenc_int(&lt;&lt;Value:8, Rest/bits&gt;&gt;) when Value &lt; 251 -&gt; {Value, Rest};
+  2816..|  lenenc_int(&lt;&lt;Value:8, Rest/bits&gt;&gt;) when Value &lt; 251 -&gt; {Value, Rest};
      1..|  lenenc_int(&lt;&lt;16#fc:8, Value:16/little, Rest/binary&gt;&gt;) -&gt; {Value, Rest};
      1..|  lenenc_int(&lt;&lt;16#fd:8, Value:24/little, Rest/binary&gt;&gt;) -&gt; {Value, Rest};
      1..|  lenenc_int(&lt;&lt;16#fe:8, Value:64/little, Rest/binary&gt;&gt;) -&gt; {Value, Rest}.
@@ -997,9 +997,9 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |  %% lenenc_str/1 decodes length-encoded-string values
         |  -spec lenenc_str(Input :: binary()) -&gt; {String :: binary(), Rest :: binary()}.
         |  lenenc_str(Bin) -&gt;
-  1628..|      {Length, Rest} = lenenc_int(Bin),
-  1628..|      &lt;&lt;String:Length/binary, Rest1/binary&gt;&gt; = Rest,
-  1628..|      {String, Rest1}.
+  1649..|      {Length, Rest} = lenenc_int(Bin),
+  1649..|      &lt;&lt;String:Length/binary, Rest1/binary&gt;&gt; = Rest,
+  1649..|      {String, Rest1}.
         |  
         |  %% nts/1 decodes a nul-terminated string
         |  -spec nulterm_str(Input :: binary()) -&gt; {String :: binary(), Rest :: binary()}.

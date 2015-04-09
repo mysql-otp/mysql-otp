@@ -5,7 +5,7 @@
 <title>/home/viktor/mysql-otp/.eunit/transaction_tests.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/mysql-otp/.eunit/transaction_tests.erl by COVER 2015-04-09 at 18:12:52
+File generated from /home/viktor/mysql-otp/.eunit/transaction_tests.erl by COVER 2015-04-09 at 18:38:57
 
 ****************************************************************************
 
@@ -156,7 +156,7 @@ File generated from /home/viktor/mysql-otp/.eunit/transaction_tests.erl by COVER
         |       end}.
         |  
         |  flush_inbox() -&gt;
-     5..|      receive _ -&gt; flush_inbox() after 0 -&gt; ok end.
+     9..|      receive _ -&gt; flush_inbox() after 0 -&gt; ok end.
         |  
         |  deadlock_plain_queries({Conn1, Conn2}) -&gt;
      1..|      {ok, _, [[2]]} = mysql:query(Conn1, "SELECT COUNT(*) FROM foo"),
@@ -166,17 +166,17 @@ File generated from /home/viktor/mysql-otp/.eunit/transaction_tests.erl by COVER
         |      %% Spawn worker 2 to lock rows; first in table foo, then in bar.
      1..|      Worker2 = spawn_link(fun () -&gt;
      1..|          {atomic, ok} = mysql:transaction(Conn2, fun () -&gt;
-     1..|              MainPid ! start,
+     2..|              MainPid ! start,
         |              %?debugMsg("Worker 2: Starting. First get a lock on row 2."),
-     1..|              ok = mysql:query(Conn2, "UPDATE foo SET v = 2 WHERE k = 2"),
+     2..|              ok = mysql:query(Conn2, "UPDATE foo SET v = 2 WHERE k = 2"),
         |              %?debugMsg("Worker 2: Got lock on foo. Now wait for signal from 1."),
         |              %% Sync. Send 'go' to worker 1 multiple times in case it restarts.
-     1..|              MainPid ! go, MainPid ! go, MainPid ! go,
-     1..|              receive go -&gt; ok after 10000 -&gt; throw(too_long) end,
+     2..|              MainPid ! go, MainPid ! go, MainPid ! go,
+     2..|              receive go -&gt; ok after 10000 -&gt; throw(too_long) end,
         |              %?debugMsg("Worker 2: Got signal from 1. Now get a lock on row 1."),
-     1..|              {atomic, ok} = mysql:transaction(Conn2, fun () -&gt;
+     2..|              {atomic, ok} = mysql:transaction(Conn2, fun () -&gt;
         |                  %% Nested transaction, just to make sure we can handle nested.
-     1..|                  ok = mysql:query(Conn2, "UPDATE foo SET v = 2 WHERE k = 1")
+     2..|                  ok = mysql:query(Conn2, "UPDATE foo SET v = 2 WHERE k = 1")
         |              end),
         |              %?debugMsg("Worker 2: Got both locks and is done."),
      1..|              ok
@@ -186,17 +186,17 @@ File generated from /home/viktor/mysql-otp/.eunit/transaction_tests.erl by COVER
         |  
         |      %% Do worker 1's job and lock the rows in the opposite order.
      1..|      {atomic, ok} = mysql:transaction(Conn1, fun () -&gt;
-     2..|          MainPid ! start,
+     1..|          MainPid ! start,
         |          %?debugMsg("Worker 1: Starting. First get a lock on row 1."),
-     2..|          ok = mysql:query(Conn1, "UPDATE foo SET v = 1 WHERE k = 1"),
+     1..|          ok = mysql:query(Conn1, "UPDATE foo SET v = 1 WHERE k = 1"),
         |          %?debugMsg("Worker 1: Got lock on bar. Now wait for signal from 2."),
         |          %% Sync. Send 'go' to worker 2 multiple times in case it restarts.
-     2..|          Worker2 ! go, Worker2 ! go, Worker2 ! go,
-     2..|          receive go -&gt; ok after 10000 -&gt; throw(too_long) end,
+     1..|          Worker2 ! go, Worker2 ! go, Worker2 ! go,
+     1..|          receive go -&gt; ok after 10000 -&gt; throw(too_long) end,
         |          %?debugMsg("Worker 1: Got signal from 2. Now get lock on row 2."),
-     2..|          {atomic, ok} = mysql:transaction(Conn1, fun () -&gt;
+     1..|          {atomic, ok} = mysql:transaction(Conn1, fun () -&gt;
         |              %% Nested transaction, just to make sure we can handle nested.
-     2..|              ok = mysql:query(Conn1, "UPDATE foo SET v = 1 WHERE k = 2")
+     1..|              ok = mysql:query(Conn1, "UPDATE foo SET v = 1 WHERE k = 2")
         |          end),
         |          %?debugMsg("Worker 1: Got both locks and is done."),
      1..|          ok
