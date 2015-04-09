@@ -21,8 +21,20 @@
   gen_server is locally registered.
 <h2><a name="types">Data Types</a></h2>
 
+<h3 class="typedecl"><a name="type-column_names">column_names()</a></h3>
+<p><tt>column_names() = [binary()]</tt></p>
+
+
 <h3 class="typedecl"><a name="type-connection">connection()</a></h3>
 <p><tt>connection() = atom() | {Name::atom(), Node::atom()} | {global, GlobalName::term()} | {via, Module::atom(), ViaName::term()} | pid()</tt></p>
+
+
+<h3 class="typedecl"><a name="type-query_result">query_result()</a></h3>
+<p><tt>query_result() = ok | {ok, <a href="#type-column_names">column_names()</a>, <a href="#type-rows">rows()</a>} | {ok, [{<a href="#type-column_names">column_names()</a>, <a href="#type-rows">rows()</a>}, ...]} | {error, <a href="#type-server_reason">server_reason()</a>}</tt></p>
+
+
+<h3 class="typedecl"><a name="type-rows">rows()</a></h3>
+<p><tt>rows() = [[term()]]</tt></p>
 
 
 <h3 class="typedecl"><a name="type-server_reason">server_reason()</a></h3>
@@ -79,20 +91,20 @@ strings and binaries are escaped. Otherwise only single quotes are escaped.</p>
   Note that the preferred way of sending values is by prepared statements or
   parametrized queries with placeholders.
  </p>
-<p><b>See also:</b> <a href="#execute-30">execute/30</a>, <a href="#query-3">query/3</a>.</p>
+<p><b>See also:</b> <a href="#execute-3">execute/3</a>, <a href="#query-3">query/3</a>.</p>
 
 <h3 class="function"><a name="execute-3">execute/3</a></h3>
 <div class="spec">
-<p><tt>execute(Conn, StatementRef, Params) -&gt; ok | {ok, ColumnNames, Rows} | {error, Reason}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = atom() | integer()</tt></li><li><tt>Params = [term()]</tt></li><li><tt>ColumnNames = [binary()]</tt></li><li><tt>Rows = [[term()]]</tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a> | not_prepared</tt></li></ul></p>
+<p><tt>execute(Conn, StatementRef, Params) -&gt; Result | {error, not_prepared}</tt>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = atom() | integer()</tt></li><li><tt>Params = [term()]</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
 </div><p>Executes a prepared statement with the default query timeout as given
   to start_link/1.</p>
 <p><b>See also:</b> <a href="#prepare-2">prepare/2</a>, <a href="#prepare-3">prepare/3</a>.</p>
 
 <h3 class="function"><a name="execute-4">execute/4</a></h3>
 <div class="spec">
-<p><tt>execute(Conn, StatementRef, Params, Timeout) -&gt; ok | {ok, ColumnNames, Rows} | {error, Reason}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = atom() | integer()</tt></li><li><tt>Params = [term()]</tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>ColumnNames = [binary()]</tt></li><li><tt>Rows = [[term()]]</tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a> | not_prepared</tt></li></ul></p>
+<p><tt>execute(Conn, StatementRef, Params, Timeout) -&gt; Result | {error, not_prepared}</tt>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = atom() | integer()</tt></li><li><tt>Params = [term()]</tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
 </div><p>Executes a prepared statement.</p>
 <p><b>See also:</b> <a href="#prepare-2">prepare/2</a>, <a href="#prepare-3">prepare/3</a>.</p>
 
@@ -127,35 +139,49 @@ strings and binaries are escaped. Otherwise only single quotes are escaped.</p>
 
 <h3 class="function"><a name="query-2">query/2</a></h3>
 <div class="spec">
-<p><tt>query(Conn, Query) -&gt; ok | {ok, ColumnNames, Rows} | {error, Reason}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>ColumnNames = [binary()]</tt></li><li><tt>Rows = [[term()]]</tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a></tt></li></ul></p>
-</div><p>Executes a query with the query timeout as given to start_link/1.</p>
+<p><tt>query(Conn, Query) -&gt; Result</tt>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+</div><p><p>Executes a query with the query timeout as given to start_link/1.</p>
+ 
+  <p>It is possible to execute multiple semicolon-separated queries.</p>
+ 
+  <p>Results are returned in the form <code>{ok, ColumnNames, Rows}</code> if there is one
+  result set. If there are more than one result sets, they are returned in the
+  form <code>{ok, [{ColumnNames, Rows}, ...]}</code>.</p>
+ 
+  For queries that don't return any rows (INSERT, UPDATE, etc.) only the atom
+  <code>ok</code> is returned.</p>
 
 <h3 class="function"><a name="query-3">query/3</a></h3>
 <div class="spec">
-<p><tt>query(Conn, Query, Params::Params | Timeout) -&gt; ok | {ok, ColumnNames, Rows} | {error, Reason}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>Params = [term()]</tt></li><li><tt>ColumnNames = [binary()]</tt></li><li><tt>Rows = [[term()]]</tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a></tt></li></ul></p>
+<p><tt>query(Conn, Query, Params::Params | Timeout) -&gt; Result</tt>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>Params = [term()]</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
 </div><p><p>Depending on the 3rd argument this function does different things.</p>
  
   <p>If the 3rd argument is a list, it executes a parameterized query. This is  
 equivallent to query/4 with the query timeout as given to start_link/1.</p>
  
-  If the 3rd argument is a timeout, it executes a plain query with this
-  timeout.</p>
+  <p>If the 3rd argument is a timeout, it executes a plain query with this  
+timeout.</p>
+ 
+  The return value is the same as for query/2.
+ </p>
 <p><b>See also:</b> <a href="#query-2">query/2</a>, <a href="#query-4">query/4</a>.</p>
 
 <h3 class="function"><a name="query-4">query/4</a></h3>
 <div class="spec">
-<p><tt>query(Conn, Query, Params, Timeout) -&gt; ok | {ok, ColumnNames, Rows} | {error, Reason}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>Params = [term()]</tt></li><li><tt>ColumnNames = [binary()]</tt></li><li><tt>Rows = [[term()]]</tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a></tt></li></ul></p>
+<p><tt>query(Conn, Query, Params, Timeout) -&gt; Result</tt>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>Params = [term()]</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
 </div><p><p>Executes a parameterized query with a timeout.</p>
  
   <p>A prepared statement is created, executed and then cached for a certain  
 time. If the same query is executed again when it is already cached, it does  
 not need to be prepared again.</p>
  
-  The minimum time the prepared statement is cached can be specified using the
+  <p>The minimum time the prepared statement is cached can be specified using the
   option <code>{query_cache_time, Milliseconds}</code> to start_link/1.</p>
+ 
+  The return value is the same as for query/2.</p>
 
 <h3 class="function"><a name="start_link-1">start_link/1</a></h3>
 <div class="spec">
@@ -284,6 +310,6 @@ executed as a plain query within a managed transaction. (Don't do that!)</p>
 <hr>
 
 <div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
-<p><i>Generated by EDoc, Jan 15 2015, 11:50:37.</i></p>
+<p><i>Generated by EDoc, Apr 9 2015, 18:12:35.</i></p>
 </body>
 </html>

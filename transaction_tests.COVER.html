@@ -2,10 +2,10 @@
 <html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-<title>.eunit/transaction_tests.COVER.html</title>
+<title>/home/viktor/mysql-otp/.eunit/transaction_tests.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/mysql-otp/.eunit/transaction_tests.erl by COVER 2015-01-15 at 11:50:46
+File generated from /home/viktor/mysql-otp/.eunit/transaction_tests.erl by COVER 2015-04-09 at 18:12:52
 
 ****************************************************************************
 
@@ -156,7 +156,7 @@ File generated from /home/viktor/mysql-otp/.eunit/transaction_tests.erl by COVER
         |       end}.
         |  
         |  flush_inbox() -&gt;
-     9..|      receive _ -&gt; flush_inbox() after 0 -&gt; ok end.
+     5..|      receive _ -&gt; flush_inbox() after 0 -&gt; ok end.
         |  
         |  deadlock_plain_queries({Conn1, Conn2}) -&gt;
      1..|      {ok, _, [[2]]} = mysql:query(Conn1, "SELECT COUNT(*) FROM foo"),
@@ -226,14 +226,14 @@ File generated from /home/viktor/mysql-otp/.eunit/transaction_tests.erl by COVER
         |      %% Spawn worker 2 to lock rows; first in table foo, then in bar.
      1..|      Worker2 = spawn_link(fun () -&gt;
      1..|          {atomic, ok} = mysql:transaction(Conn2, fun () -&gt;
-     2..|              MainPid ! start,
-     2..|              ok = mysql:execute(Conn2, upd, [2, 2]),
+     1..|              MainPid ! start,
+     1..|              ok = mysql:execute(Conn2, upd, [2, 2]),
         |              %% Sync. Send 'go' to worker 1 multiple times in case it restarts.
-     2..|              MainPid ! go, MainPid ! go, MainPid ! go,
-     2..|              receive go -&gt; ok end,
-     2..|              {atomic, ok} = mysql:transaction(Conn2, fun () -&gt;
+     1..|              MainPid ! go, MainPid ! go, MainPid ! go,
+     1..|              receive go -&gt; ok end,
+     1..|              {atomic, ok} = mysql:transaction(Conn2, fun () -&gt;
         |                  %% Nested transaction, just to make sure we can handle nested.
-     2..|                  ok = mysql:execute(Conn2, upd, [2, 1])
+     1..|                  ok = mysql:execute(Conn2, upd, [2, 1])
         |              end),
      1..|              ok
         |          end, 2),
@@ -242,14 +242,14 @@ File generated from /home/viktor/mysql-otp/.eunit/transaction_tests.erl by COVER
         |  
         |      %% Do worker 1's job and lock the rows in the opposite order.
      1..|      {atomic, ok} = mysql:transaction(Conn1, fun () -&gt;
-     1..|          MainPid ! start,
-     1..|          ok = mysql:execute(Conn1, upd, [1, 1]),
+     2..|          MainPid ! start,
+     2..|          ok = mysql:execute(Conn1, upd, [1, 1]),
         |          %% Sync. Send 'go' to worker 2 multiple times in case it restarts.
-     1..|          Worker2 ! go, Worker2 ! go, Worker2 ! go,
-     1..|          receive go -&gt; ok end,
-     1..|          {atomic, ok} = mysql:transaction(Conn1, fun () -&gt;
+     2..|          Worker2 ! go, Worker2 ! go, Worker2 ! go,
+     2..|          receive go -&gt; ok end,
+     2..|          {atomic, ok} = mysql:transaction(Conn1, fun () -&gt;
         |              %% Nested transaction, just to make sure we can handle nested.
-     1..|              ok = mysql:execute(Conn1, upd, [1, 2])
+     2..|              ok = mysql:execute(Conn1, upd, [1, 2])
         |          end),
      1..|          ok
         |      end, 2),
