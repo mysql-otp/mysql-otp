@@ -199,8 +199,10 @@ parse_handshake(<<10, Rest/binary>>) ->
     %% "Due to Bug#59453 the auth-plugin-name is missing the terminating
     %% NUL-char in versions prior to 5.5.10 and 5.6.2."
     %% Strip the final NUL byte if any.
-    AuthPluginName1 = case binary:last(AuthPluginName) of
-        0 -> binary:part(AuthPluginName, 0, byte_size(AuthPluginName) - 1);
+    %% This may also be <<>> in older versions.
+    L = byte_size(AuthPluginName) - 1,
+    AuthPluginName1 = case AuthPluginName of
+        <<AuthPluginNameTrimmed:L/binary, 0>> -> AuthPluginNameTrimmed;
         _ -> AuthPluginName
     end,
     #handshake{server_version = server_version_to_list(ServerVersion),
