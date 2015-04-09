@@ -53,7 +53,8 @@ successful_connect_test() ->
     %% A connection with a registered name and execute initial queries and
     %% create prepared statements.
     Options = [{name, {local, tardis}}, {user, ?user}, {password, ?password},
-               {queries, ["SET @foo = 'bar'"]},
+               {queries, ["SET @foo = 'bar'", "SELECT 1",
+                          "SELECT 1; SELECT 2"]},
                {prepare, [{foo, "SELECT @foo"}]}],
     {ok, Pid} = mysql:start_link(Options),
     %% Check that queries and prepare has been done.
