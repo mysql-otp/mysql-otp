@@ -19,7 +19,10 @@ SHELL_PATH = -pa ebin
 
 include erlang.mk
 
-.PHONY: gh-pages eunit eunit-report
+.PHONY: gh-pages eunit eunit-report CHANGELOG.md
+
+CHANGELOG.md:
+	./changelog.sh > $@
 
 eunit:
 	@mkdir -p .eunit
