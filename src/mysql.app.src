@@ -17,8 +17,8 @@
 %% along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 {application, mysql, [
-    {description, "MySQL/OTP - Erlang MySQL client"},
-    {vsn, "0.9.0"},
+    {description, "MySQL/OTP - Erlang MySQL client driver"},
+    {vsn, "1.0.0"},
     {modules, []},
     {applications, []}
 ]}.

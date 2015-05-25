@@ -75,13 +75,13 @@ Usage as a dependency
 Using *erlang.mk*:
 
     DEPS = mysql
-    dep_mysql = git https://github.com/mysql-otp/mysql-otp 0.9.0
+    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.0.0
 
 Using *rebar*:
 
     {deps, [
         {mysql, ".*", {git, "https://github.com/mysql-otp/mysql-otp",
-                       {tag, "0.9.0"}}}
+                       {tag, "1.0.0"}}}
     ]}.
 
 Tests

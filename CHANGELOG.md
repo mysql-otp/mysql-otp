@@ -1,6 +1,10 @@
 Change log
 ==========
 
+* Simplify parsing server version [2015-05-25 16:11:15 +0200]
+* Use erlang.mk for tests and coverage report [2015-05-25 15:13:29 +0200]
+* Update erlang.mk [2015-05-25 15:10:56 +0200]
+* Add CHANGELOG.md and a make target to build it. [2015-04-10 14:20:01 +0200]
 * Add test case for initial queries returning results that are discarded. [2015-04-09 18:35:04 +0200]
 
 0.9.0
