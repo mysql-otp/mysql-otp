@@ -2,10 +2,10 @@
 <html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-<title>/home/viktor/mysql-otp/.eunit/mysql.COVER.html</title>
+<title>cover/mysql.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/mysql-otp/.eunit/mysql.erl by COVER 2015-04-09 at 18:38:57
+File generated from /home/viktor/mysql-otp/ebin/../src/mysql.erl by COVER 2015-05-25 at 16:25:14
 
 ****************************************************************************
 
@@ -723,17 +723,17 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql.erl by COVER 2015-04-09 
         |  handle_info(query_cache, State = #state{query_cache = Cache,
         |                                          query_cache_time = CacheTime}) -&gt;
         |      %% Evict expired queries/statements in the cache used by query/3.
-     1..|      {Evicted, Cache1} = mysql_cache:evict_older_than(Cache, CacheTime),
+     2..|      {Evicted, Cache1} = mysql_cache:evict_older_than(Cache, CacheTime),
         |      %% Unprepare the evicted statements
-     1..|      #state{socket = Socket} = State,
-     1..|      lists:foreach(fun ({_Query, Stmt}) -&gt;
-     1..|                        mysql_protocol:unprepare(Stmt, gen_tcp, Socket)
+     2..|      #state{socket = Socket} = State,
+     2..|      lists:foreach(fun ({_Query, Stmt}) -&gt;
+     2..|                        mysql_protocol:unprepare(Stmt, gen_tcp, Socket)
         |                    end,
         |                    Evicted),
         |      %% If nonempty, schedule eviction again.
-     1..|      mysql_cache:size(Cache1) &gt; 0 andalso
+     2..|      mysql_cache:size(Cache1) &gt; 0 andalso
 <font color=red>     0..|          erlang:send_after(CacheTime, self(), query_cache),</font>
-     1..|      {noreply, State#state{query_cache = Cache1}};
+     2..|      {noreply, State#state{query_cache = Cache1}};
         |  handle_info(ping, State) -&gt;
      4..|      Ok = mysql_protocol:ping(gen_tcp, State#state.socket),
      3..|      {noreply, update_state(Ok, State)};

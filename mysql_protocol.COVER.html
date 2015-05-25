@@ -2,10 +2,10 @@
 <html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-<title>/home/viktor/mysql-otp/.eunit/mysql_protocol.COVER.html</title>
+<title>cover/mysql_protocol.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 2015-04-09 at 18:38:57
+File generated from /home/viktor/mysql-otp/ebin/../src/mysql_protocol.erl by COVER 2015-05-25 at 16:25:14
 
 ****************************************************************************
 
@@ -139,9 +139,9 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |  %% @doc Deallocates a prepared statement.
         |  -spec unprepare(#prepared{}, atom(), term()) -&gt; ok.
         |  unprepare(#prepared{statement_id = Id}, TcpModule, Socket) -&gt;
-    78..|      {ok, _SeqNum} = send_packet(TcpModule, Socket,
+    79..|      {ok, _SeqNum} = send_packet(TcpModule, Socket,
         |                                  &lt;&lt;?COM_STMT_CLOSE, Id:32/little&gt;&gt;, 0),
-    78..|      ok.
+    79..|      ok.
         |  
         |  %% @doc Executes a prepared statement.
         |  -spec execute(#prepared{}, [term()], atom(), term(), timeout()) -&gt;
@@ -229,10 +229,10 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |  %% @doc Converts a version on the form `&lt;&lt;"5.6.21"&gt;' to a list `[5, 6, 21]'.
         |  -spec server_version_to_list(binary()) -&gt; [integer()].
         |  server_version_to_list(ServerVersion) -&gt;
-        |      %% Remove stuff after dash for e.g. "5.5.40-0ubuntu0.12.04.1-log"
-    14..|      {match, [ServerVersion1]} = re:run(ServerVersion, "\\d+\\.\\d+\\.\\d+", [{capture,first,binary}]),
-    14..|      lists:map(fun binary_to_integer/1,
-        |                binary:split(ServerVersion1, &lt;&lt;"."&gt;&gt;, [global])).
+        |      %% This must work with e.g. "5.5.40-0ubuntu0.12.04.1-log" and "5.5.33a".
+    14..|      {match, Parts} = re:run(ServerVersion, &lt;&lt;"^(\\d+)\\.(\\d+)\\.(\\d+)"&gt;&gt;,
+        |                              [{capture, all_but_first, binary}]),
+    14..|      lists:map(fun binary_to_integer/1, Parts).
         |  
         |  %% @doc The response sent by the client to the server after receiving the
         |  %% initial handshake from the server
@@ -849,9 +849,9 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |  -spec send_packet(atom(), term(), Data :: binary(), SeqNum :: integer()) -&gt;
         |      {ok, NextSeqNum :: integer()}.
         |  send_packet(TcpModule, Socket, Data, SeqNum) -&gt;
-   753..|      {WithHeaders, SeqNum1} = add_packet_headers(Data, SeqNum),
-   753..|      ok = TcpModule:send(Socket, WithHeaders),
-   752..|      {ok, SeqNum1}.
+   754..|      {WithHeaders, SeqNum1} = add_packet_headers(Data, SeqNum),
+   754..|      ok = TcpModule:send(Socket, WithHeaders),
+   753..|      {ok, SeqNum1}.
         |  
         |  %% @see recv_packet/4
         |  recv_packet(TcpModule, Socket, SeqNum) -&gt;
@@ -906,12 +906,12 @@ File generated from /home/viktor/mysql-otp/.eunit/mysql_protocol.erl by COVER 20
         |  -spec add_packet_headers(PacketBody :: iodata(), SeqNum :: integer()) -&gt;
         |      {PacketWithHeaders :: iodata(), NextSeqNum :: integer()}.
         |  add_packet_headers(PacketBody, SeqNum) -&gt;
-   754..|      Bin = iolist_to_binary(PacketBody),
-   754..|      Size = size(Bin),
-   754..|      SeqNum1 = (SeqNum + 1) band 16#ff,
+   755..|      Bin = iolist_to_binary(PacketBody),
+   755..|      Size = size(Bin),
+   755..|      SeqNum1 = (SeqNum + 1) band 16#ff,
         |      %% Todo: implement the case when Size &gt;= 16#ffffff.
-   754..|      if Size &lt; 16#ffffff -&gt;
-   754..|          {[&lt;&lt;Size:24/little, SeqNum:8&gt;&gt;, Bin], SeqNum1}
+   755..|      if Size &lt; 16#ffffff -&gt;
+   755..|          {[&lt;&lt;Size:24/little, SeqNum:8&gt;&gt;, Bin], SeqNum1}
         |      end.
         |  
         |  -spec parse_ok_packet(binary()) -&gt; #ok{}.
