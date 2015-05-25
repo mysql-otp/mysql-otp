@@ -1,6 +1,10 @@
 Change log
 ==========
 
+
+1.0.0
+-----
+* Bump version to 1.0.0 [2015-05-25 16:24:28 +0200]
 * Simplify parsing server version [2015-05-25 16:11:15 +0200]
 * Use erlang.mk for tests and coverage report [2015-05-25 15:13:29 +0200]
 * Update erlang.mk [2015-05-25 15:10:56 +0200]
