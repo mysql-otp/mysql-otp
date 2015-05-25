@@ -3,7 +3,7 @@ services:
   - mysql
 before_script:
   - mysql -uroot -e "grant all privileges on otptest.* to otptest@localhost identified by 'otptest'"
-script: 'rebar eunit'
+script: 'make tests'
 otp_release:
   - 17.3
   - 17.0
