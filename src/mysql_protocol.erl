@@ -218,10 +218,10 @@ parse_handshake(<<Protocol:8, _/binary>>) when Protocol /= 10 ->
 %% @doc Converts a version on the form `<<"5.6.21">' to a list `[5, 6, 21]'.
 -spec server_version_to_list(binary()) -> [integer()].
 server_version_to_list(ServerVersion) ->
-    %% Remove stuff after dash for e.g. "5.5.40-0ubuntu0.12.04.1-log"
-    {match, [ServerVersion1]} = re:run(ServerVersion, "\\d+\\.\\d+\\.\\d+", [{capture,first,binary}]),
-    lists:map(fun binary_to_integer/1,
-              binary:split(ServerVersion1, <<".">>, [global])).
+    %% This must work with e.g. "5.5.40-0ubuntu0.12.04.1-log" and "5.5.33a".
+    {match, Parts} = re:run(ServerVersion, <<"^(\\d+)\\.(\\d+)\\.(\\d+)">>,
+                            [{capture, all_but_first, binary}]),
+    lists:map(fun binary_to_integer/1, Parts).
 
 %% @doc The response sent by the client to the server after receiving the
 %% initial handshake from the server
