@@ -1,3 +1,4 @@
+%% coding: utf-8
 %% @doc This test suite does not require an actual MySQL connection.
 -module(mysql_encode_tests).
 -include_lib("eunit/include/eunit.hrl").
