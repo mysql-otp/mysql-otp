@@ -14,7 +14,11 @@ encode_test() ->
          {3.14,    "3.14"},
          {"isn't didn't", "'isn''t didn''t'"}, %% Escape single quotes.
          {"\\n",   "'\\n'"},                   %% Don't escape backslash.
-         {[<<"asdf">>,"ščžć€"], <<"'asdf",197,161,196,141,197,190,196,135,226,130,172,"'">>},
+         %% Unicode codepoints gets encoded as UTF-8
+         {[<<"asdf">>, "ščžć€"],
+          <<"'asdf",197,161,196,141,197,190,196,135,226,130,172,"'">>},
+         %% Non-Unicode binary
+         {<<255, 0, 255, 0>>, <<"'", 255, 0, 255, 0, "'">>},
          %% BIT(N)
          {<<255, 2:3>>,   "b'11111111010'"},
          %% DATE

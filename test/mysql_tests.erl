@@ -253,11 +253,11 @@ text_protocol(Pid) ->
 binary_protocol(Pid) ->
     ok = mysql:query(Pid, ?create_table_t),
     %% The same queries as in the text protocol. Expect the same results.
-    {ok, Ins} = mysql:prepare(Pid, <<"INSERT INTO t (bl, f, d, dc, y, ti,"
+    {ok, Ins} = mysql:prepare(Pid, <<"INSERT INTO t (bl, tx, f, d, dc, y, ti,"
                                      " ts, da, c)"
-                                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)">>),
-
-    ok = mysql:execute(Pid, Ins, [<<"blob">>, 3.14, 3.14, 3.14,
+                                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)">>),
+    %% 16#161 is the codepoint for "s with caron"; <<197, 161>> in UTF-8.
+    ok = mysql:execute(Pid, Ins, [<<"blob">>, [16#161], 3.14, 3.14, 3.14,
                                   2014, {0, {0, 22, 11}}, 
                                   {{2014, 11, 03}, {0, 22, 24}},
                                   {2014, 11, 03}, null]),
@@ -267,7 +267,7 @@ binary_protocol(Pid) ->
     ?assertEqual([<<"id">>, <<"bl">>, <<"tx">>, <<"f">>, <<"d">>, <<"dc">>,
                   <<"y">>, <<"ti">>,
                   <<"ts">>, <<"da">>, <<"c">>], Columns),
-    ?assertEqual([[1, <<"blob">>, <<>>, 3.14, 3.14, 3.14,
+    ?assertEqual([[1, <<"blob">>, <<197, 161>>, 3.14, 3.14, 3.14,
                    2014, {0, {0, 22, 11}},
                    {{2014, 11, 03}, {00, 22, 24}}, {2014, 11, 03}, null]],
                  Rows),

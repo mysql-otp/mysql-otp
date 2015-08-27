@@ -47,8 +47,13 @@ For the reference manual see the <a href="mysql.html">mysql</a> module.
     </tr>
     <tr>
       <td>VARCHAR, TEXT, etc.</td>
-      <td>`iodata()' [<a href="#vn1">1</a>]</td>
+      <td>`unicode:chardata()' [<a href="#vn1">1</a>]</td>
       <td>`<<"foo">>', `"bar"'</td>
+    </tr>
+    <tr>
+      <td>VARBINARY, BLOB, etc.</td>
+      <td>`binary()'</td>
+      <td>`<<1, 2, 3, 4>>'</td>
     </tr>
     <tr>
       <td>BIT(N)</td>
@@ -95,8 +100,13 @@ Notes:
 
 <ol>
   <li id="vn1">When fetching VARCHAR, TEXT etc. they are returned as `binary()'.
-    When sending (insert or update) any `iodata()' is accepted. Lists will be
-    interpreted as utf8 unicode, binaries will be left as is.</li>
+    When sending (insert or update) any `unicode:chardata()' is accepted as
+    input. In a (possibly deep) list of integers and binaries, the integers are
+    treated as Unicode codepoints while binaries are treated as UTF-8 encoded
+    Unicode data. For lists, an error occurs if you try to send invalid Unicode
+    data, but if the input is a pure binary, no validation will be done. This is
+    to allow sending binary non-Unicode data for MySQL's binary strings (BLOB,
+    VARBINARY, etc.).</li>
   <li id="vn2">DECIMALs are returned as `integer()' or `float()' when the value
     can be represented without precision loss and as `binary()' for high
     precision DECIMAL values. This is similar to how the `odbc' OTP application
