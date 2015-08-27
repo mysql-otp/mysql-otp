@@ -736,6 +736,8 @@ encode_param(null) ->
 encode_param(Value) when is_binary(Value) ->
     EncLength = lenenc_int_encode(byte_size(Value)),
     {<<?TYPE_VAR_STRING, 0>>, <<EncLength/binary, Value/binary>>};
+encode_param(Value) when is_list(Value) ->
+    encode_param(unicode:characters_to_binary(Value));
 encode_param(Value) when is_integer(Value), Value >= 0 ->
     %% We send positive integers with the 'unsigned' flag set.
     if

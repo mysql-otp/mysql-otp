@@ -16,10 +16,11 @@ encode(Int) when is_integer(Int) ->
 encode(Float) when is_float(Float) ->
     %% "floats are printed accurately as the shortest, correctly rounded string"
     io_lib:format("~w", [Float]);
-encode(String) when is_list(String); is_binary(String) ->
-    Bin = iolist_to_binary(String),
+encode(Bin) when is_binary(Bin) ->
     Escaped = binary:replace(Bin, <<"'">>, <<"''">>, [global]),
     [$', Escaped, $'];
+encode(String) when is_list(String) ->
+    encode(unicode:characters_to_binary(String));
 encode(Bitstring) when is_bitstring(Bitstring) ->
     ["b'", [ case B of 0 -> $0; 1 -> $1 end || <<B:1>> <= Bitstring ], $'];
 encode({Y, M, D}) ->

@@ -95,7 +95,8 @@ Notes:
 
 <ol>
   <li id="vn1">When fetching VARCHAR, TEXT etc. they are returned as `binary()'.
-    When sending (insert or update) any `iodata()' is accepted.</li>
+    When sending (insert or update) any `iodata()' is accepted. Lists will be
+    interpreted as utf8 unicode, binaries will be left as is.</li>
   <li id="vn2">DECIMALs are returned as `integer()' or `float()' when the value
     can be represented without precision loss and as `binary()' for high
     precision DECIMAL values. This is similar to how the `odbc' OTP application
