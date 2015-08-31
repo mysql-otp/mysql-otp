@@ -5,7 +5,7 @@
 <title>cover/mysql_cache.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/mysql-otp/ebin/../src/mysql_cache.erl by COVER 2015-05-25 at 16:25:14
+File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_cache.erl by COVER 2015-08-31 at 14:43:51
 
 ****************************************************************************
 
@@ -55,23 +55,23 @@ File generated from /home/viktor/mysql-otp/ebin/../src/mysql_cache.erl by COVER 
         |  -spec evict_older_than(Cache :: cache(K, V), MaxAge :: non_neg_integer()) -&gt;
         |      {Evicted :: [{K, V}], NewCache :: cache(K, V)}.
         |  evict_older_than({cache, StartTs, Dict}, MaxAge) -&gt;
-     6..|      MinTime = timer:now_diff(os:timestamp(), StartTs) div 1000 - MaxAge,
-     6..|      {Evicted, Dict1} = dict:fold(
+     5..|      MinTime = timer:now_diff(os:timestamp(), StartTs) div 1000 - MaxAge,
+     5..|      {Evicted, Dict1} = dict:fold(
         |          fun (Key, {Value, Time}, {EvictedAcc, DictAcc}) -&gt;
-     6..|              if
+     5..|              if
         |                  Time &lt; MinTime -&gt;
-     3..|                      {[{Key, Value} | EvictedAcc], dict:erase(Key, DictAcc)};
+     2..|                      {[{Key, Value} | EvictedAcc], dict:erase(Key, DictAcc)};
         |                  Time &gt;= MinTime -&gt;
      3..|                      {EvictedAcc, DictAcc}
         |              end
         |          end,
         |          {[], Dict},
         |          Dict),
-     6..|      Cache1 = case dict:size(Dict1) of
-     3..|          0 -&gt; empty;
+     5..|      Cache1 = case dict:size(Dict1) of
+     2..|          0 -&gt; empty;
      3..|          _ -&gt; {cache, StartTs, Dict1}
         |      end,
-     6..|      {Evicted, Cache1};
+     5..|      {Evicted, Cache1};
         |  evict_older_than(empty, _) -&gt;
      1..|      {[], empty}.
         |  
@@ -102,7 +102,7 @@ File generated from /home/viktor/mysql-otp/ebin/../src/mysql_cache.erl by COVER 
         |  size({cache, _, Dict}) -&gt;
      1..|      dict:size(Dict);
         |  size(empty) -&gt;
-     3..|      0.
+     2..|      0.
         |  
         |  %% @doc Stores a key-value pair in the cache. If the key already exists, the
         |  %% associated value is replaced by `Value'.

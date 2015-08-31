@@ -5,7 +5,7 @@
 <title>cover/mysql_encode.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/mysql-otp/ebin/../src/mysql_encode.erl by COVER 2015-05-25 at 16:25:14
+File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_encode.erl by COVER 2015-08-31 at 14:43:51
 
 ****************************************************************************
 
@@ -27,10 +27,11 @@ File generated from /home/viktor/mysql-otp/ebin/../src/mysql_encode.erl by COVER
         |  encode(Float) when is_float(Float) -&gt;
         |      %% "floats are printed accurately as the shortest, correctly rounded string"
      1..|      io_lib:format("~w", [Float]);
-        |  encode(String) when is_list(String); is_binary(String) -&gt;
-     4..|      Bin = iolist_to_binary(String),
-     4..|      Escaped = binary:replace(Bin, &lt;&lt;"'"&gt;&gt;, &lt;&lt;"''"&gt;&gt;, [global]),
-     4..|      [$', Escaped, $'];
+        |  encode(Bin) when is_binary(Bin) -&gt;
+     6..|      Escaped = binary:replace(Bin, &lt;&lt;"'"&gt;&gt;, &lt;&lt;"''"&gt;&gt;, [global]),
+     6..|      [$', Escaped, $'];
+        |  encode(String) when is_list(String) -&gt;
+     4..|      encode(unicode:characters_to_binary(String));
         |  encode(Bitstring) when is_bitstring(Bitstring) -&gt;
      1..|      ["b'", [ case B of 0 -&gt; $0; 1 -&gt; $1 end || &lt;&lt;B:1&gt;&gt; &lt;= Bitstring ], $'];
         |  encode({Y, M, D}) -&gt;
