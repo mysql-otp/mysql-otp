@@ -75,25 +75,36 @@ Usage as a dependency
 Using *erlang.mk*:
 
     DEPS = mysql
-    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.0.0
+    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.1.0
 
 Using *rebar*:
 
     {deps, [
         {mysql, ".*", {git, "https://github.com/mysql-otp/mysql-otp",
-                       {tag, "1.0.0"}}}
+                       {tag, "1.1.0"}}}
     ]}.
 
-Tests
------
+Contributing
+------------
 
-Run the eunit tests with `make eunit`. The tests need an executable `rebar` in
-the `$PATH`. For the suite `mysql_tests` you need MySQL running on localhost
-and give privileges to the `otptest` user:
+Run the eunit tests with `make tests`. For the suite `mysql_tests` you
+need MySQL running on localhost and give privileges to the `otptest` user:
 
 ```SQL
 grant all privileges on otptest.* to otptest@localhost identified by 'otptest';
 ```
+
+If you run `make tests COVER=1` a coverage report will be generated. Open
+`cover/index.html` to see that any lines you have added or modified are covered
+by a test.
+
+Linebreak code to 80 characters per line and follow a coding style similar to
+that of existing code.
+
+Keep commit messages short and descriptive. Each commit message should describe
+the purpose of the commit, the feature added or bug fixed, so that the commit
+log can be used as a comprehensive change log. [CHANGELOG.md](CHANGELOG.md) is
+generated from the commit messages.
 
 License
 -------
