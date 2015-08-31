@@ -2,6 +2,16 @@ Change log
 ==========
 
 
+1.1.0
+-----
+* Bump version 1.1.0 and update README [2015-08-31 14:51:56 +0200]
+* add decode_binary clause for floats with value 0.0 [2015-08-30 20:45:47 +0200]
+* Edit docs and tests for unicode chardata as input [2015-08-27 16:17:09 +0200]
+* add encoding declaration [2015-08-25 12:13:57 +0200]
+* add unicode encoding to mysql:encode, update docs and add test [2015-08-25 11:45:06 +0200]
+* Support for strings as prepared statement parameters [2015-08-19 12:19:22 +0200]
+* Update CHANGELOG.md [2015-05-25 16:26:02 +0200]
+
 1.0.0
 -----
 * Bump version to 1.0.0 [2015-05-25 16:24:28 +0200]
