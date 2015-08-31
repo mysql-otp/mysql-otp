@@ -627,6 +627,9 @@ decode_binary(#col{type = T, decimals = S, length = L}, Data)
 decode_binary(#col{type = ?TYPE_DOUBLE},
               <<Value:64/float-little, Rest/binary>>) ->
     {Value, Rest};
+decode_binary(#col{type = ?TYPE_FLOAT}, <<0.0:32/float-little, Rest/binary>>) ->
+    %% TYPE_FLOAT conversation fails on math:log10(0.0)
+    {0.0, Rest};
 decode_binary(#col{type = ?TYPE_FLOAT},
               <<Value:32/float-little, Rest/binary>>) ->
     %% There is a precision loss when storing and fetching a 32-bit float.
