@@ -4,7 +4,8 @@ MySQL/OTP
 [![Build Status](https://travis-ci.org/mysql-otp/mysql-otp.svg)](https://travis-ci.org/mysql-otp/mysql-otp)
 
 MySQL/OTP is a driver for connecting Erlang/OTP applications to MySQL
-databases. It is a native implementation of the MySQL protocol in Erlang.
+databases (version 4.1 and upward). It is a native implementation of the MySQL
+protocol in Erlang.
 
 Some of the features:
 
@@ -75,13 +76,13 @@ Usage as a dependency
 Using *erlang.mk*:
 
     DEPS = mysql
-    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.1.0
+    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.1.1
 
 Using *rebar*:
 
     {deps, [
         {mysql, ".*", {git, "https://github.com/mysql-otp/mysql-otp",
-                       {tag, "1.1.0"}}}
+                       {tag, "1.1.1"}}}
     ]}.
 
 Contributing
