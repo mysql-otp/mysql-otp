@@ -231,16 +231,20 @@ build_handshake_response(Handshake, Username, Password, Database) ->
     %% We require these capabilities. Make sure the server handles them.
     CapabilityFlags0 = ?CLIENT_PROTOCOL_41 bor
                        ?CLIENT_TRANSACTIONS bor
-                       ?CLIENT_SECURE_CONNECTION bor
-                       ?CLIENT_MULTI_STATEMENTS bor
-                       ?CLIENT_MULTI_RESULTS bor
-                       ?CLIENT_PS_MULTI_RESULTS,
+                       ?CLIENT_SECURE_CONNECTION,
     CapabilityFlags = case Database of
         undefined -> CapabilityFlags0;
         _         -> CapabilityFlags0 bor ?CLIENT_CONNECT_WITH_DB
     end,
     Handshake#handshake.capabilities band CapabilityFlags == CapabilityFlags
         orelse error(old_server_version),
+    %% Add some extra capability flags only for signalling to the server what
+    %% the client wants to do. The server doesn't say it handles them although
+    %% it does. (http://bugs.mysql.com/bug.php?id=42268)
+    ClientCapabilityFlags = CapabilityFlags bor
+                            ?CLIENT_MULTI_STATEMENTS bor
+                            ?CLIENT_MULTI_RESULTS bor
+                            ?CLIENT_PS_MULTI_RESULTS,
     Hash = case Handshake#handshake.auth_plugin_name of
         <<>> ->
             %% Server doesn't know auth plugins
@@ -257,7 +261,7 @@ build_handshake_response(Handshake, Username, Password, Database) ->
         undefined -> <<>>;
         _         -> <<(iolist_to_binary(Database))/binary, 0>>
     end,
-    <<CapabilityFlags:32/little,
+    <<ClientCapabilityFlags:32/little,
       ?MAX_BYTES_PER_PACKET:32/little,
       CharacterSet:8,
       0:23/unit:8, %% reserverd
