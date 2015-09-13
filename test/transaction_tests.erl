@@ -256,9 +256,20 @@ deadlock_prepared_statements({Conn1, Conn2}) ->
     ?assertEqual(ok, receive start -> ok after 0 -> there_was_no_deadlock end),
     flush_inbox().
 
-lock_wait_timeout({Conn1, Conn2}) ->
+lock_wait_timeout({_Conn1, Conn2} = Conns) ->
     %% Set the lowest timeout possible to speed up the test.
-    ok = mysql:query(Conn2, "SET innodb_lock_wait_timeout = 1"),
+    case mysql:query(Conn2, "SET innodb_lock_wait_timeout = 1") of
+        ok ->
+            lock_wait_timeout1(Conns);
+        {error, {1238, _, <<"Variable 'innodb_lock_wait_timeout' is a read on",
+                            _/binary>>}} ->
+            error_logger:info_msg("Can't set lock wait timeout in this server"
+                                  " version. Skipping the lock wait timeout"
+                                  " test.\n")
+    end.
+
+%% Continuation of lock_wait_timeout/1.
+lock_wait_timeout1({Conn1, Conn2}) ->    
     {ok, _, [[1]]} = mysql:query(Conn2, "SELECT COUNT(*) FROM foo WHERE k = 1"),
     MainPid = self(),
 
