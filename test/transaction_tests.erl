@@ -269,7 +269,7 @@ lock_wait_timeout({_Conn1, Conn2} = Conns) ->
     end.
 
 %% Continuation of lock_wait_timeout/1.
-lock_wait_timeout1({Conn1, Conn2}) ->    
+lock_wait_timeout1({Conn1, Conn2}) ->
     {ok, _, [[1]]} = mysql:query(Conn2, "SELECT COUNT(*) FROM foo WHERE k = 1"),
     MainPid = self(),
 
