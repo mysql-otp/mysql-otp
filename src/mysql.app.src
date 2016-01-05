@@ -20,5 +20,6 @@
     {description, "MySQL/OTP - Erlang MySQL client driver"},
     {vsn, "1.1.1"},
     {modules, []},
+    {registered, []},
     {applications, []}
 ]}.
