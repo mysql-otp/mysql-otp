@@ -454,7 +454,7 @@ encode(Conn, Term) ->
                 query_timeout, query_cache_time,
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
                 transaction_level = 0, ping_ref = undefined,
-                stmts = dict:new(), query_cache = empty}).
+                stmts = dict:new(), query_cache = empty, main_monitor}).
 
 %% @private
 init(Opts) ->
@@ -479,12 +479,15 @@ init(Opts) ->
     end,
 
     %% Connect socket
-    SockOpts = [{active, false}, binary, {packet, raw} | TcpOpts],
+    SockOpts = [binary, {packet, raw} | TcpOpts],
     {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
 
     %% Exchange handshake communication.
     Result = mysql_protocol:handshake(User, Password, Database, gen_tcp,
                                       Socket),
+    inet:setopts(Socket, [{active, once}]),
+    MonitorRef = erlang:monitor(process, self()),
+
     case Result of
         #handshake{server_version = Version, connection_id = ConnId,
                    status = Status} ->
@@ -495,7 +498,7 @@ init(Opts) ->
                            log_warnings = LogWarn,
                            ping_timeout = PingTimeout,
                            query_timeout = Timeout,
-                           query_cache_time = QueryCacheTime},
+                           query_cache_time = QueryCacheTime, main_monitor = MonitorRef},
             %% Trap exit so that we can properly disconnect when we die.
             process_flag(trap_exit, true),
             State1 = schedule_ping(State),
@@ -553,6 +556,7 @@ handle_call({query, Query}, From, State) ->
     handle_call({query, Query, State#state.query_timeout}, From, State);
 handle_call({query, Query, Timeout}, _From, State) ->
     Socket = State#state.socket,
+    inet:setopts(Socket, [{active, false}]),
     {ok, Recs} = case mysql_protocol:query(Query, gen_tcp, Socket, Timeout) of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
             kill_query(State),
@@ -564,6 +568,7 @@ handle_call({query, Query, Timeout}, _From, State) ->
         QueryResult ->
             QueryResult
     end,
+    inet:setopts(Socket, [{active, once}]),
     State1 = lists:foldl(fun update_state/2, State, Recs),
     State1#state.warning_count > 0 andalso State1#state.log_warnings
         andalso log_warnings(State1, Query),
@@ -582,7 +587,9 @@ handle_call({param_query, Query, Params, Timeout}, _From, State) ->
             {{ok, FoundStmt}, NewCache};
         not_found ->
             %% Prepare
+            inet:setopts(Socket, [{active, false}]),
             Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
+            inet:setopts(Socket, [{active, once}]),
             %State1 = update_state(Rec, State),
             case Rec of
                 #error{} = E ->
@@ -614,8 +621,10 @@ handle_call({execute, Stmt, Args, Timeout}, _From, State) ->
     end;
 handle_call({prepare, Query}, _From, State) ->
     #state{socket = Socket} = State,
+    inet:setopts(Socket, [{active, false}]),
     Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
     State1 = update_state(Rec, State),
+    inet:setopts(Socket, [{active, once}]),
     case Rec of
         #error{} = E ->
             {reply, {error, error_to_reason(E)}, State1};
@@ -627,6 +636,7 @@ handle_call({prepare, Query}, _From, State) ->
 handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) ->
     #state{socket = Socket} = State,
     %% First unprepare if there is an old statement with this name.
+    inet:setopts(Socket, [{active, false}]),
     State1 = case dict:find(Name, State#state.stmts) of
         {ok, OldStmt} ->
             mysql_protocol:unprepare(OldStmt, gen_tcp, Socket),
@@ -636,6 +646,7 @@ handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) ->
     end,
     Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
     State2 = update_state(Rec, State1),
+    inet:setopts(Socket, [{active, once}]),
     case Rec of
         #error{} = E ->
             {reply, {error, error_to_reason(E)}, State2};
@@ -649,7 +660,9 @@ handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);
     case dict:find(Stmt, State#state.stmts) of
         {ok, StmtRec} ->
             #state{socket = Socket} = State,
+            inet:setopts(Socket, [{active, false}]),
             mysql_protocol:unprepare(StmtRec, gen_tcp, Socket),
+            inet:setopts(Socket, [{active, once}]),
             State1 = State#state{stmts = dict:erase(Stmt, State#state.stmts)},
             State2 = schedule_ping(State1),
             {reply, ok, State2};
@@ -677,8 +690,10 @@ handle_call(start_transaction, _From,
         0 -> <<"BEGIN">>;
         _ -> <<"SAVEPOINT s", (integer_to_binary(L))/binary>>
     end,
+    inet:setopts(Socket, [{active, false}]),
     {ok, [Res = #ok{}]} = mysql_protocol:query(Query, gen_tcp, Socket,
                                                ?cmd_timeout),
+    inet:setopts(Socket, [{active, once}]),
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_level = L + 1}};
 handle_call(rollback, _From, State = #state{socket = Socket, status = Status,
@@ -688,8 +703,10 @@ handle_call(rollback, _From, State = #state{socket = Socket, status = Status,
         1 -> <<"ROLLBACK">>;
         _ -> <<"ROLLBACK TO s", (integer_to_binary(L - 1))/binary>>
     end,
+    inet:setopts(Socket, [{active, false}]),
     {ok, [Res = #ok{}]} = mysql_protocol:query(Query, gen_tcp, Socket,
                                                ?cmd_timeout),
+    inet:setopts(Socket, [{active, once}]),
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_level = L - 1}};
 handle_call(commit, _From, State = #state{socket = Socket, status = Status,
@@ -699,8 +716,10 @@ handle_call(commit, _From, State = #state{socket = Socket, status = Status,
         1 -> <<"COMMIT">>;
         _ -> <<"RELEASE SAVEPOINT s", (integer_to_binary(L - 1))/binary>>
     end,
+    inet:setopts(Socket, [{active, false}]),
     {ok, [Res = #ok{}]} = mysql_protocol:query(Query, gen_tcp, Socket,
                                                ?cmd_timeout),
+    inet:setopts(Socket, [{active, once}]),
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_level = L - 1}}.
 
@@ -715,10 +734,12 @@ handle_info(query_cache, State = #state{query_cache = Cache,
     {Evicted, Cache1} = mysql_cache:evict_older_than(Cache, CacheTime),
     %% Unprepare the evicted statements
     #state{socket = Socket} = State,
+    inet:setopts(Socket, [{active, false}]),
     lists:foreach(fun ({_Query, Stmt}) ->
                       mysql_protocol:unprepare(Stmt, gen_tcp, Socket)
                   end,
                   Evicted),
+    inet:setopts(Socket, [{active, once}]),
     %% If nonempty, schedule eviction again.
     mysql_cache:size(Cache1) > 0 andalso
         erlang:send_after(CacheTime, self(), query_cache),
@@ -726,6 +747,15 @@ handle_info(query_cache, State = #state{query_cache = Cache,
 handle_info(ping, State) ->
     Ok = mysql_protocol:ping(gen_tcp, State#state.socket),
     {noreply, update_state(Ok, State)};
+
+handle_info({'DOWN', MonitorRef, process, _MainPid, Reason},
+    State = #state{main_monitor = MonitorRef}) ->
+  close_connection(State, {main_closed, Reason});
+handle_info({tcp_closed,_Socket},State) ->
+  close_connection(State,tcp_closed);
+handle_info({tcp_error, _Socket, _Reason},State) ->
+  close_connection(State,tcp_error);
+
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -760,6 +790,7 @@ query_call(Conn, CallReq) ->
 
 %% @doc Executes a prepared statement and returns {Reply, NextState}.
 execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket}) ->
+    inet:setopts(Socket, [{active, false}]),
     {ok, Recs} = case mysql_protocol:execute(Stmt, Args, gen_tcp, Socket,
                                              Timeout) of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
@@ -776,6 +807,7 @@ execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket}) ->
     State1 = lists:foldl(fun update_state/2, State, Recs),
     State1#state.warning_count > 0 andalso State1#state.log_warnings
         andalso log_warnings(State1, Stmt#prepared.orig_query),
+    inet:setopts(Socket, [{active, once}]),
     handle_query_call_reply(Recs, Stmt#prepared.orig_query, State1, []).
 
 %% @doc Produces a tuple to return as an error reason.
@@ -882,3 +914,12 @@ kill_query(#state{connection_id = ConnId, host = Host, port = Port,
             error_logger:error_msg("Failed to connect to kill query: ~p",
                                    [error_to_reason(E)])
     end.
+
+close_connection(#state{socket = Socket, connection_id = Conn} = State, Reason) ->
+  error_logger:error_msg("Conn: ~p socket: ~p closed, reason:~p ~n",
+    [Conn, Socket, Reason]),
+  ok = terminate_connection(Socket),
+  {stop, normal, State#state{socket = undefined, connection_id = undefined, main_monitor = undefined}}.
+
+terminate_connection(Socket) ->
+  gen_tcp:close(Socket).
