@@ -51,23 +51,23 @@
 -define(ERROR_DEADLOCK, 1213).
 
 %% A connection is a ServerRef as in gen_server:call/2,3.
--type connection() :: Name :: atom() |
+-type(connection() :: Name :: atom() |
                       {Name :: atom(), Node :: atom()} |
                       {global, GlobalName :: term()} |
                       {via, Module :: atom(), ViaName :: term()} |
-                      pid().
+                      pid()).
 
 %% MySQL error with the codes and message returned from the server.
--type server_reason() :: {Code :: integer(), SQLState :: binary(),
-                          Message :: binary()}.
+-type(server_reason() :: {Code :: integer(), SQLState :: binary(),
+                          Message :: binary()}).
 
--type column_names() :: [binary()].
--type rows() :: [[term()]].
+-type(column_names() :: [binary()]).
+-type(rows() :: [[term()]]).
 
--type query_result() :: ok
+-type(query_result() :: ok
                       | {ok, column_names(), rows()}
                       | {ok, [{column_names(), rows()}, ...]}
-                      | {error, server_reason()}.
+                      | {error, server_reason()}).
 
 %% @doc Starts a connection gen_server process and connects to a database. To
 %% disconnect just do `exit(Pid, normal)'.
@@ -118,6 +118,9 @@
 %%   <dd>Additional options for `gen_tcp:connect/3'. You may want to set
 %%       `{recbuf, Size}' and `{sndbuf, Size}' if you send or receive more than
 %%       the default (typically 8K) per query.</dd>
+%%   <dt>`{ssl_options, SslOptions}'</dt>
+%%   <dd>SSL options: <a href="http://erlang.org/doc/man/ssl.html">http://erlang.org/doc/man/ssl.html</a>
+%%   </dd>
 %% </dl>
 -spec start_link(Options) -> {ok, pid()} | ignore | {error, term()}
     when Options :: [Option],
@@ -130,7 +133,9 @@
                    {prepare, NamedStatements} |
                    {queries, [iodata()]} |
                    {query_timeout, timeout()} |
-                   {query_cache_time, non_neg_integer()},
+                   {query_cache_time, non_neg_integer()} |
+                   {tcp_options, [gen_tcp:connect_option()]} |
+                   {ssl_options, [ssl:ssl_option()]},
          ServerName :: {local, Name :: atom()} |
                        {global, GlobalName :: term()} |
                        {via, Module :: atom(), ViaName :: term()},
@@ -448,7 +453,8 @@ encode(Conn, Term) ->
 -include("server_status.hrl").
 
 %% Gen_server state
--record(state, {server_version, connection_id, socket,
+-record(state, {server_version, connection_id,
+                socket, receiver, protocol,
                 host, port, user, password, log_warnings,
                 ping_timeout,
                 query_timeout, query_cache_time,
@@ -472,6 +478,11 @@ init(Opts) ->
                                          ?default_query_cache_time),
     TcpOpts        = proplists:get_value(tcp_options, Opts, []),
 
+    {Transport, SslOpts} = case proplists:get_value(ssl_options, Opts) of
+                               undefined -> {tcp, []};
+                               SslOpts0  -> ssl:start(), {ssl, SslOpts0}
+                           end,
+
     PingTimeout = case KeepAlive of
         true         -> ?default_ping_timeout;
         false        -> infinity;
@@ -480,29 +491,34 @@ init(Opts) ->
 
     %% Connect socket
     SockOpts = [{active, false}, binary, {packet, raw} | TcpOpts],
-    {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
-
-    %% Exchange handshake communication.
-    Result = mysql_protocol:handshake(User, Password, Database, gen_tcp,
-                                      Socket),
-    case Result of
-        #handshake{server_version = Version, connection_id = ConnId,
-                   status = Status} ->
-            State = #state{server_version = Version, connection_id = ConnId,
-                           socket = Socket,
-                           host = Host, port = Port, user = User,
-                           password = Password, status = Status,
-                           log_warnings = LogWarn,
-                           ping_timeout = PingTimeout,
-                           query_timeout = Timeout,
-                           query_cache_time = QueryCacheTime},
-            %% Trap exit so that we can properly disconnect when we die.
-            process_flag(trap_exit, true),
-            State1 = schedule_ping(State),
-            {ok, State1};
-        #error{} = E ->
-            {stop, error_to_reason(E)}
+    case mysql_sock:connect(Transport, Host, Port, SockOpts, SslOpts) of
+        {ok, Socket, Receiver} ->
+            Protocol = mysql_protocol:init(Socket, Receiver),
+            %% Exchange handshake communication.
+            Result = Protocol:handshake(User, Password, Database, Timeout),
+            case Result of
+                #handshake{server_version = Version, connection_id = ConnId,
+                           status = Status} ->
+                    State = #state{server_version = Version, connection_id = ConnId,
+                                   socket = Socket, receiver = Receiver,
+                                   protocol = Protocol,
+                                   host = Host, port = Port, user = User,
+                                   password = Password, status = Status,
+                                   log_warnings = LogWarn,
+                                   ping_timeout = PingTimeout,
+                                   query_timeout = Timeout,
+                                   query_cache_time = QueryCacheTime},
+                    %% Trap exit so that we can properly disconnect when we die.
+                    process_flag(trap_exit, true),
+                    State1 = schedule_ping(State),
+                    {ok, State1};
+                #error{} = E ->
+                    {stop, error_to_reason(E)}
+            end;
+        {error, Error} ->
+            {stop, Error}
     end.
+
 
 %% @private
 %% @doc
