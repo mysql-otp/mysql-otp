@@ -1,5 +1,6 @@
 %% MySQL/OTP – MySQL client library for Erlang/OTP
 %% Copyright (C) 2014 Viktor Söderqvist
+%% Copyright (C) 2016 Feng Lee
 %%
 %% This file is part of MySQL/OTP.
 %%
@@ -16,10 +17,25 @@
 %% You should have received a copy of the GNU Lesser General Public License
 %% along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-{application, mysql, [
-    {description, "MySQL/OTP - Erlang MySQL client driver"},
-    {vsn, "2.0.0"},
-    {modules, []},
-    {registered, []},
-    {applications, []}
-]}.
+-module(mock_protocol).
+
+-author("Feng Lee <feng@emqtt.io>").
+
+-export([init/1, init/2, feed/3, close/1]).
+
+init(Sock) ->
+    init(self(), Sock).
+
+init(ParentPid, Sock) ->
+    Receiver = spawn(fun() ->
+                   mysql_socket:receiver_loop(ParentPid, Sock, mysql_socket:parser())
+               end),
+    SendFun = fun(Data) -> mock_tcp:send(Sock, Data) end,
+    {mysql_protocol, [SendFun, Receiver]}.
+
+feed(Sock, Packet, {mysql_protocol, [_SendFun, Receiver]}) ->
+    Receiver ! {tcp, Sock, Packet}.
+
+close({mysql_protocol, [_Sock, Receiver]}) ->
+    exit(Receiver, normal).
+

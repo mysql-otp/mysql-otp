@@ -1,4 +1,5 @@
 %% MySQL/OTP – MySQL client library for Erlang/OTP
+%% Copyright (C) 2014 Viktor Söderqvist
 %% Copyright (C) 2016 Feng Lee <feng@emqtt.io>
 %%
 %% This file is part of MySQL/OTP.
@@ -23,12 +24,12 @@
 -author("Feng Lee <feng@emqtt.io>").
 
 %% API
--export([connect/6, controlling_process/2, send/2, close/1, stop/1]).
+-export([connect/6, controlling_process/2, send/2, close/1, fast_close/1, stop/1]).
 
 -export([sockname/1, sockname_s/1, setopts/2, getstat/2]).
 
 %% Internal Export
--export([receiver/2, receiver_loop/3]).
+-export([receiver/2, receiver_loop/3, parser/0]).
 
 %% 60 (secs)
 -define(TIMEOUT, 60000).
@@ -134,6 +135,21 @@ close(Socket) when is_port(Socket) ->
 close(#ssl_socket{ssl = SslSocket}) ->
     ssl:close(SslSocket).
 
+-spec(fast_close(Socket :: inet:socket() | ssl_socket()) -> ok).
+fast_close(Socket) when is_port(Socket) ->
+    catch port_close(Socket), ok;
+fast_close(#ssl_socket{tcp = Socket, ssl = SslSock}) ->
+    {Pid, MRef} = spawn_monitor(fun() -> ssl:close(SslSock) end),
+    erlang:send_after(3000, self(), {Pid, ssl_close_timeout}),
+    receive
+        {Pid, ssl_close_timeout} ->
+            erlang:demonitor(MRef, [flush]),
+            exit(Pid, kill);
+        {'DOWN', MRef, process, Pid, _Reason} ->
+            ok
+    end,
+    catch port_close(Socket), ok.
+
 %% @doc Stop Receiver.
 -spec(stop(Receiver :: pid()) -> ok).
 stop(Receiver) ->
@@ -143,7 +159,9 @@ stop(Receiver) ->
 setopts(Socket, Opts) when is_port(Socket) ->
     inet:setopts(Socket, Opts);
 setopts(#ssl_socket{ssl = SslSocket}, Opts) ->
-    ssl:setopts(SslSocket, Opts).
+    ssl:setopts(SslSocket, Opts);
+setopts(_Socket, _Opts) ->
+    ok. %% for unit test
 
 %% @doc Get socket stats.
 -spec(getstat(Socket, Stats) -> {ok, Values} | {error, any()} when
@@ -175,7 +193,7 @@ sockname_s(Socket) ->
 
 %%% Receiver Loop
 receiver(ClientPid, Socket) ->
-    receiver_activate(ClientPid, Socket, mysql_parser:new()).
+    receiver_activate(ClientPid, Socket, parser()).
 
 receiver_activate(ClientPid, Socket, Parser) ->
     setopts(Socket, [{active, once}]),
@@ -200,12 +218,17 @@ receiver_loop(ClientPid, Socket, Parser) ->
     end.
 
 process_data(ClientPid, Socket, Data, Parser) ->
+    io:format("Recv: ~p~n", [Data]),
     case parse_data(ClientPid, Data, Parser) of
         {ok, NewParser} ->
             receiver_activate(ClientPid, Socket, NewParser);
         {error, Error} ->
             exit(Error)
     end.
+
+%%--------------------------------------------------------------------
+%% Parse packet
+%%--------------------------------------------------------------------
 
 parse_data(_ClientPid, <<>>, Parser) ->
     {ok, Parser};
@@ -214,12 +237,44 @@ parse_data(ClientPid, Data, Parser) ->
     case Parser(Data) of
         {more, NewParser} ->
             {ok, NewParser};
-        {ok, SeqNum, Body, Rest} ->
+        {ok, {SeqNum, Body}, Rest} ->
             ClientPid ! {mysql_recv, self(), {ok, SeqNum, Body}},
-            parse_data(ClientPid, Rest, mysql_packet:new());
+            parse_data(ClientPid, Rest, parser());
         {error, Error} ->
             {error, Error}
     end.
+
+parser() -> fun(Bin) -> parse_header(Bin) end.
+
+%% @doc Parses a packet header (32 bits) and returns a tuple.
+%%
+%% The client should first read a header and parse it. Then read PacketLength
+%% bytes. If there are more packets, read another header and read a new packet
+%% length of payload until there are no more packets. The seq num should
+%% increment from 0 and may wrap around at 255 back to 0.
+%%
+%% When all packets are read and the payload of all packets are concatenated, it
+%% can be parsed using parse_response/1, etc. depending on what type of response
+%% is expected.
+%% @private
+parse_header(<<>>) ->
+    {more, fun(Bin) -> parse_header(Bin) end};
+
+parse_header(Bin) when size(Bin) < 4 ->
+    {more, fun(More) -> parse_header(<<Bin/binary, More/binary>>) end};
+
+parse_header(<<Len:24/little, Seq:8, Bin/binary>>) ->
+    parse_body(Bin, Seq, Len).
+
+parse_body(Bin, Seq, Len) when size(Bin) < Len ->
+    {more, fun(More) -> parse_body(<<Bin/binary, More/binary>>, Seq, Len) end};
+
+parse_body(Bin, Seq, Len) ->
+    <<Body:Len/binary, Rest/binary>> = Bin, {ok, {Seq, Body}, Rest}.
+
+%%--------------------------------------------------------------------
+%% utilities
+%%--------------------------------------------------------------------
 
 maybe_ntoab(Addr) when is_tuple(Addr) -> ntoab(Addr);
 maybe_ntoab(Host)                     -> Host.
@@ -235,4 +290,16 @@ ntoab(IP) ->
         0 -> Str;
         _ -> "[" ++ Str ++ "]"
     end.
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+parser_test() ->
+    %% Example from "MySQL Internals", revision 307, section 14.1.3.3 EOF_Packet
+    Packet = <<16#05, 16#00, 16#00, 16#05, 16#fe, 16#00, 16#00, 16#02, 16#00>>,
+    %% Check header contents and body length
+    ?assertEqual({ok, {5, <<16#fe, 16#00, 16#00, 16#02, 16#00>>}, <<>>}, (parser())(Packet)),
+    ok.
+
+-endif.
 
