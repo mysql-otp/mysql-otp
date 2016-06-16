@@ -24,6 +24,9 @@
 %% Character sets
 -define(UTF8, 16#21). %% utf8_general_ci
 
+%% Max packet length
+-define(MAX_LEN, 16#ffffff).
+
 %% --- Capability flags ---
 
 %% Server: supports schema-name in Handshake Response Packet

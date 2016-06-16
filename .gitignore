@@ -16,3 +16,4 @@ cover
 *.coverdata
 tests.output
 test/ct.cover.spec
+.idea

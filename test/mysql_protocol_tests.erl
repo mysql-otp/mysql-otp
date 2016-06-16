@@ -40,11 +40,13 @@ resultset_test() ->
         "53 51 4c 20 43 6f 6d 6d    75 6e 69 74 79 20 53 65    SQL Community Se"
         "72 76 65 72 20 28 47 50    4c 29|05 00 00 05 fe 00    rver (GPL)......"
         "00 02 00                                              ..."),
-    ExpectedCommunication = [{send, ExpectedReq},
-                             {recv, ExpectedResponse}],
+    ExpectedCommunication = [{send, ExpectedReq}],
     Sock = mock_tcp:create(ExpectedCommunication),
-    {ok, [ResultSet]} = mysql_protocol:query(Query, mock_tcp, Sock, infinity),
+    Proto = mock_protocol:init(Sock),
+    mock_protocol:feed(Sock, ExpectedResponse, Proto),
+    {ok, [ResultSet]} = mysql_protocol:query(Query, infinity, Proto),
     mock_tcp:close(Sock),
+    mock_protocol:close(Proto),
     ?assertMatch(#resultset{cols = [#col{name = <<"@@version_comment">>}],
                             rows = [[<<"MySQL Community Server (GPL)">>]]},
                  ResultSet),
@@ -79,10 +81,13 @@ resultset_error_test() ->
         "00 00 05 00 00 0c fe 00    00 02 00 17 00 00 0d ff    ................"
         "48 04 23 48 59 30 30 30    4e 6f 20 74 61 62 6c 65    H.#HY000No table"
         "73 20 75 73 65 64                                     s used"),
-    Sock = mock_tcp:create([{send, ExpectedReq}, {recv, ExpectedResponse}]),
-    {ok, [Result]} = mysql_protocol:query(Query, mock_tcp, Sock, infinity),
+    Sock = mock_tcp:create([{send, ExpectedReq}]),
+    Proto = mock_protocol:init(Sock),
+    mock_protocol:feed(Sock, ExpectedResponse, Proto),
+    {ok, [Result]} = mysql_protocol:query(Query, infinity, Proto),
     ?assertMatch(#error{}, Result),
     mock_tcp:close(Sock),
+    mock_protocol:close(Proto),
     ok.
 
 prepare_test() ->
@@ -102,9 +107,13 @@ prepare_test() ->
         "00 00 05 03 64 65 66 00    00 00 04 63 6f 6c 31 00    ....def....col1."
         "0c 3f 00 00 00 00 00 fd    80 00 1f 00 00|05 00 00    .?.............."
         "06 fe 00 00 02 00                                     ......"),
-    Sock = mock_tcp:create([{send, ExpectedReq}, {recv, ExpectedResp}]),
-    Result = mysql_protocol:prepare(Query, mock_tcp, Sock),
+    Sock = mock_tcp:create([{send, ExpectedReq}]),
+
+    Proto = mock_protocol:init(Sock),
+    mock_protocol:feed(Sock, ExpectedResp, Proto),
+    Result = mysql_protocol:prepare(Query, Proto),
     mock_tcp:close(Sock),
+    mock_protocol:close(Proto),
     ?assertMatch(#prepared{statement_id = StmtId,
                            param_count = 2,
                            warning_count = 0} when is_integer(StmtId),
@@ -112,10 +121,13 @@ prepare_test() ->
     ok.
     
 bad_protocol_version_test() ->
-    Sock = mock_tcp:create([{recv, <<2, 0, 0, 0, 9, 0>>}]),
+    Sock = mock_tcp:create([]),
+    Proto = mock_protocol:init(Sock),
+    mock_protocol:feed(Sock, <<2, 0, 0, 0, 9, 0>>, Proto),
     ?assertError(unknown_protocol,
-                 mysql_protocol:handshake("foo", "bar", "db", mock_tcp, Sock)),
-    mock_tcp:close(Sock).
+                 mysql_protocol:handshake("foo", "bar", "db", Proto)),
+    mock_tcp:close(Sock),
+    mock_protocol:close(Proto).
 
 %% --- Helper functions for the above tests ---
 

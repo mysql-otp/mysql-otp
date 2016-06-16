@@ -14,6 +14,10 @@ EDOC_OPTS = {stylesheet_file,"priv/edoc-style.css"},{todo,true}
 PLT_APPS = crypto
 SHELL_PATH = -pa ebin
 
+EUNIT_OPTS = verbose
+
+COVER = true
+
 include erlang.mk
 
 .PHONY: gh-pages tests-report CHANGELOG.md

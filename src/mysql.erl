@@ -51,23 +51,23 @@
 -define(ERROR_DEADLOCK, 1213).
 
 %% A connection is a ServerRef as in gen_server:call/2,3.
--type connection() :: Name :: atom() |
+-type(connection() :: Name :: atom() |
                       {Name :: atom(), Node :: atom()} |
                       {global, GlobalName :: term()} |
                       {via, Module :: atom(), ViaName :: term()} |
-                      pid().
+                      pid()).
 
 %% MySQL error with the codes and message returned from the server.
--type server_reason() :: {Code :: integer(), SQLState :: binary(),
-                          Message :: binary()}.
+-type(server_reason() :: {Code :: integer(), SQLState :: binary(),
+                          Message :: binary()}).
 
--type column_names() :: [binary()].
--type rows() :: [[term()]].
+-type(column_names() :: [binary()]).
+-type(rows() :: [[term()]]).
 
--type query_result() :: ok
+-type(query_result() :: ok
                       | {ok, column_names(), rows()}
                       | {ok, [{column_names(), rows()}, ...]}
-                      | {error, server_reason()}.
+                      | {error, server_reason()}).
 
 %% @doc Starts a connection gen_server process and connects to a database. To
 %% disconnect just do `exit(Pid, normal)'.
@@ -118,6 +118,9 @@
 %%   <dd>Additional options for `gen_tcp:connect/3'. You may want to set
 %%       `{recbuf, Size}' and `{sndbuf, Size}' if you send or receive more than
 %%       the default (typically 8K) per query.</dd>
+%%   <dt>`{ssl_options, SslOptions}'</dt>
+%%   <dd>SSL options: <a href="http://erlang.org/doc/man/ssl.html">http://erlang.org/doc/man/ssl.html</a>
+%%   </dd>
 %% </dl>
 -spec start_link(Options) -> {ok, pid()} | ignore | {error, term()}
     when Options :: [Option],
@@ -130,7 +133,9 @@
                    {prepare, NamedStatements} |
                    {queries, [iodata()]} |
                    {query_timeout, timeout()} |
-                   {query_cache_time, non_neg_integer()},
+                   {query_cache_time, non_neg_integer()} |
+                   {tcp_options, [gen_tcp:connect_option()]} |
+                   {ssl_options, [ssl:ssl_option()]},
          ServerName :: {local, Name :: atom()} |
                        {global, GlobalName :: term()} |
                        {via, Module :: atom(), ViaName :: term()},
@@ -448,7 +453,8 @@ encode(Conn, Term) ->
 -include("server_status.hrl").
 
 %% Gen_server state
--record(state, {server_version, connection_id, socket,
+-record(state, {server_version, connection_id, transport, socket,
+                receiver, protocol, ssl_options,
                 host, port, user, password, log_warnings,
                 ping_timeout,
                 query_timeout, query_cache_time,
@@ -472,6 +478,11 @@ init(Opts) ->
                                          ?default_query_cache_time),
     TcpOpts        = proplists:get_value(tcp_options, Opts, []),
 
+    {Transport, SslOpts} = case proplists:get_value(ssl_options, Opts) of
+                               undefined -> {tcp, []};
+                               SslOpts0  -> ssl:start(), {ssl, SslOpts0}
+                           end,
+
     PingTimeout = case KeepAlive of
         true         -> ?default_ping_timeout;
         false        -> infinity;
@@ -480,29 +491,36 @@ init(Opts) ->
 
     %% Connect socket
     SockOpts = [{active, false}, binary, {packet, raw} | TcpOpts],
-    {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
-
-    %% Exchange handshake communication.
-    Result = mysql_protocol:handshake(User, Password, Database, gen_tcp,
-                                      Socket),
-    case Result of
-        #handshake{server_version = Version, connection_id = ConnId,
-                   status = Status} ->
-            State = #state{server_version = Version, connection_id = ConnId,
-                           socket = Socket,
-                           host = Host, port = Port, user = User,
-                           password = Password, status = Status,
-                           log_warnings = LogWarn,
-                           ping_timeout = PingTimeout,
-                           query_timeout = Timeout,
-                           query_cache_time = QueryCacheTime},
-            %% Trap exit so that we can properly disconnect when we die.
-            process_flag(trap_exit, true),
-            State1 = schedule_ping(State),
-            {ok, State1};
-        #error{} = E ->
-            {stop, error_to_reason(E)}
+    case mysql_socket:connect(self(), Transport, Host, Port, SockOpts, SslOpts) of
+        {ok, Socket, Receiver} ->
+            SendFun = fun(Data) -> mysql_socket:send(Socket, Data) end,
+            Protocol = mysql_protocol:init(SendFun, Receiver),
+            %% Exchange handshake communication.
+            Result = Protocol:handshake(User, Password, Database),
+            case Result of
+                #handshake{server_version = Version, connection_id = ConnId,
+                           status = Status} ->
+                    State = #state{server_version = Version, connection_id = ConnId,
+                                   socket = Socket, receiver = Receiver,
+                                   transport = Transport, protocol = Protocol,
+                                   ssl_options = SslOpts,
+                                   host = Host, port = Port, user = User,
+                                   password = Password, status = Status,
+                                   log_warnings = LogWarn,
+                                   ping_timeout = PingTimeout,
+                                   query_timeout = Timeout,
+                                   query_cache_time = QueryCacheTime},
+                    %% Trap exit so that we can properly disconnect when we die.
+                    process_flag(trap_exit, true),
+                    State1 = schedule_ping(State),
+                    {ok, State1};
+                #error{} = E ->
+                    {stop, error_to_reason(E)}
+            end;
+        {error, Error} ->
+            {stop, Error}
     end.
+
 
 %% @private
 %% @doc
@@ -551,12 +569,11 @@ init(Opts) ->
 %% </dl>
 handle_call({query, Query}, From, State) ->
     handle_call({query, Query, State#state.query_timeout}, From, State);
-handle_call({query, Query, Timeout}, _From, State) ->
-    Socket = State#state.socket,
-    {ok, Recs} = case mysql_protocol:query(Query, gen_tcp, Socket, Timeout) of
+handle_call({query, Query, Timeout}, _From, State = #state{protocol = Protocol}) ->
+    {ok, Recs} = case Protocol:query(Query, Timeout) of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
             kill_query(State),
-            mysql_protocol:fetch_query_response(gen_tcp, Socket, ?cmd_timeout);
+            Protocol:fetch_query_response(?cmd_timeout);
         {error, timeout} ->
             %% For MySQL 4.x.x there is no way to recover from timeout except
             %% killing the connection itself.
@@ -571,10 +588,9 @@ handle_call({query, Query, Timeout}, _From, State) ->
 handle_call({param_query, Query, Params}, From, State) ->
     handle_call({param_query, Query, Params, State#state.query_timeout}, From,
                 State);
-handle_call({param_query, Query, Params, Timeout}, _From, State) ->
+handle_call({param_query, Query, Params, Timeout}, _From, State = #state{protocol = Protocol}) ->
     %% Parametrized query: Prepared statement cached with the query as the key
     QueryBin = iolist_to_binary(Query),
-    #state{socket = Socket} = State,
     Cache = State#state.query_cache,
     {StmtResult, Cache1} = case mysql_cache:lookup(QueryBin, Cache) of
         {found, FoundStmt, NewCache} ->
@@ -582,7 +598,7 @@ handle_call({param_query, Query, Params, Timeout}, _From, State) ->
             {{ok, FoundStmt}, NewCache};
         not_found ->
             %% Prepare
-            Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
+            Rec = Protocol:prepare(Query),
             %State1 = update_state(Rec, State),
             case Rec of
                 #error{} = E ->
@@ -612,9 +628,8 @@ handle_call({execute, Stmt, Args, Timeout}, _From, State) ->
         error ->
             {reply, {error, not_prepared}, State}
     end;
-handle_call({prepare, Query}, _From, State) ->
-    #state{socket = Socket} = State,
-    Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
+handle_call({prepare, Query}, _From, State = #state{protocol = Protocol}) ->
+    Rec = Protocol:prepare(Query),
     State1 = update_state(Rec, State),
     case Rec of
         #error{} = E ->
@@ -624,17 +639,16 @@ handle_call({prepare, Query}, _From, State) ->
             State2 = State#state{stmts = Stmts1},
             {reply, {ok, Id}, State2}
     end;
-handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) ->
-    #state{socket = Socket} = State,
+handle_call({prepare, Name, Query}, _From, State = #state{protocol = Protocol}) when is_atom(Name) ->
     %% First unprepare if there is an old statement with this name.
     State1 = case dict:find(Name, State#state.stmts) of
         {ok, OldStmt} ->
-            mysql_protocol:unprepare(OldStmt, gen_tcp, Socket),
+            Protocol:unprepare(OldStmt),
             State#state{stmts = dict:erase(Name, State#state.stmts)};
         error ->
             State
     end,
-    Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
+    Rec = Protocol:prepare(Query),
     State2 = update_state(Rec, State1),
     case Rec of
         #error{} = E ->
@@ -644,12 +658,11 @@ handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) ->
             State3 = State2#state{stmts = Stmts1},
             {reply, {ok, Name}, State3}
     end;
-handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);
-                                                  is_integer(Stmt) ->
+handle_call({unprepare, Stmt}, _From, State = #state{protocol = Protocol})
+  when is_atom(Stmt); is_integer(Stmt) ->
     case dict:find(Stmt, State#state.stmts) of
         {ok, StmtRec} ->
-            #state{socket = Socket} = State,
-            mysql_protocol:unprepare(StmtRec, gen_tcp, Socket),
+            Protocol:unprepare(StmtRec),
             State1 = State#state{stmts = dict:erase(Stmt, State#state.stmts)},
             State2 = schedule_ping(State1),
             {reply, ok, State2};
@@ -668,39 +681,36 @@ handle_call(backslash_escapes_enabled, _From, State = #state{status = S}) ->
     {reply, S band ?SERVER_STATUS_NO_BACKSLASH_ESCAPES == 0, State};
 handle_call(in_transaction, _From, State) ->
     {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};
-handle_call(start_transaction, _From,
-            State = #state{socket = Socket, transaction_level = L,
-                           status = Status})
+handle_call(start_transaction, _From, State = #state{protocol = Protocol,
+                                                     transaction_level = L,
+                                                     status = Status})
   when Status band ?SERVER_STATUS_IN_TRANS == 0, L == 0;
        Status band ?SERVER_STATUS_IN_TRANS /= 0, L > 0 ->
     Query = case L of
         0 -> <<"BEGIN">>;
         _ -> <<"SAVEPOINT s", (integer_to_binary(L))/binary>>
     end,
-    {ok, [Res = #ok{}]} = mysql_protocol:query(Query, gen_tcp, Socket,
-                                               ?cmd_timeout),
+    {ok, [Res = #ok{}]} = Protocol:query(Query, ?cmd_timeout),
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_level = L + 1}};
-handle_call(rollback, _From, State = #state{socket = Socket, status = Status,
+handle_call(rollback, _From, State = #state{protocol = Protocol, status = Status,
                                             transaction_level = L})
   when Status band ?SERVER_STATUS_IN_TRANS /= 0, L >= 1 ->
     Query = case L of
         1 -> <<"ROLLBACK">>;
         _ -> <<"ROLLBACK TO s", (integer_to_binary(L - 1))/binary>>
     end,
-    {ok, [Res = #ok{}]} = mysql_protocol:query(Query, gen_tcp, Socket,
-                                               ?cmd_timeout),
+    {ok, [Res = #ok{}]} = Protocol:query(Query, ?cmd_timeout),
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_level = L - 1}};
-handle_call(commit, _From, State = #state{socket = Socket, status = Status,
+handle_call(commit, _From, State = #state{protocol = Protocol, status = Status,
                                           transaction_level = L})
   when Status band ?SERVER_STATUS_IN_TRANS /= 0, L >= 1 ->
     Query = case L of
         1 -> <<"COMMIT">>;
         _ -> <<"RELEASE SAVEPOINT s", (integer_to_binary(L - 1))/binary>>
     end,
-    {ok, [Res = #ok{}]} = mysql_protocol:query(Query, gen_tcp, Socket,
-                                               ?cmd_timeout),
+    {ok, [Res = #ok{}]} = Protocol:query(Query, ?cmd_timeout),
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_level = L - 1}}.
 
@@ -709,33 +719,38 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
-handle_info(query_cache, State = #state{query_cache = Cache,
+handle_info(query_cache, State = #state{protocol = Protocol,
+                                        query_cache = Cache,
                                         query_cache_time = CacheTime}) ->
     %% Evict expired queries/statements in the cache used by query/3.
     {Evicted, Cache1} = mysql_cache:evict_older_than(Cache, CacheTime),
     %% Unprepare the evicted statements
-    #state{socket = Socket} = State,
     lists:foreach(fun ({_Query, Stmt}) ->
-                      mysql_protocol:unprepare(Stmt, gen_tcp, Socket)
+                      Protocol:unprepare(Stmt)
                   end,
                   Evicted),
     %% If nonempty, schedule eviction again.
     mysql_cache:size(Cache1) > 0 andalso
         erlang:send_after(CacheTime, self(), query_cache),
     {noreply, State#state{query_cache = Cache1}};
-handle_info(ping, State) ->
-    Ok = mysql_protocol:ping(gen_tcp, State#state.socket),
-    {noreply, update_state(Ok, State)};
+handle_info(ping, State = #state{protocol = Protocol}) ->
+    {noreply, update_state(Protocol:ping(), State)};
+
+handle_info({'EXIT', Receiver, normal}, State = #state{receiver = Receiver}) ->
+    {stop, normal, State};
+
+handle_info({'EXIT', Receiver, Reason}, State = #state{receiver = Receiver}) ->
+    {stop, {shutdown, Reason}, State};
+
 handle_info(_Info, State) ->
     {noreply, State}.
 
 %% @private
-terminate(Reason, State) when Reason == normal; Reason == shutdown ->
-    %% Send the goodbye message for politeness.
-    #state{socket = Socket} = State,
-    mysql_protocol:quit(gen_tcp, Socket);
-terminate(_Reason, _State) ->
-    ok.
+%% TODO: send quit?
+terminate(_Reason, #state{socket = undefined}) ->
+    ok;
+terminate(_Reason, #state{socket = Socket}) ->
+    mysql_socket:fast_close(Socket), ok.
 
 %% @private
 code_change(_OldVsn, State = #state{}, _Extra) ->
@@ -759,17 +774,17 @@ query_call(Conn, CallReq) ->
     end.
 
 %% @doc Executes a prepared statement and returns {Reply, NextState}.
-execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket}) ->
-    {ok, Recs} = case mysql_protocol:execute(Stmt, Args, gen_tcp, Socket,
-                                             Timeout) of
+execute_stmt(Stmt, Args, Timeout, State = #state{protocol = Protocol}) ->
+    {ok, Recs} = case Protocol:execute(Stmt, Args, Timeout) of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
             kill_query(State),
-            mysql_protocol:fetch_execute_response(gen_tcp, Socket,
-                                                  ?cmd_timeout);
+            Protocol:fetch_execute_response(?cmd_timeout);
         {error, timeout} ->
             %% For MySQL 4.x.x there is no way to recover from timeout except
             %% killing the connection itself.
             exit(timeout);
+        {stop, Error} ->
+            exit(Error);
         QueryResult ->
             QueryResult
     end,
@@ -851,9 +866,8 @@ clear_transaction_status(State = #state{status = Status}) ->
                 transaction_level = 0}.
 
 %% @doc Fetches and logs warnings. Query is the query that gave the warnings.
-log_warnings(#state{socket = Socket}, Query) ->
-    {ok, [#resultset{rows = Rows}]} = mysql_protocol:query(<<"SHOW WARNINGS">>,
-                                                           gen_tcp, Socket,
+log_warnings(#state{protocol = Protocol}, Query) ->
+    {ok, [#resultset{rows = Rows}]} = Protocol:query(<<"SHOW WARNINGS">>,
                                                            ?cmd_timeout),
     Lines = [[Level, " ", integer_to_binary(Code), ": ", Message, "\n"]
              || [Level, Code, Message] <- Rows],
@@ -862,23 +876,22 @@ log_warnings(#state{socket = Socket}, Query) ->
 %% @doc Makes a separate connection and execute KILL QUERY. We do this to get
 %% our main connection back to normal. KILL QUERY appeared in MySQL 5.0.0.
 kill_query(#state{connection_id = ConnId, host = Host, port = Port,
-                  user = User, password = Password}) ->
+                  transport = Transport, user = User, password = Password}) ->
+    %%TODO:... ssl?
     %% Connect socket
     SockOpts = [{active, false}, binary, {packet, raw}],
-    {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
-
+    {ok, Socket, Receiver} = mysql_socket:connect(self(), Transport, Host, Port, SockOpts, []),
+    Protocol = mysql_protocol:init(fun(Data) -> mysql_socket:send(Socket, Data) end, Receiver),
     %% Exchange handshake communication.
-    Result = mysql_protocol:handshake(User, Password, undefined, gen_tcp,
-                                      Socket),
+    Result = Protocol:handshake(User, Password, undefined),
     case Result of
         #handshake{} ->
             %% Kill and disconnect
             IdBin = integer_to_binary(ConnId),
-            {ok, [#ok{}]} = mysql_protocol:query(<<"KILL QUERY ",
-                                                   IdBin/binary>>, gen_tcp,
-                                                 Socket, ?cmd_timeout),
-            mysql_protocol:quit(gen_tcp, Socket);
+            {ok, [#ok{}]} = Protocol:query(<<"KILL QUERY ", IdBin/binary>>, ?cmd_timeout),
+            Protocol:quit();
         #error{} = E ->
             error_logger:error_msg("Failed to connect to kill query: ~p",
                                    [error_to_reason(E)])
     end.
+
