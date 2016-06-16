@@ -867,6 +867,8 @@ recv_packet(Receiver, SeqNum, Timeout) when is_integer(SeqNum) ->
     receive
         {mysql_recv, Receiver, {ok, SeqNum, Packet}} ->
             {ok, Packet, next_seq(SeqNum)};
+        {mysql_recv, Receiver, {ok, NewSeqNum, Packet}} when size(Packet) >= ?MAX_LEN ->
+            {ok, Packet, next_seq(NewSeqNum)};
         {'EXIT', Receiver, Reason} ->
             {stop, Reason}
         after Timeout ->

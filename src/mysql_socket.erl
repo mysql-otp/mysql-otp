@@ -31,6 +31,8 @@
 %% Internal Export
 -export([receiver/2, receiver_loop/3, parser/0]).
 
+-define(MAX_LEN, 16#ffffff).
+
 %% 60 (secs)
 -define(TIMEOUT, 60000).
 
@@ -244,8 +246,6 @@ parse_data(ClientPid, Data, Parser) ->
             {error, Error}
     end.
 
-parser() -> fun(Bin) -> parse_header(Bin) end.
-
 %% @doc Parses a packet header (32 bits) and returns a tuple.
 %%
 %% The client should first read a header and parse it. Then read PacketLength
@@ -257,20 +257,37 @@ parser() -> fun(Bin) -> parse_header(Bin) end.
 %% can be parsed using parse_response/1, etc. depending on what type of response
 %% is expected.
 %% @private
-parse_header(<<>>) ->
-    {more, fun(Bin) -> parse_header(Bin) end};
 
-parse_header(Bin) when size(Bin) < 4 ->
-    {more, fun(More) -> parse_header(<<Bin/binary, More/binary>>) end};
+parser() -> fun(Bin) -> parse_header(Bin, none) end.
 
-parse_header(<<Len:24/little, Seq:8, Bin/binary>>) ->
-    parse_body(Bin, Seq, Len).
+parse_header(<<>>, State) ->
+    {more, fun(Bin) -> parse_header(Bin, State) end};
 
-parse_body(Bin, Seq, Len) when size(Bin) < Len ->
-    {more, fun(More) -> parse_body(<<Bin/binary, More/binary>>, Seq, Len) end};
+parse_header(Bin, State) when size(Bin) < 4 ->
+    {more, fun(More) -> parse_header(<<Bin/binary, More/binary>>, State) end};
 
-parse_body(Bin, Seq, Len) ->
-    <<Body:Len/binary, Rest/binary>> = Bin, {ok, {Seq, Body}, Rest}.
+parse_header(<<?MAX_LEN:24/little, Seq:8, Bin/binary>>, none) ->
+    parse_body(Bin, Seq, ?MAX_LEN, {more, <<>>});
+
+parse_header(<<?MAX_LEN:24/little, Seq:8, Bin/binary>>, {more, Acc}) ->
+    parse_body(Bin, Seq, ?MAX_LEN, {more, Acc});
+
+parse_header(<<Len:24/little, Seq:8, Bin/binary>>, none) ->
+    parse_body(Bin, Seq, Len, {done, <<>>});
+
+parse_header(<<Len:24/little, Seq:8, Bin/binary>>, {more, Acc}) ->
+    parse_body(Bin, Seq, Len, {done, Acc}).
+
+parse_body(Bin, Seq, Len, State) when size(Bin) < Len ->
+    {more, fun(More) -> parse_body(<<Bin/binary, More/binary>>, Seq, Len, State) end};
+
+parse_body(Bin, _Seq, Len, {more, Acc}) ->
+    <<Body:Len/binary, Rest/binary>> = Bin,
+    parse_header(Rest, {more, <<Acc/binary, Body/binary>>});
+
+parse_body(Bin, Seq, Len, {done, Acc}) ->
+    <<Body:Len/binary, Rest/binary>> = Bin,
+    {ok, {Seq, <<Acc/binary, Body/binary>>}, Rest}.
 
 %%--------------------------------------------------------------------
 %% utilities
