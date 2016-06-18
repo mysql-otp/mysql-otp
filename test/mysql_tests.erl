@@ -1,5 +1,5 @@
 %% MySQL/OTP – MySQL client library for Erlang/OTP
-%% Copyright (C) 2014 Viktor Söderqvist
+%% Copyright (C) 2014-2016 Viktor Söderqvist
 %%
 %% This file is part of MySQL/OTP.
 %%
@@ -65,6 +65,50 @@ successful_connect_test() ->
     ?assertMatch({ok, State}, mysql:code_change("0.1.0", State, [])),
     ?assertMatch({error, _}, mysql:code_change("2.0.0", unknown_state, [])),
     exit(whereis(tardis), normal).
+
+server_disconnect_test() ->
+    process_flag(trap_exit, true),
+    Options = [{user, ?user}, {password, ?password}],
+    {ok, Pid} = mysql:start_link(Options),
+    {ok, ok, LoggedErrors} = error_logger_acc:capture(fun () ->
+        %% Make the server close the connection after 1 second of inactivity.
+        ok = mysql:query(Pid, <<"SET SESSION wait_timeout = 1">>),
+        receive
+            {'EXIT', Pid, tcp_closed} -> ok
+        after 2000 ->
+            no_exit_message
+        end
+    end),
+    process_flag(trap_exit, false),
+    %% Check that we got the expected errors in the error log.
+    [{error, Msg1}, {error, Msg2}, {error_report, CrashReport}] = LoggedErrors,
+    %% "Connection Id 24 closing with reason: tcp_closed"
+    ?assert(lists:prefix("Connection Id", Msg1)),
+    ExpectedPrefix = io_lib:format("** Generic server ~p terminating", [Pid]),
+    ?assert(lists:prefix(lists:flatten(ExpectedPrefix), Msg2)),
+    ?assertMatch({crash_report, _}, CrashReport).
+
+tcp_error_test() ->
+    process_flag(trap_exit, true),
+    Options = [{user, ?user}, {password, ?password}],
+    {ok, Pid} = mysql:start_link(Options),
+    {ok, ok, LoggedErrors} = error_logger_acc:capture(fun () ->
+        %% Simulate a tcp error by sending a message. (Is there a better way?)
+        Pid ! {tcp_error, dummy_socket, tcp_reason},
+        receive
+            {'EXIT', Pid, {tcp_error, tcp_reason}} -> ok
+        after 1000 ->
+            ?assertEqual(ok, no_exit_message)
+        end
+    end),
+    process_flag(trap_exit, false),
+    %% Check that we got the expected crash report in the error log.
+    [{error, Msg1}, {error, Msg2}, {error_report, CrashReport}] = LoggedErrors,
+    %% "Connection Id 24 closing with reason: tcp_closed"
+    ?assert(lists:prefix("Connection Id", Msg1)),
+    ExpectedPrefix = io_lib:format("** Generic server ~p terminating", [Pid]),
+    ?assert(lists:prefix(lists:flatten(ExpectedPrefix), Msg2)),
+    ?assertMatch({crash_report, _}, CrashReport).
 
 keep_alive_test() ->
      %% Let the connection send a few pings.
