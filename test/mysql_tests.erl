@@ -73,7 +73,7 @@ keep_alive_test() ->
      {ok, Pid} = mysql:start_link(Options),
      receive after 70 -> ok end,
      State = get_state(Pid),
-     [state, _Version, _ConnectionId, tcp, Socket | _] = tuple_to_list(State),
+     [state, _Version, _ConnectionId, Socket | _] = tuple_to_list(State),
      {ok, ExitMessage, LoggedErrors} = error_logger_acc:capture(fun () ->
          gen_tcp:close(Socket),
          receive

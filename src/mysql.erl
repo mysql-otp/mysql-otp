@@ -118,9 +118,6 @@
 %%   <dd>Additional options for `gen_tcp:connect/3'. You may want to set
 %%       `{recbuf, Size}' and `{sndbuf, Size}' if you send or receive more than
 %%       the default (typically 8K) per query.</dd>
-%%   <dt>`{ssl_options, SslOptions}'</dt>
-%%   <dd>SSL options: <a href="http://erlang.org/doc/man/ssl.html">http://erlang.org/doc/man/ssl.html</a>
-%%   </dd>
 %% </dl>
 -spec start_link(Options) -> {ok, pid()} | ignore | {error, term()}
     when Options :: [Option],
@@ -134,8 +131,7 @@
                    {queries, [iodata()]} |
                    {query_timeout, timeout()} |
                    {query_cache_time, non_neg_integer()} |
-                   {tcp_options, [gen_tcp:connect_option()]} |
-                   {ssl_options, [ssl:ssl_option()]},
+                   {tcp_options, [gen_tcp:connect_option()]},
          ServerName :: {local, Name :: atom()} |
                        {global, GlobalName :: term()} |
                        {via, Module :: atom(), ViaName :: term()},
@@ -453,8 +449,8 @@ encode(Conn, Term) ->
 -include("server_status.hrl").
 
 %% Gen_server state
--record(state, {server_version, connection_id, transport, socket,
-                receiver, protocol, ssl_options,
+-record(state, {server_version, connection_id, socket,
+                receiver, protocol,
                 host, port, user, password, log_warnings,
                 ping_timeout,
                 query_timeout, query_cache_time,
@@ -478,11 +474,6 @@ init(Opts) ->
                                          ?default_query_cache_time),
     TcpOpts        = proplists:get_value(tcp_options, Opts, []),
 
-    {Transport, SslOpts} = case proplists:get_value(ssl_options, Opts) of
-                               undefined -> {tcp, []};
-                               SslOpts0  -> ssl:start(), {ssl, SslOpts0}
-                           end,
-
     PingTimeout = case KeepAlive of
         true         -> ?default_ping_timeout;
         false        -> infinity;
@@ -491,7 +482,7 @@ init(Opts) ->
 
     %% Connect socket
     SockOpts = [{active, false}, binary, {packet, raw} | TcpOpts],
-    case mysql_socket:connect(self(), Transport, Host, Port, SockOpts, SslOpts) of
+    case mysql_socket:connect(self(), Host, Port, SockOpts) of
         {ok, Socket, Receiver} ->
             SendFun = fun(Data) -> mysql_socket:send(Socket, Data) end,
             Protocol = mysql_protocol:init(SendFun, Receiver),
@@ -502,8 +493,7 @@ init(Opts) ->
                            status = Status} ->
                     State = #state{server_version = Version, connection_id = ConnId,
                                    socket = Socket, receiver = Receiver,
-                                   transport = Transport, protocol = Protocol,
-                                   ssl_options = SslOpts,
+                                   protocol = Protocol,
                                    host = Host, port = Port, user = User,
                                    password = Password, status = Status,
                                    log_warnings = LogWarn,
@@ -876,11 +866,10 @@ log_warnings(#state{protocol = Protocol}, Query) ->
 %% @doc Makes a separate connection and execute KILL QUERY. We do this to get
 %% our main connection back to normal. KILL QUERY appeared in MySQL 5.0.0.
 kill_query(#state{connection_id = ConnId, host = Host, port = Port,
-                  transport = Transport, user = User, password = Password}) ->
-    %%TODO:... ssl?
+                  user = User, password = Password}) ->
     %% Connect socket
     SockOpts = [{active, false}, binary, {packet, raw}],
-    {ok, Socket, Receiver} = mysql_socket:connect(self(), Transport, Host, Port, SockOpts, []),
+    {ok, Socket, Receiver} = mysql_socket:connect(self(), Host, Port, SockOpts),
     Protocol = mysql_protocol:init(fun(Data) -> mysql_socket:send(Socket, Data) end, Receiver),
     %% Exchange handshake communication.
     Result = Protocol:handshake(User, Password, undefined),

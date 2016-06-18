@@ -24,7 +24,7 @@
 -author("Feng Lee <feng@emqtt.io>").
 
 %% API
--export([connect/6, controlling_process/2, send/2, close/1, fast_close/1, stop/1]).
+-export([connect/4, controlling_process/2, send/2, close/1, fast_close/1, stop/1]).
 
 -export([sockname/1, sockname_s/1, setopts/2, getstat/2]).
 
@@ -39,60 +39,21 @@
 -define(TCP_OPTS, [binary, {packet, raw}, {active, false}, {reuseaddr, true},
                    {nodelay, true}, {reuseaddr, true}, {send_timeout, ?TIMEOUT}]).
 
--define(SSL_OPTS, [{depth, 0}]).
-
--record(ssl_socket, {tcp, ssl}).
-
--type(ssl_socket() :: #ssl_socket{}).
-
--define(IS_SSL(Socket), is_record(Socket, ssl_socket)).
-
--export_type([ssl_socket/0]).
-
 %% @doc Connect to MySQL with TCP or SSL transport
--spec(connect(ClientPid, Transport, Host, Port, TcpOpts, SslOpts) -> {ok, Socket, Receiver} | {error, any()} when
+-spec(connect(ClientPid, Host, Port, TcpOpts) -> {ok, Socket, Receiver} | {error, any()} when
     ClientPid :: pid(),
-    Transport :: tcp | ssl,
     Host      :: inet:ip_address() | string(),
     Port      :: inet:port_number(),
     TcpOpts   :: [gen_tcp:connect_option()],
-    SslOpts   :: [ssl:ssl_option()],
-    Socket    :: inet:socket() | ssl_socket(),
+    Socket    :: inet:socket(),
     Receiver  :: pid()).
-connect(ClientPid, Transport, Host, Port, TcpOpts, SslOpts) when is_pid(ClientPid) ->
-    case connect(Transport, Host, Port, TcpOpts, SslOpts) of
-        {ok, Socket} ->
-            ReceiverPid = spawn_link(?MODULE, receiver, [ClientPid, Socket]),
-            controlling_process(Socket, ReceiverPid),
-            {ok, Socket, ReceiverPid};
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
--spec(connect(Transport, Host, Port, TcpOpts, SslOpts) -> {ok, Socket} | {error, any()} when
-    Transport :: tcp | ssl,
-    Host      :: inet:ip_address() | string(),
-    Port      :: inet:port_number(),
-    TcpOpts   :: [gen_tcp:connect_option()],
-    SslOpts   :: [ssl:ssl_option()],
-    Socket    :: inet:socket() | ssl_socket()).
-connect(tcp, Host, Port, TcpOpts, _SslOpts) ->
+connect(ClientPid, Host, Port, TcpOpts) when is_pid(ClientPid) ->
     case gen_tcp:connect(Host, Port, merge_opts(?TCP_OPTS, TcpOpts), ?TIMEOUT) of
         {ok, Socket} -> tune_buffer(Socket),
-                        {ok, Socket};
+                        ReceiverPid = spawn_link(?MODULE, receiver, [ClientPid, Socket]),
+                        controlling_process(Socket, ReceiverPid),
+                        {ok, Socket, ReceiverPid};
         Error        -> Error
-    end;
-
-connect(ssl, Host, Port, TcpOpts, SslOpts) ->
-    case gen_tcp:connect(Host, Port, merge_opts(?TCP_OPTS, TcpOpts), ?TIMEOUT) of
-        {ok, Socket} ->
-            tune_buffer(Socket),
-            case ssl:connect(Socket, merge_opts(?SSL_OPTS, SslOpts), ?TIMEOUT) of
-                {ok, SslSocket} -> {ok, #ssl_socket{tcp = Socket, ssl = SslSocket}};
-                Error           -> Error
-            end;
-        Error ->
-            Error
     end.
 
 tune_buffer(Socket) ->
@@ -117,39 +78,22 @@ merge_opts(Defaults, Options) ->
 
 %% @doc Socket controlling process
 controlling_process(Socket, Pid) when is_port(Socket) ->
-    gen_tcp:controlling_process(Socket, Pid);
-controlling_process(#ssl_socket{ssl = SslSocket}, Pid) ->
-    ssl:controlling_process(SslSocket, Pid).
+    gen_tcp:controlling_process(Socket, Pid).
 
 %% @doc Send Data
 -spec(send(Socket, Data) -> ok when
-    Socket :: inet:socket() | ssl_socket(),
+    Socket :: inet:socket(),
     Data   :: binary()).
 send(Socket, Data) when is_port(Socket) ->
-    gen_tcp:send(Socket, Data);
-send(#ssl_socket{ssl = SslSocket}, Data) ->
-    ssl:send(SslSocket, Data).
+    gen_tcp:send(Socket, Data).
 
 %% @doc Close Socket.
--spec(close(Socket :: inet:socket() | ssl_socket()) -> ok).
+-spec(close(Socket :: inet:socket()) -> ok).
 close(Socket) when is_port(Socket) ->
-    gen_tcp:close(Socket);
-close(#ssl_socket{ssl = SslSocket}) ->
-    ssl:close(SslSocket).
+    gen_tcp:close(Socket).
 
--spec(fast_close(Socket :: inet:socket() | ssl_socket()) -> ok).
+-spec(fast_close(Socket :: inet:socket()) -> ok).
 fast_close(Socket) when is_port(Socket) ->
-    catch port_close(Socket), ok;
-fast_close(#ssl_socket{tcp = Socket, ssl = SslSock}) ->
-    {Pid, MRef} = spawn_monitor(fun() -> ssl:close(SslSock) end),
-    erlang:send_after(3000, self(), {Pid, ssl_close_timeout}),
-    receive
-        {Pid, ssl_close_timeout} ->
-            erlang:demonitor(MRef, [flush]),
-            exit(Pid, kill);
-        {'DOWN', MRef, process, Pid, _Reason} ->
-            ok
-    end,
     catch port_close(Socket), ok.
 
 %% @doc Stop Receiver.
@@ -160,30 +104,24 @@ stop(Receiver) ->
 %% @doc Set socket options.
 setopts(Socket, Opts) when is_port(Socket) ->
     inet:setopts(Socket, Opts);
-setopts(#ssl_socket{ssl = SslSocket}, Opts) ->
-    ssl:setopts(SslSocket, Opts);
 setopts(_Socket, _Opts) ->
     ok. %% for unit test
 
 %% @doc Get socket stats.
 -spec(getstat(Socket, Stats) -> {ok, Values} | {error, any()} when
-    Socket :: inet:socket() | ssl_socket(),
+    Socket :: inet:socket(),
     Stats  :: list(),
     Values :: list()).
 getstat(Socket, Stats) when is_port(Socket) ->
-    inet:getstat(Socket, Stats);
-getstat(#ssl_socket{tcp = Socket}, Stats) -> 
     inet:getstat(Socket, Stats).
 
 %% @doc Socket name.
 -spec(sockname(Socket) -> {ok, {Address, Port}} | {error, any()} when
-    Socket  :: inet:socket() | ssl_socket(),
+    Socket  :: inet:socket(),
     Address :: inet:ip_address(),
     Port    :: inet:port_number()).
 sockname(Socket) when is_port(Socket) ->
-    inet:sockname(Socket);
-sockname(#ssl_socket{ssl = SslSocket}) ->
-    ssl:sockname(SslSocket).
+    inet:sockname(Socket).
 
 sockname_s(Socket) ->
     case sockname(Socket) of
@@ -204,28 +142,18 @@ receiver_activate(ClientPid, Socket, Parser) ->
 receiver_loop(ClientPid, Socket, Parser) ->
     receive
         {tcp, Socket, Data} ->
-            process_data(ClientPid, Socket, Data, Parser);
+            case parse_data(ClientPid, Data, Parser) of
+                {ok, NewParser} ->
+                    receiver_activate(ClientPid, Socket, NewParser);
+                {error, Error} ->
+                    exit(Error)
+            end;
         {tcp_error, Socket, Reason} ->
             exit({tcp_error, Reason});
         {tcp_closed, Socket} ->
             exit(tcp_closed);
-        {ssl, _SslSocket, Data} ->
-            process_data(ClientPid, Socket, Data, Parser);
-        {ssl_error, _SslSocket, Reason} ->
-            exit({ssl_error, Reason});
-        {ssl_closed, _SslSocket} ->
-            exit(ssl_closed);
         stop -> 
             close(Socket), exit(normal)
-    end.
-
-process_data(ClientPid, Socket, Data, Parser) ->
-    io:format("Recv: ~p~n", [Data]),
-    case parse_data(ClientPid, Data, Parser) of
-        {ok, NewParser} ->
-            receiver_activate(ClientPid, Socket, NewParser);
-        {error, Error} ->
-            exit(Error)
     end.
 
 %%--------------------------------------------------------------------

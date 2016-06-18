@@ -853,7 +853,7 @@ decode_decimal(Bin, P, S) when P >= 16, S > 0 ->
 
 %% @doc Wraps Data in packet headers, sends it by calling TcpModule:send/2 with
 %% Socket and returns {ok, SeqNum1} where SeqNum1 is the next sequence number.
--spec send_packet(inet:socket() | mysql_socket:ssl_socket(), Packet :: binary(), SeqNum :: integer()) ->
+-spec send_packet(inet:socket(), Packet :: binary(), SeqNum :: integer()) ->
     {ok, NextSeqNum :: integer()}.
 send_packet(SendFun, Packet, SeqNum) ->
     {WithHeaders, SeqNum1} = add_packet_headers(Packet, SeqNum),

@@ -1,14 +1,4 @@
 
-Fork to fix:
-
-https://github.com/mysql-otp/mysql-otp/issues/33
-
-https://github.com/emqtt/emqttd/issues/586
-
-https://github.com/emqtt/emqttd/issues/523
-
-https://github.com/emqtt/emqttd_plugin_mysql/issues/15
-
 MySQL/OTP
 =========
 
