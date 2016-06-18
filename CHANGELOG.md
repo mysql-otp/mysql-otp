@@ -2,6 +2,22 @@ Change log
 ==========
 
 
+1.2.0
+-----
+* Bump version to 1.2.0 [2016-06-18 06:37:07 +0200]
+* Add test for server disconnect and tcp error [2016-06-18 06:27:51 +0200]
+* Fixes typo: Set active once after executing prepared statement [2016-06-18 06:27:43 +0200]
+* Stop the gen_server when mysql server closes connection [2016-06-11 16:11:06 +0200]
+* Properly handling empty passwords [2016-02-19 16:41:09 -0800]
+* this change required for the elixir/exrm to package this as a dependency. [2016-01-05 12:40:41 -0600]
+
+1.1.1
+-----
+* Bumb version 1.1.1 [2015-09-13 12:09:33 +0200]
+* Skip lock wait timeout test when setting the timeout is not possible [2015-09-13 11:56:57 +0200]
+* Don't check the multi capabilities from the server; fixes #31 [2015-09-13 11:55:46 +0200]
+* Update CHANGELOG.md [2015-08-31 16:39:43 +0200]
+
 1.1.0
 -----
 * Bump version 1.1.0 and update README [2015-08-31 14:51:56 +0200]
