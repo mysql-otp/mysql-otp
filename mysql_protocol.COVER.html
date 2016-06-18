@@ -5,7 +5,7 @@
 <title>cover/mysql_protocol.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protocol.erl by COVER 2015-08-31 at 14:43:51
+File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl by COVER 2016-06-18 at 06:38:35
 
 ****************************************************************************
 
@@ -59,17 +59,17 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
         |  -spec handshake(iodata(), iodata(), iodata() | undefined, atom(), term()) -&gt;
         |      #handshake{} | #error{}.
         |  handshake(Username, Password, Database, TcpModule, Socket) -&gt;
-    15..|      SeqNum0 = 0,
-    15..|      {ok, HandshakePacket, SeqNum1} = recv_packet(TcpModule, Socket, SeqNum0),
-    15..|      Handshake = parse_handshake(HandshakePacket),
-    14..|      Response = build_handshake_response(Handshake, Username, Password,
+    17..|      SeqNum0 = 0,
+    17..|      {ok, HandshakePacket, SeqNum1} = recv_packet(TcpModule, Socket, SeqNum0),
+    17..|      Handshake = parse_handshake(HandshakePacket),
+    16..|      Response = build_handshake_response(Handshake, Username, Password,
         |                                          Database),
-    14..|      {ok, SeqNum2} = send_packet(TcpModule, Socket, Response, SeqNum1),
-    14..|      {ok, ConfirmPacket, _SeqNum3} = recv_packet(TcpModule, Socket, SeqNum2),
-    14..|      case parse_handshake_confirm(ConfirmPacket) of
+    16..|      {ok, SeqNum2} = send_packet(TcpModule, Socket, Response, SeqNum1),
+    16..|      {ok, ConfirmPacket, _SeqNum3} = recv_packet(TcpModule, Socket, SeqNum2),
+    16..|      case parse_handshake_confirm(ConfirmPacket) of
         |          #ok{status = OkStatus} -&gt;
-    13..|              OkStatus = Handshake#handshake.status,
-    13..|              Handshake;
+    15..|              OkStatus = Handshake#handshake.status,
+    15..|              Handshake;
         |          Error -&gt;
      1..|              Error
         |      end.
@@ -91,15 +91,15 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
         |  -spec query(Query :: iodata(), atom(), term(), timeout()) -&gt;
         |      {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
         |  query(Query, TcpModule, Socket, Timeout) -&gt;
-   383..|      Req = &lt;&lt;?COM_QUERY, (iolist_to_binary(Query))/binary&gt;&gt;,
-   383..|      SeqNum0 = 0,
-   383..|      {ok, _SeqNum1} = send_packet(TcpModule, Socket, Req, SeqNum0),
-   383..|      fetch_query_response(TcpModule, Socket, Timeout).
+   384..|      Req = &lt;&lt;?COM_QUERY, (iolist_to_binary(Query))/binary&gt;&gt;,
+   384..|      SeqNum0 = 0,
+   384..|      {ok, _SeqNum1} = send_packet(TcpModule, Socket, Req, SeqNum0),
+   384..|      fetch_query_response(TcpModule, Socket, Timeout).
         |  
         |  %% @doc This is used by query/4. If query/4 returns {error, timeout}, this
         |  %% function can be called to retry to fetch the results of the query. 
         |  fetch_query_response(TcpModule, Socket, Timeout) -&gt;
-   384..|      fetch_response(TcpModule, Socket, Timeout, text, []).
+   385..|      fetch_response(TcpModule, Socket, Timeout, text, []).
         |  
         |  %% @doc Prepares a statement.
         |  -spec prepare(iodata(), atom(), term()) -&gt; #error{} | #prepared{}.
@@ -189,7 +189,7 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
         |  -spec parse_handshake(binary()) -&gt; #handshake{}.
         |  parse_handshake(&lt;&lt;10, Rest/binary&gt;&gt;) -&gt;
         |      %% Protocol version 10.
-    14..|      {ServerVersion, Rest1} = nulterm_str(Rest),
+    16..|      {ServerVersion, Rest1} = nulterm_str(Rest),
         |      &lt;&lt;ConnectionId:32/little,
         |        AuthPluginDataPart1:8/binary-unit:8,
         |        0, %% "filler" -- everything below is optional
@@ -199,24 +199,24 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
         |        CapabilitiesUpper:16/little,
         |        AuthPluginDataLength:8,     %% if cabab &amp; CLIENT_PLUGIN_AUTH, otherwise 0
         |        _Reserved:10/binary-unit:8, %% 10 unused (reserved) bytes
-    14..|        Rest3/binary&gt;&gt; = Rest1,
-    14..|      Capabilities = CapabilitiesLower + 16#10000 * CapabilitiesUpper,
-    14..|      Len = case AuthPluginDataLength of
+    16..|        Rest3/binary&gt;&gt; = Rest1,
+    16..|      Capabilities = CapabilitiesLower + 16#10000 * CapabilitiesUpper,
+    16..|      Len = case AuthPluginDataLength of
 <font color=red>     0..|          0 -&gt; 13;   %% Server has not CLIENT_PLUGIN_AUTH</font>
-    14..|          K -&gt; K - 8 %% Part 2 length = Total length minus the 8 bytes in part 1.
+    16..|          K -&gt; K - 8 %% Part 2 length = Total length minus the 8 bytes in part 1.
         |      end,
-    14..|      &lt;&lt;AuthPluginDataPart2:Len/binary-unit:8, AuthPluginName/binary&gt;&gt; = Rest3,
-    14..|      AuthPluginData = &lt;&lt;AuthPluginDataPart1/binary, AuthPluginDataPart2/binary&gt;&gt;,
+    16..|      &lt;&lt;AuthPluginDataPart2:Len/binary-unit:8, AuthPluginName/binary&gt;&gt; = Rest3,
+    16..|      AuthPluginData = &lt;&lt;AuthPluginDataPart1/binary, AuthPluginDataPart2/binary&gt;&gt;,
         |      %% "Due to Bug#59453 the auth-plugin-name is missing the terminating
         |      %% NUL-char in versions prior to 5.5.10 and 5.6.2."
         |      %% Strip the final NUL byte if any.
         |      %% This may also be &lt;&lt;&gt;&gt; in older versions.
-    14..|      L = byte_size(AuthPluginName) - 1,
-    14..|      AuthPluginName1 = case AuthPluginName of
-    14..|          &lt;&lt;AuthPluginNameTrimmed:L/binary, 0&gt;&gt; -&gt; AuthPluginNameTrimmed;
+    16..|      L = byte_size(AuthPluginName) - 1,
+    16..|      AuthPluginName1 = case AuthPluginName of
+    16..|          &lt;&lt;AuthPluginNameTrimmed:L/binary, 0&gt;&gt; -&gt; AuthPluginNameTrimmed;
 <font color=red>     0..|          _ -&gt; AuthPluginName</font>
         |      end,
-    14..|      #handshake{server_version = server_version_to_list(ServerVersion),
+    16..|      #handshake{server_version = server_version_to_list(ServerVersion),
         |                 connection_id = ConnectionId,
         |                 capabilities = Capabilities,
         |                 character_set = CharacterSet,
@@ -230,9 +230,9 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
         |  -spec server_version_to_list(binary()) -&gt; [integer()].
         |  server_version_to_list(ServerVersion) -&gt;
         |      %% This must work with e.g. "5.5.40-0ubuntu0.12.04.1-log" and "5.5.33a".
-    14..|      {match, Parts} = re:run(ServerVersion, &lt;&lt;"^(\\d+)\\.(\\d+)\\.(\\d+)"&gt;&gt;,
+    16..|      {match, Parts} = re:run(ServerVersion, &lt;&lt;"^(\\d+)\\.(\\d+)\\.(\\d+)"&gt;&gt;,
         |                              [{capture, all_but_first, binary}]),
-    14..|      lists:map(fun binary_to_integer/1, Parts).
+    16..|      lists:map(fun binary_to_integer/1, Parts).
         |  
         |  %% @doc The response sent by the client to the server after receiving the
         |  %% initial handshake from the server
@@ -240,35 +240,39 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
         |                                 iodata() | undefined) -&gt; binary().
         |  build_handshake_response(Handshake, Username, Password, Database) -&gt;
         |      %% We require these capabilities. Make sure the server handles them.
-    14..|      CapabilityFlags0 = ?CLIENT_PROTOCOL_41 bor
+    16..|      CapabilityFlags0 = ?CLIENT_PROTOCOL_41 bor
         |                         ?CLIENT_TRANSACTIONS bor
-        |                         ?CLIENT_SECURE_CONNECTION bor
-        |                         ?CLIENT_MULTI_STATEMENTS bor
-        |                         ?CLIENT_MULTI_RESULTS bor
-        |                         ?CLIENT_PS_MULTI_RESULTS,
-    14..|      CapabilityFlags = case Database of
-    13..|          undefined -&gt; CapabilityFlags0;
+        |                         ?CLIENT_SECURE_CONNECTION,
+    16..|      CapabilityFlags = case Database of
+    15..|          undefined -&gt; CapabilityFlags0;
      1..|          _         -&gt; CapabilityFlags0 bor ?CLIENT_CONNECT_WITH_DB
         |      end,
-    14..|      Handshake#handshake.capabilities band CapabilityFlags == CapabilityFlags
+    16..|      Handshake#handshake.capabilities band CapabilityFlags == CapabilityFlags
 <font color=red>     0..|          orelse error(old_server_version),</font>
-    14..|      Hash = case Handshake#handshake.auth_plugin_name of
+        |      %% Add some extra capability flags only for signalling to the server what
+        |      %% the client wants to do. The server doesn't say it handles them although
+        |      %% it does. (http://bugs.mysql.com/bug.php?id=42268)
+    16..|      ClientCapabilityFlags = CapabilityFlags bor
+        |                              ?CLIENT_MULTI_STATEMENTS bor
+        |                              ?CLIENT_MULTI_RESULTS bor
+        |                              ?CLIENT_PS_MULTI_RESULTS,
+    16..|      Hash = case Handshake#handshake.auth_plugin_name of
         |          &lt;&lt;&gt;&gt; -&gt;
         |              %% Server doesn't know auth plugins
 <font color=red>     0..|              hash_password(Password, Handshake#handshake.auth_plugin_data);</font>
         |          &lt;&lt;"mysql_native_password"&gt;&gt; -&gt;
-    14..|              hash_password(Password, Handshake#handshake.auth_plugin_data);
+    16..|              hash_password(Password, Handshake#handshake.auth_plugin_data);
         |          UnknownAuthMethod -&gt;
 <font color=red>     0..|              error({auth_method, UnknownAuthMethod})</font>
         |      end,
-    14..|      HashLength = size(Hash),
-    14..|      CharacterSet = ?UTF8,
-    14..|      UsernameUtf8 = unicode:characters_to_binary(Username),
-    14..|      DbBin = case Database of
-    13..|          undefined -&gt; &lt;&lt;&gt;&gt;;
+    16..|      HashLength = size(Hash),
+    16..|      CharacterSet = ?UTF8,
+    16..|      UsernameUtf8 = unicode:characters_to_binary(Username),
+    16..|      DbBin = case Database of
+    15..|          undefined -&gt; &lt;&lt;&gt;&gt;;
      1..|          _         -&gt; &lt;&lt;(iolist_to_binary(Database))/binary, 0&gt;&gt;
         |      end,
-    14..|      &lt;&lt;CapabilityFlags:32/little,
+    16..|      &lt;&lt;ClientCapabilityFlags:32/little,
         |        ?MAX_BYTES_PER_PACKET:32/little,
         |        CharacterSet:8,
         |        0:23/unit:8, %% reserverd
@@ -283,10 +287,10 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
         |  %% an error if unimplemented features are required.
         |  -spec parse_handshake_confirm(binary()) -&gt; #ok{} | #error{}.
         |  parse_handshake_confirm(Packet) -&gt;
-    14..|      case Packet of
+    16..|      case Packet of
         |          ?ok_pattern -&gt;
         |              %% Connection complete.
-    13..|              parse_ok_packet(Packet);
+    15..|              parse_ok_packet(Packet);
         |          ?error_pattern -&gt;
         |              %% Access denied, insufficient client capabilities, etc.
      1..|              parse_error_packet(Packet);
@@ -311,11 +315,11 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
         |  -spec fetch_response(atom(), term(), timeout(), text | binary, list()) -&gt;
         |      {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
         |  fetch_response(TcpModule, Socket, Timeout, Proto, Acc) -&gt;
-   564..|      case recv_packet(TcpModule, Socket, Timeout, any) of
+   565..|      case recv_packet(TcpModule, Socket, Timeout, any) of
         |          {ok, Packet, SeqNum2} -&gt;
-   561..|              Result = case Packet of
+   562..|              Result = case Packet of
         |                  ?ok_pattern -&gt;
-   333..|                      parse_ok_packet(Packet);
+   334..|                      parse_ok_packet(Packet);
         |                  ?error_pattern -&gt;
      4..|                      parse_error_packet(Packet);
         |                  ResultPacket -&gt;
@@ -330,12 +334,12 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
    223..|                              parse_resultset(R, ColCount, Proto)
         |                      end
         |              end,
-   561..|              Acc1 = [Result | Acc],
-   561..|              case more_results_exists(Result) of
+   562..|              Acc1 = [Result | Acc],
+   562..|              case more_results_exists(Result) of
         |                  true -&gt;
      7..|                      fetch_response(TcpModule, Socket, Timeout, Proto, Acc1);
         |                  false -&gt;
-   554..|                      {ok, lists:reverse(Acc1)}
+   555..|                      {ok, lists:reverse(Acc1)}
         |              end;
         |          {error, timeout} -&gt;
      3..|              {error, timeout}
@@ -371,7 +375,7 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
    103..|      R#resultset{rows = Rows1}.
         |  
         |  more_results_exists(#ok{status = S}) -&gt;
-   333..|      S band ?SERVER_MORE_RESULTS_EXISTS /= 0;
+   334..|      S band ?SERVER_MORE_RESULTS_EXISTS /= 0;
         |  more_results_exists(#error{}) -&gt;
      5..|      false; %% No status bits for error
         |  more_results_exists(#resultset{status = S}) -&gt;
@@ -576,7 +580,7 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
    101..|      BitMapLength = (NumColumns + BitOffset + 7) bsr 3,
    101..|      &lt;&lt;NullBitstring0:BitMapLength/binary, Rest/binary&gt;&gt; = Data,
    101..|      &lt;&lt;_:BitOffset, NullBitstring:NumColumns/bitstring, _/bitstring&gt;&gt; =
-   103..|          &lt;&lt; &lt;&lt;(reverse_byte(B))/binary&gt;&gt; || &lt;&lt;B:1/binary&gt;&gt; &lt;= NullBitstring0 &gt;&gt;,
+   101..|          &lt;&lt; &lt;&lt;(reverse_byte(B))/binary&gt;&gt; || &lt;&lt;B:1/binary&gt;&gt; &lt;= NullBitstring0 &gt;&gt;,
    101..|      {NullBitstring, Rest}.
         |  
         |  %% @doc The reverse of null_bitmap_decode/3. The number of columns is taken to
@@ -854,34 +858,34 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
         |  -spec send_packet(atom(), term(), Data :: binary(), SeqNum :: integer()) -&gt;
         |      {ok, NextSeqNum :: integer()}.
         |  send_packet(TcpModule, Socket, Data, SeqNum) -&gt;
-   757..|      {WithHeaders, SeqNum1} = add_packet_headers(Data, SeqNum),
-   757..|      ok = TcpModule:send(Socket, WithHeaders),
-   756..|      {ok, SeqNum1}.
+   760..|      {WithHeaders, SeqNum1} = add_packet_headers(Data, SeqNum),
+   760..|      ok = TcpModule:send(Socket, WithHeaders),
+   759..|      {ok, SeqNum1}.
         |  
         |  %% @see recv_packet/4
         |  recv_packet(TcpModule, Socket, SeqNum) -&gt;
-  1285..|      recv_packet(TcpModule, Socket, infinity, SeqNum).
+  1289..|      recv_packet(TcpModule, Socket, infinity, SeqNum).
         |  
         |  %% @doc Receives data by calling TcpModule:recv/2 and removes the packet
         |  %% headers. Returns the packet contents and the next packet sequence number.
         |  -spec recv_packet(atom(), term(), timeout(), integer() | any) -&gt;
         |      {ok, Data :: binary(), NextSeqNum :: integer()} | {error, term()}.
         |  recv_packet(TcpModule, Socket, Timeout, SeqNum) -&gt;
-  1849..|      recv_packet(TcpModule, Socket, Timeout, SeqNum, &lt;&lt;&gt;&gt;).
+  1854..|      recv_packet(TcpModule, Socket, Timeout, SeqNum, &lt;&lt;&gt;&gt;).
         |  
         |  %% @doc Accumulating helper for recv_packet/4
         |  -spec recv_packet(atom(), term(), timeout(), integer() | any, binary()) -&gt;
         |      {ok, Data :: binary(), NextSeqNum :: integer()} | {error, term()}.
         |  recv_packet(TcpModule, Socket, Timeout, ExpectSeqNum, Acc) -&gt;
-  1849..|      case TcpModule:recv(Socket, 4, Timeout) of
+  1854..|      case TcpModule:recv(Socket, 4, Timeout) of
         |          {ok, Header} -&gt;
-  1834..|              {Size, SeqNum, More} = parse_packet_header(Header),
-  1834..|              true = SeqNum == ExpectSeqNum orelse ExpectSeqNum == any,
-  1834..|              {ok, Body} = TcpModule:recv(Socket, Size),
-  1834..|              Acc1 = &lt;&lt;Acc/binary, Body/binary&gt;&gt;,
-  1834..|              NextSeqNum = (SeqNum + 1) band 16#ff,
-  1834..|              case More of
-  1834..|                  false -&gt; {ok, Acc1, NextSeqNum};
+  1839..|              {Size, SeqNum, More} = parse_packet_header(Header),
+  1839..|              true = SeqNum == ExpectSeqNum orelse ExpectSeqNum == any,
+  1839..|              {ok, Body} = TcpModule:recv(Socket, Size),
+  1839..|              Acc1 = &lt;&lt;Acc/binary, Body/binary&gt;&gt;,
+  1839..|              NextSeqNum = (SeqNum + 1) band 16#ff,
+  1839..|              case More of
+  1839..|                  false -&gt; {ok, Acc1, NextSeqNum};
 <font color=red>     0..|                  true  -&gt; recv_packet(TcpModule, Socket, Timeout, NextSeqNum,</font>
         |                                       Acc1)
         |              end;
@@ -904,26 +908,26 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
         |       SeqNum :: integer(),
         |       MorePacketsExist :: boolean()}.
         |  parse_packet_header(&lt;&lt;PacketLength:24/little-integer, SeqNum:8/integer&gt;&gt;) -&gt;
-  1835..|      {PacketLength, SeqNum, PacketLength == 16#ffffff}.
+  1840..|      {PacketLength, SeqNum, PacketLength == 16#ffffff}.
         |  
         |  %% @doc Splits a packet body into chunks and wraps them in headers. The
         |  %% resulting list is ready to sent to the socket.
         |  -spec add_packet_headers(PacketBody :: iodata(), SeqNum :: integer()) -&gt;
         |      {PacketWithHeaders :: iodata(), NextSeqNum :: integer()}.
         |  add_packet_headers(PacketBody, SeqNum) -&gt;
-   758..|      Bin = iolist_to_binary(PacketBody),
-   758..|      Size = size(Bin),
-   758..|      SeqNum1 = (SeqNum + 1) band 16#ff,
+   761..|      Bin = iolist_to_binary(PacketBody),
+   761..|      Size = size(Bin),
+   761..|      SeqNum1 = (SeqNum + 1) band 16#ff,
         |      %% Todo: implement the case when Size &gt;= 16#ffffff.
-   758..|      if Size &lt; 16#ffffff -&gt;
-   758..|          {[&lt;&lt;Size:24/little, SeqNum:8&gt;&gt;, Bin], SeqNum1}
+   761..|      if Size &lt; 16#ffffff -&gt;
+   761..|          {[&lt;&lt;Size:24/little, SeqNum:8&gt;&gt;, Bin], SeqNum1}
         |      end.
         |  
         |  -spec parse_ok_packet(binary()) -&gt; #ok{}.
         |  parse_ok_packet(&lt;&lt;?OK:8, Rest/binary&gt;&gt;) -&gt;
-   350..|      {AffectedRows, Rest1} = lenenc_int(Rest),
-   350..|      {InsertId, Rest2} = lenenc_int(Rest1),
-   350..|      &lt;&lt;StatusFlags:16/little, WarningCount:16/little, Msg/binary&gt;&gt; = Rest2,
+   353..|      {AffectedRows, Rest1} = lenenc_int(Rest),
+   353..|      {InsertId, Rest2} = lenenc_int(Rest1),
+   353..|      &lt;&lt;StatusFlags:16/little, WarningCount:16/little, Msg/binary&gt;&gt; = Rest2,
         |      %% We have CLIENT_PROTOCOL_41 but not CLIENT_SESSION_TRACK enabled. The
         |      %% protocol is conditional. This is from the protocol documentation:
         |      %%
@@ -941,7 +945,7 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
         |      %% } else {
         |      %%   string&lt;EOF&gt; info
         |      %% }
-   350..|      #ok{affected_rows = AffectedRows,
+   353..|      #ok{affected_rows = AffectedRows,
         |          insert_id = InsertId,
         |          status = StatusFlags,
         |          warning_count = WarningCount,
@@ -970,21 +974,32 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
         |      %%
         |      %% The auth data is obviously nul-terminated. For the "native" auth
         |      %% method, it should be a 20 byte salt, so let's trim it in this case.
-    15..|      Salt1 = case Salt of
-    14..|          &lt;&lt;SaltNoNul:20/binary-unit:8, 0&gt;&gt; -&gt; SaltNoNul;
+    18..|      PasswordBin = case erlang:is_binary(Password) of
+     2..|          true -&gt; Password;
+    16..|          false -&gt; erlang:iolist_to_binary(Password)
+        |      end,
+    18..|      case PasswordBin =:= &lt;&lt;&gt;&gt; of
+     1..|          true -&gt; &lt;&lt;&gt;&gt;;
+    17..|          false -&gt; hash_non_empty_password(Password, Salt)
+        |      end.
+        |  
+        |  -spec hash_non_empty_password(Password :: iodata(), Salt :: binary()) -&gt; Hash :: binary().
+        |  hash_non_empty_password(Password, Salt) -&gt;
+    17..|      Salt1 = case Salt of
+    16..|          &lt;&lt;SaltNoNul:20/binary-unit:8, 0&gt;&gt; -&gt; SaltNoNul;
      1..|          _ when size(Salt) == 20           -&gt; Salt
         |      end,
         |      %% Hash as described above.
-    15..|      &lt;&lt;Hash1Num:160&gt;&gt; = Hash1 = crypto:hash(sha, Password),
-    15..|      Hash2 = crypto:hash(sha, Hash1),
-    15..|      &lt;&lt;Hash3Num:160&gt;&gt; = crypto:hash(sha, &lt;&lt;Salt1/binary, Hash2/binary&gt;&gt;),
-    15..|      &lt;&lt;(Hash1Num bxor Hash3Num):160&gt;&gt;.
+    17..|      &lt;&lt;Hash1Num:160&gt;&gt; = Hash1 = crypto:hash(sha, Password),
+    17..|      Hash2 = crypto:hash(sha, Hash1),
+    17..|      &lt;&lt;Hash3Num:160&gt;&gt; = crypto:hash(sha, &lt;&lt;Salt1/binary, Hash2/binary&gt;&gt;),
+    17..|      &lt;&lt;(Hash1Num bxor Hash3Num):160&gt;&gt;.
         |  
         |  %% --- Lowlevel: variable length integers and strings ---
         |  
         |  %% lenenc_int/1 decodes length-encoded-integer values
         |  -spec lenenc_int(Input :: binary()) -&gt; {Value :: integer(), Rest :: binary()}.
-  2837..|  lenenc_int(&lt;&lt;Value:8, Rest/bits&gt;&gt;) when Value &lt; 251 -&gt; {Value, Rest};
+  2843..|  lenenc_int(&lt;&lt;Value:8, Rest/bits&gt;&gt;) when Value &lt; 251 -&gt; {Value, Rest};
      1..|  lenenc_int(&lt;&lt;16#fc:8, Value:16/little, Rest/binary&gt;&gt;) -&gt; {Value, Rest};
      1..|  lenenc_int(&lt;&lt;16#fd:8, Value:24/little, Rest/binary&gt;&gt;) -&gt; {Value, Rest};
      1..|  lenenc_int(&lt;&lt;16#fe:8, Value:64/little, Rest/binary&gt;&gt;) -&gt; {Value, Rest}.
@@ -1009,8 +1024,8 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
         |  %% nts/1 decodes a nul-terminated string
         |  -spec nulterm_str(Input :: binary()) -&gt; {String :: binary(), Rest :: binary()}.
         |  nulterm_str(Bin) -&gt;
-    15..|      [String, Rest] = binary:split(Bin, &lt;&lt;0&gt;&gt;),
-    15..|      {String, Rest}.
+    17..|      [String, Rest] = binary:split(Bin, &lt;&lt;0&gt;&gt;),
+    17..|      {String, Rest}.
         |  
         |  -ifdef(TEST).
         |  -include_lib("eunit/include/eunit.hrl").
@@ -1153,7 +1168,8 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql_protoc
         |  hash_password_test() -&gt;
      1..|      ?assertEqual(&lt;&lt;222,207,222,139,41,181,202,13,191,241,
         |                     234,234,73,127,244,101,205,3,28,251&gt;&gt;,
-     1..|                   hash_password(&lt;&lt;"foo"&gt;&gt;, &lt;&lt;"abcdefghijklmnopqrst"&gt;&gt;)).
+     1..|                   hash_password(&lt;&lt;"foo"&gt;&gt;, &lt;&lt;"abcdefghijklmnopqrst"&gt;&gt;)),
+     1..|      ?assertEqual(&lt;&lt;&gt;&gt;, hash_password(&lt;&lt;&gt;&gt;, &lt;&lt;"abcdefghijklmnopqrst"&gt;&gt;)).
         |  
         |  -endif.
 </pre>

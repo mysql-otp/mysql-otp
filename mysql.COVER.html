@@ -5,12 +5,13 @@
 <title>cover/mysql.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by COVER 2015-08-31 at 14:43:51
+File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2016-06-18 at 06:38:35
 
 ****************************************************************************
 
         |  %% MySQL/OTP – MySQL client library for Erlang/OTP
-        |  %% Copyright (C) 2014 Viktor Söderqvist
+        |  %% Copyright (C) 2014-2015 Viktor Söderqvist,
+        |  %%               2016 Johan Lövdahl
         |  %%
         |  %% This file is part of MySQL/OTP.
         |  %%
@@ -147,19 +148,19 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
         |                         {via, Module :: atom(), ViaName :: term()},
         |           NamedStatements :: [{StatementName :: atom(), Statement :: iodata()}].
         |  start_link(Options) -&gt;
-    11..|      GenSrvOpts = [{timeout, proplists:get_value(connect_timeout, Options,
+    13..|      GenSrvOpts = [{timeout, proplists:get_value(connect_timeout, Options,
         |                                                  ?default_connect_timeout)}],
-    11..|      Ret = case proplists:get_value(name, Options) of
+    13..|      Ret = case proplists:get_value(name, Options) of
         |          undefined -&gt;
-    10..|              gen_server:start_link(?MODULE, Options, GenSrvOpts);
+    12..|              gen_server:start_link(?MODULE, Options, GenSrvOpts);
         |          ServerName -&gt;
      1..|              gen_server:start_link(ServerName, ?MODULE, Options, GenSrvOpts)
         |      end,
-    11..|      case Ret of
+    13..|      case Ret of
         |          {ok, Pid} -&gt;
         |              %% Initial queries
-    10..|              Queries = proplists:get_value(queries, Options, []),
-    10..|              lists:foreach(fun (Query) -&gt;
+    12..|              Queries = proplists:get_value(queries, Options, []),
+    12..|              lists:foreach(fun (Query) -&gt;
      3..|                                case mysql:query(Pid, Query) of
      1..|                                    ok -&gt; ok;
      1..|                                    {ok, _, _} -&gt; ok;
@@ -168,14 +169,14 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
         |                            end,
         |                            Queries),
         |              %% Prepare
-    10..|              Prepare = proplists:get_value(prepare, Options, []),
-    10..|              lists:foreach(fun ({Name, Stmt}) -&gt;
+    12..|              Prepare = proplists:get_value(prepare, Options, []),
+    12..|              lists:foreach(fun ({Name, Stmt}) -&gt;
      1..|                                {ok, Name} = mysql:prepare(Pid, Name, Stmt)
         |                            end,
         |                            Prepare);
      1..|          _ -&gt; ok
         |      end,
-    11..|      Ret.
+    13..|      Ret.
         |  
         |  %% @doc Executes a query with the query timeout as given to start_link/1.
         |  %%
@@ -192,7 +193,7 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
         |           Query :: iodata(),
         |           Result :: query_result().
         |  query(Conn, Query) -&gt;
-   332..|      query_call(Conn, {query, Query}).
+   333..|      query_call(Conn, {query, Query}).
         |  
         |  %% @doc Depending on the 3rd argument this function does different things.
         |  %%
@@ -470,36 +471,38 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
         |  %% @private
         |  init(Opts) -&gt;
         |      %% Connect
-    11..|      Host           = proplists:get_value(host, Opts, ?default_host),
-    11..|      Port           = proplists:get_value(port, Opts, ?default_port),
-    11..|      User           = proplists:get_value(user, Opts, ?default_user),
-    11..|      Password       = proplists:get_value(password, Opts, ?default_password),
-    11..|      Database       = proplists:get_value(database, Opts, undefined),
-    11..|      LogWarn        = proplists:get_value(log_warnings, Opts, true),
-    11..|      KeepAlive      = proplists:get_value(keep_alive, Opts, false),
-    11..|      Timeout        = proplists:get_value(query_timeout, Opts,
+    13..|      Host           = proplists:get_value(host, Opts, ?default_host),
+    13..|      Port           = proplists:get_value(port, Opts, ?default_port),
+    13..|      User           = proplists:get_value(user, Opts, ?default_user),
+    13..|      Password       = proplists:get_value(password, Opts, ?default_password),
+    13..|      Database       = proplists:get_value(database, Opts, undefined),
+    13..|      LogWarn        = proplists:get_value(log_warnings, Opts, true),
+    13..|      KeepAlive      = proplists:get_value(keep_alive, Opts, false),
+    13..|      Timeout        = proplists:get_value(query_timeout, Opts,
         |                                           ?default_query_timeout),
-    11..|      QueryCacheTime = proplists:get_value(query_cache_time, Opts,
+    13..|      QueryCacheTime = proplists:get_value(query_cache_time, Opts,
         |                                           ?default_query_cache_time),
-    11..|      TcpOpts        = proplists:get_value(tcp_options, Opts, []),
+    13..|      TcpOpts        = proplists:get_value(tcp_options, Opts, []),
         |  
-    11..|      PingTimeout = case KeepAlive of
+    13..|      PingTimeout = case KeepAlive of
      1..|          true         -&gt; ?default_ping_timeout;
-     9..|          false        -&gt; infinity;
+    11..|          false        -&gt; infinity;
      1..|          N when N &gt; 0 -&gt; N
         |      end,
         |  
         |      %% Connect socket
-    11..|      SockOpts = [{active, false}, binary, {packet, raw} | TcpOpts],
-    11..|      {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
+    13..|      SockOpts = [binary, {packet, raw} | TcpOpts],
+    13..|      {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
         |  
         |      %% Exchange handshake communication.
-    11..|      Result = mysql_protocol:handshake(User, Password, Database, gen_tcp,
+    13..|      inet:setopts(Socket, [{active, false}]),
+    13..|      Result = mysql_protocol:handshake(User, Password, Database, gen_tcp,
         |                                        Socket),
-    11..|      case Result of
+    13..|      inet:setopts(Socket, [{active, once}]),
+    13..|      case Result of
         |          #handshake{server_version = Version, connection_id = ConnId,
         |                     status = Status} -&gt;
-    10..|              State = #state{server_version = Version, connection_id = ConnId,
+    12..|              State = #state{server_version = Version, connection_id = ConnId,
         |                             socket = Socket,
         |                             host = Host, port = Port, user = User,
         |                             password = Password, status = Status,
@@ -508,9 +511,9 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
         |                             query_timeout = Timeout,
         |                             query_cache_time = QueryCacheTime},
         |              %% Trap exit so that we can properly disconnect when we die.
-    10..|              process_flag(trap_exit, true),
-    10..|              State1 = schedule_ping(State),
-    10..|              {ok, State1};
+    12..|              process_flag(trap_exit, true),
+    12..|              State1 = schedule_ping(State),
+    12..|              {ok, State1};
         |          #error{} = E -&gt;
      1..|              {stop, error_to_reason(E)}
         |      end.
@@ -561,10 +564,11 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
         |  %%       nesting level.&lt;/dd&gt;
         |  %% &lt;/dl&gt;
         |  handle_call({query, Query}, From, State) -&gt;
-   332..|      handle_call({query, Query, State#state.query_timeout}, From, State);
+   333..|      handle_call({query, Query, State#state.query_timeout}, From, State);
         |  handle_call({query, Query, Timeout}, _From, State) -&gt;
-   334..|      Socket = State#state.socket,
-   334..|      {ok, Recs} = case mysql_protocol:query(Query, gen_tcp, Socket, Timeout) of
+   335..|      Socket = State#state.socket,
+   335..|      inet:setopts(Socket, [{active, false}]),
+   335..|      {ok, Recs} = case mysql_protocol:query(Query, gen_tcp, Socket, Timeout) of
         |          {error, timeout} when State#state.server_version &gt;= [5, 0, 0] -&gt;
      1..|              kill_query(State),
      1..|              mysql_protocol:fetch_query_response(gen_tcp, Socket, ?cmd_timeout);
@@ -573,12 +577,13 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
         |              %% killing the connection itself.
 <font color=red>     0..|              exit(timeout);</font>
         |          QueryResult -&gt;
-   333..|              QueryResult
+   334..|              QueryResult
         |      end,
-   334..|      State1 = lists:foldl(fun update_state/2, State, Recs),
-   334..|      State1#state.warning_count &gt; 0 andalso State1#state.log_warnings
+   335..|      inet:setopts(Socket, [{active, once}]),
+   335..|      State1 = lists:foldl(fun update_state/2, State, Recs),
+   335..|      State1#state.warning_count &gt; 0 andalso State1#state.log_warnings
      1..|          andalso log_warnings(State1, Query),
-   334..|      handle_query_call_reply(Recs, Query, State1, []);
+   335..|      handle_query_call_reply(Recs, Query, State1, []);
         |  handle_call({param_query, Query, Params}, From, State) -&gt;
      7..|      handle_call({param_query, Query, Params, State#state.query_timeout}, From,
         |                  State);
@@ -593,7 +598,9 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
      1..|              {{ok, FoundStmt}, NewCache};
         |          not_found -&gt;
         |              %% Prepare
+     7..|              inet:setopts(Socket, [{active, false}]),
      7..|              Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
+     7..|              inet:setopts(Socket, [{active, once}]),
         |              %State1 = update_state(Rec, State),
      7..|              case Rec of
         |                  #error{} = E -&gt;
@@ -625,7 +632,9 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
         |      end;
         |  handle_call({prepare, Query}, _From, State) -&gt;
     79..|      #state{socket = Socket} = State,
+    79..|      inet:setopts(Socket, [{active, false}]),
     79..|      Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
+    79..|      inet:setopts(Socket, [{active, once}]),
     79..|      State1 = update_state(Rec, State),
     79..|      case Rec of
         |          #error{} = E -&gt;
@@ -638,6 +647,7 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
         |  handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) -&gt;
      8..|      #state{socket = Socket} = State,
         |      %% First unprepare if there is an old statement with this name.
+     8..|      inet:setopts(Socket, [{active, false}]),
      8..|      State1 = case dict:find(Name, State#state.stmts) of
         |          {ok, OldStmt} -&gt;
      1..|              mysql_protocol:unprepare(OldStmt, gen_tcp, Socket),
@@ -646,6 +656,7 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
      7..|              State
         |      end,
      8..|      Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
+     8..|      inet:setopts(Socket, [{active, once}]),
      8..|      State2 = update_state(Rec, State1),
      8..|      case Rec of
         |          #error{} = E -&gt;
@@ -660,7 +671,9 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
     78..|      case dict:find(Stmt, State#state.stmts) of
         |          {ok, StmtRec} -&gt;
     76..|              #state{socket = Socket} = State,
+    76..|              inet:setopts(Socket, [{active, false}]),
     76..|              mysql_protocol:unprepare(StmtRec, gen_tcp, Socket),
+    76..|              inet:setopts(Socket, [{active, once}]),
     76..|              State1 = State#state{stmts = dict:erase(Stmt, State#state.stmts)},
     76..|              State2 = schedule_ping(State1),
     76..|              {reply, ok, State2};
@@ -688,8 +701,10 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
     15..|          0 -&gt; &lt;&lt;"BEGIN"&gt;&gt;;
      9..|          _ -&gt; &lt;&lt;"SAVEPOINT s", (integer_to_binary(L))/binary&gt;&gt;
         |      end,
+    24..|      inet:setopts(Socket, [{active, false}]),
     24..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, gen_tcp, Socket,
         |                                                 ?cmd_timeout),
+    24..|      inet:setopts(Socket, [{active, once}]),
     24..|      State1 = update_state(Res, State),
     24..|      {reply, ok, State1#state{transaction_level = L + 1}};
         |  handle_call(rollback, _From, State = #state{socket = Socket, status = Status,
@@ -699,8 +714,10 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
      3..|          1 -&gt; &lt;&lt;"ROLLBACK"&gt;&gt;;
      1..|          _ -&gt; &lt;&lt;"ROLLBACK TO s", (integer_to_binary(L - 1))/binary&gt;&gt;
         |      end,
+     4..|      inet:setopts(Socket, [{active, false}]),
      4..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, gen_tcp, Socket,
         |                                                 ?cmd_timeout),
+     4..|      inet:setopts(Socket, [{active, once}]),
      4..|      State1 = update_state(Res, State),
      4..|      {reply, ok, State1#state{transaction_level = L - 1}};
         |  handle_call(commit, _From, State = #state{socket = Socket, status = Status,
@@ -710,8 +727,10 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
      8..|          1 -&gt; &lt;&lt;"COMMIT"&gt;&gt;;
      5..|          _ -&gt; &lt;&lt;"RELEASE SAVEPOINT s", (integer_to_binary(L - 1))/binary&gt;&gt;
         |      end,
+    13..|      inet:setopts(Socket, [{active, false}]),
     13..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, gen_tcp, Socket,
         |                                                 ?cmd_timeout),
+    13..|      inet:setopts(Socket, [{active, once}]),
     13..|      State1 = update_state(Res, State),
     13..|      {reply, ok, State1#state{transaction_level = L - 1}}.
         |  
@@ -720,33 +739,44 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
      1..|      {noreply, State}.
         |  
         |  %% @private
-        |  handle_info(query_cache, State = #state{query_cache = Cache,
-        |                                          query_cache_time = CacheTime}) -&gt;
+        |  handle_info(query_cache, #state{query_cache = Cache,
+        |                                  query_cache_time = CacheTime} = State) -&gt;
         |      %% Evict expired queries/statements in the cache used by query/3.
      1..|      {Evicted, Cache1} = mysql_cache:evict_older_than(Cache, CacheTime),
         |      %% Unprepare the evicted statements
      1..|      #state{socket = Socket} = State,
+     1..|      inet:setopts(Socket, [{active, false}]),
      1..|      lists:foreach(fun ({_Query, Stmt}) -&gt;
      1..|                        mysql_protocol:unprepare(Stmt, gen_tcp, Socket)
         |                    end,
         |                    Evicted),
+     1..|      inet:setopts(Socket, [{active, once}]),
         |      %% If nonempty, schedule eviction again.
      1..|      mysql_cache:size(Cache1) &gt; 0 andalso
 <font color=red>     0..|          erlang:send_after(CacheTime, self(), query_cache),</font>
      1..|      {noreply, State#state{query_cache = Cache1}};
-        |  handle_info(ping, State) -&gt;
-     4..|      Ok = mysql_protocol:ping(gen_tcp, State#state.socket),
+        |  handle_info(ping, #state{socket = Socket} = State) -&gt;
+     4..|      inet:setopts(Socket, [{active, false}]),
+     4..|      Ok = mysql_protocol:ping(gen_tcp, Socket),
+     3..|      inet:setopts(Socket, [{active, once}]),
      3..|      {noreply, update_state(Ok, State)};
+        |  handle_info({tcp_closed, _Socket}, State) -&gt;
+     1..|      stop_server(tcp_closed, State);
+        |  handle_info({tcp_error, _Socket, Reason}, State) -&gt;
+     1..|      stop_server({tcp_error, Reason}, State);
         |  handle_info(_Info, State) -&gt;
      2..|      {noreply, State}.
         |  
         |  %% @private
-        |  terminate(Reason, State) when Reason == normal; Reason == shutdown -&gt;
-        |      %% Send the goodbye message for politeness.
-     9..|      #state{socket = Socket} = State,
-     9..|      mysql_protocol:quit(gen_tcp, Socket);
+        |  terminate(Reason, #state{socket = Socket})
+        |    when Reason == normal; Reason == shutdown -&gt;
+        |        %% Send the goodbye message for politeness.
+     9..|        inet:setopts(Socket, [{active, false}]),
+     9..|        R = mysql_protocol:quit(gen_tcp, Socket),
+     9..|        inet:setopts(Socket, [{active, once}]),
+     9..|        R;
         |  terminate(_Reason, _State) -&gt;
-     2..|      ok.
+     4..|      ok.
         |  
         |  %% @private
         |  code_change(_OldVsn, State = #state{}, _Extra) -&gt;
@@ -760,17 +790,18 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
         |  %% checks the reply and sometimes throws an exception when we need to jump out
         |  %% of a transaction.
         |  query_call(Conn, CallReq) -&gt;
-   507..|      case gen_server:call(Conn, CallReq, infinity) of
+   508..|      case gen_server:call(Conn, CallReq, infinity) of
         |          {implicit_commit, _NestingLevel, Query} -&gt;
      1..|              error({implicit_commit, Query});
         |          {implicit_rollback, _NestingLevel, _ServerReason} = ImplicitRollback -&gt;
      3..|              throw(ImplicitRollback);
         |          Result -&gt;
-   503..|              Result
+   504..|              Result
         |      end.
         |  
         |  %% @doc Executes a prepared statement and returns {Reply, NextState}.
         |  execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket}) -&gt;
+   171..|      inet:setopts(Socket, [{active, false}]),
    171..|      {ok, Recs} = case mysql_protocol:execute(Stmt, Args, gen_tcp, Socket,
         |                                               Timeout) of
         |          {error, timeout} when State#state.server_version &gt;= [5, 0, 0] -&gt;
@@ -784,6 +815,7 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
         |          QueryResult -&gt;
    169..|              QueryResult
         |      end,
+   171..|      inet:setopts(Socket, [{active, once}]),
    171..|      State1 = lists:foldl(fun update_state/2, State, Recs),
    171..|      State1#state.warning_count &gt; 0 andalso State1#state.log_warnings
      2..|          andalso log_warnings(State1, Stmt#prepared.orig_query),
@@ -798,9 +830,9 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
         |  %% ping.
         |  -spec update_state(#ok{} | #eof{} | any(), #state{}) -&gt; #state{}.
         |  update_state(Rec, State) -&gt;
-   643..|      State1 = case Rec of
+   644..|      State1 = case Rec of
         |          #ok{status = S, affected_rows = R, insert_id = Id, warning_count = W} -&gt;
-   333..|              State#state{status = S, affected_rows = R, insert_id = Id,
+   334..|              State#state{status = S, affected_rows = R, insert_id = Id,
         |                          warning_count = W};
         |          #resultset{status = S, warning_count = W} -&gt;
    219..|              State#state{status = S, warning_count = W};
@@ -811,18 +843,18 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
         |              %% Reset some things. (Note: We don't reset status and insert_id.)
      6..|              State#state{warning_count = 0, affected_rows = 0}
         |      end,
-   643..|      schedule_ping(State1).
+   644..|      schedule_ping(State1).
         |  
         |  %% @doc Produces a reply for handle_call/3 for queries and prepared statements.
         |  handle_query_call_reply([], _Query, State, ResultSetsAcc) -&gt;
-   500..|      Reply = case ResultSetsAcc of
-   284..|          []                    -&gt; ok;
+   501..|      Reply = case ResultSetsAcc of
+   285..|          []                    -&gt; ok;
    213..|          [{ColumnNames, Rows}] -&gt; {ok, ColumnNames, Rows};
      3..|          [_|_]                 -&gt; {ok, lists:reverse(ResultSetsAcc)}
         |      end,
-   500..|      {reply, Reply, State};
+   501..|      {reply, Reply, State};
         |  handle_query_call_reply([Rec|Recs], Query, State, ResultSetsAcc) -&gt;
-   512..|      case Rec of
+   513..|      case Rec of
         |          #ok{status = Status} when Status band ?SERVER_STATUS_IN_TRANS == 0,
         |                                    State#state.transaction_level &gt; 0 -&gt;
         |              %% DDL statements (e.g. CREATE TABLE, ALTER TABLE, etc.) result in
@@ -830,7 +862,7 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
      1..|              Reply = {implicit_commit, State#state.transaction_level, Query},
      1..|              {reply, Reply, State#state{transaction_level = 0}};
         |          #ok{} -&gt;
-   288..|              handle_query_call_reply(Recs, Query, State, ResultSetsAcc);
+   289..|              handle_query_call_reply(Recs, Query, State, ResultSetsAcc);
         |          #resultset{cols = ColDefs, rows = Rows} -&gt;
    219..|              Names = [Def#col.name || Def &lt;- ColDefs],
    219..|              ResultSetsAcc1 = [{Names, Rows} | ResultSetsAcc],
@@ -849,7 +881,7 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
         |  
         |  %% @doc Schedules (or re-schedules) ping.
         |  schedule_ping(State = #state{ping_timeout = infinity}) -&gt;
-   133..|      State;
+   136..|      State;
         |  schedule_ping(State = #state{ping_timeout = Timeout, ping_ref = Ref}) -&gt;
    596..|      is_reference(Ref) andalso erlang:cancel_timer(Ref),
    596..|      State#state{ping_ref = erlang:send_after(Timeout, self(), ping)}.
@@ -863,9 +895,11 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
         |  
         |  %% @doc Fetches and logs warnings. Query is the query that gave the warnings.
         |  log_warnings(#state{socket = Socket}, Query) -&gt;
+     3..|      inet:setopts(Socket, [{active, false}]),
      3..|      {ok, [#resultset{rows = Rows}]} = mysql_protocol:query(&lt;&lt;"SHOW WARNINGS"&gt;&gt;,
         |                                                             gen_tcp, Socket,
         |                                                             ?cmd_timeout),
+     3..|      inet:setopts(Socket, [{active, once}]),
      3..|      Lines = [[Level, " ", integer_to_binary(Code), ": ", Message, "\n"]
      3..|               || [Level, Code, Message] &lt;- Rows],
      3..|      error_logger:warning_msg("~s in ~s~n", [Lines, Query]).
@@ -893,6 +927,13 @@ File generated from /Users/viktor/data/erlang/mysql-otp/ebin/../src/mysql.erl by
 <font color=red>     0..|              error_logger:error_msg("Failed to connect to kill query: ~p",</font>
         |                                     [error_to_reason(E)])
         |      end.
+        |  
+        |  stop_server(Reason,
+        |              #state{socket = Socket, connection_id = ConnId} = State) -&gt;
+     2..|    error_logger:error_msg("Connection Id ~p closing with reason: ~p~n",
+        |                           [ConnId, Reason]),
+     2..|    ok = gen_tcp:close(Socket),
+     2..|    {stop, Reason, State#state{socket = undefined, connection_id = undefined}}.
 </pre>
 </body>
 </html>
