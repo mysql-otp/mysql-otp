@@ -23,7 +23,7 @@ MySQL/OTP is a driver for connecting Erlang/OTP applications to MySQL
 databases. It is a native implementation of the MySQL protocol in Erlang.
 
 This is the documentation generated from the Erlang source code using EDoc.
-The project page is on Gitbub:
+The project page is on Github:
 <a href="https://github.com/mysql-otp/mysql-otp/"
    target="_top">https://github.com/mysql-otp/mysql-otp/</a>.
 
