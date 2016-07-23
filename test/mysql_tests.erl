@@ -24,6 +24,10 @@
 -define(user,     "otptest").
 -define(password, "otptest").
 
+%% We need to set a the SQL mode so it is consistent across MySQL versions
+%% and distributions.
+-define(SQL_MODE, <<"NO_ENGINE_SUBSTITUTION,NO_AUTO_CREATE_USER">>).
+
 -define(create_table_t, <<"CREATE TABLE t ("
                           "  id INT NOT NULL PRIMARY KEY AUTO_INCREMENT,"
                           "  bl BLOB,"
@@ -150,6 +154,7 @@ query_test_() ->
          ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
          ok = mysql:query(Pid, <<"USE otptest">>),
          ok = mysql:query(Pid, <<"SET autocommit = 1">>),
+         ok = mysql:query(Pid, <<"SET SESSION sql_mode = ?">>, [?SQL_MODE]),
          Pid
      end,
      fun (Pid) ->
@@ -186,6 +191,7 @@ log_warnings_test() ->
     {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password}]),
     ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
     ok = mysql:query(Pid, <<"USE otptest">>),
+    ok = mysql:query(Pid, <<"SET SESSION sql_mode = ?">>, [?SQL_MODE]),
     %% Capture error log to check that we get a warning logged
     ok = mysql:query(Pid, "CREATE TABLE foo (x INT NOT NULL)"),
     {ok, insrt} = mysql:prepare(Pid, insrt, "INSERT INTO foo () VALUES ()"),
