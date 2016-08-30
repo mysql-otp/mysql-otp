@@ -113,6 +113,7 @@
 -define(TYPE_YEAR, 16#0d).
 -define(TYPE_VARCHAR, 16#0f).
 -define(TYPE_BIT, 16#10).
+-define(TYPE_JSON, 16#f5).
 -define(TYPE_NEWDECIMAL, 16#f6).
 -define(TYPE_ENUM, 16#f7).
 -define(TYPE_SET, 16#f8).

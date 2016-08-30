@@ -459,7 +459,7 @@ decode_text(#col{type = T}, Text)
   when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
        T == ?TYPE_ENUM; T == ?TYPE_SET; T == ?TYPE_LONG_BLOB;
        T == ?TYPE_MEDIUM_BLOB; T == ?TYPE_BLOB; T == ?TYPE_TINY_BLOB;
-       T == ?TYPE_GEOMETRY ->
+       T == ?TYPE_GEOMETRY; T == ?TYPE_JSON ->
     %% As of MySQL 5.6.21 we receive SET and ENUM values as STRING, i.e. we
     %% cannot convert them to atom() or sets:set(), etc.
     Text;
@@ -607,7 +607,7 @@ decode_binary(#col{type = T}, Data)
   when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
        T == ?TYPE_ENUM; T == ?TYPE_SET; T == ?TYPE_LONG_BLOB;
        T == ?TYPE_MEDIUM_BLOB; T == ?TYPE_BLOB; T == ?TYPE_TINY_BLOB;
-       T == ?TYPE_GEOMETRY ->
+       T == ?TYPE_GEOMETRY; T == ?TYPE_JSON ->
     %% As of MySQL 5.6.21 we receive SET and ENUM values as STRING, i.e. we
     %% cannot convert them to atom() or sets:set(), etc.
     lenenc_str(Data);

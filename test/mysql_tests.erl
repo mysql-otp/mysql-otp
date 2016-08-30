@@ -176,6 +176,7 @@ query_test_() ->
           {"DATE",                 fun () -> date(Pid) end},
           {"TIME",                 fun () -> time(Pid) end},
           {"DATETIME",             fun () -> datetime(Pid) end},
+          {"JSON",                 fun () -> json(Pid) end},
           {"Microseconds",         fun () -> microseconds(Pid) end}]
      end}.
 
@@ -308,7 +309,7 @@ binary_protocol(Pid) ->
                                      " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)">>),
     %% 16#161 is the codepoint for "s with caron"; <<197, 161>> in UTF-8.
     ok = mysql:execute(Pid, Ins, [<<"blob">>, [16#161], 3.14, 3.14, 3.14,
-                                  2014, {0, {0, 22, 11}}, 
+                                  2014, {0, {0, 22, 11}},
                                   {{2014, 11, 03}, {0, 22, 24}},
                                   {2014, 11, 03}, null]),
 
@@ -486,15 +487,43 @@ datetime(Pid) ->
     ),
     ok = mysql:query(Pid, "DROP TABLE dt").
 
+json(Pid) ->
+    Version = db_version_string(Pid),
+    try
+        Version1 = parse_db_version(Version),
+        Version1 >= [5, 7, 8] orelse throw(nope)
+    of _ ->
+        test_valid_json(Pid),
+        test_invalid_json(Pid)
+    catch _:_ ->
+        error_logger:info_msg("Skipping JSON test. Current MySQL"
+                              " version is ~s. Required version is >= 5.7.8.~n",
+                              [Version])
+    end.
+
+test_valid_json(Pid) ->
+    ok = mysql:query(Pid, "CREATE TABLE json_t (json_c JSON)"),
+    Value = <<"'{\"a\": 1, \"b\": {\"c\": [1, 2, 3, 4]}}'">>,
+    Expected = <<"{\"a\": 1, \"b\": {\"c\": [1, 2, 3, 4]}}">>,
+    write_read_text_binary(Pid, Expected, Value,
+                           <<"json_t">>, <<"json_c">>),
+    ok = mysql:query(Pid, "DROP TABLE json_t").
+
+test_invalid_json(Pid) ->
+    ok = mysql:query(Pid, "CREATE TABLE json_t (json_c JSON)"),
+    InvalidJson = <<"'{\"a\": \"c\": 2}'">>,
+    ?assertMatch({error,{3140, <<"22032">>, _}},
+                 mysql:query(Pid, <<"INSERT INTO json_t (json_c)"
+                                    " VALUES (", InvalidJson/binary,
+                                    ")">>)),
+    ok = mysql:query(Pid, "DROP TABLE json_t").
+
 microseconds(Pid) ->
     %% Check whether we have the required version for this testcase.
-    {ok, _, [[Version]]} = mysql:query(Pid, <<"SELECT @@version">>),
+    Version = db_version_string(Pid),
     try
-        %% Remove stuff after dash for e.g. "5.5.40-0ubuntu0.12.04.1-log"
-        [Version1 | _] = binary:split(Version, <<"-">>),
-        Version2 = lists:map(fun binary_to_integer/1,
-                             binary:split(Version1, <<".">>, [global])),
-        Version2 >= [5, 6, 4] orelse throw(nope)
+        Version1 = parse_db_version(Version),
+        Version1 >= [5, 6, 4] orelse throw(nope)
     of _ ->
         test_time_microseconds(Pid),
         test_datetime_microseconds(Pid)
@@ -531,7 +560,8 @@ write_read_text_binary(Conn, Term, SqlLiteral, Table, Column) ->
     InsertQuery = <<"INSERT INTO ", Table/binary, " (", Column/binary, ")"
                     " VALUES (", SqlLiteral/binary, ")">>,
     ok = mysql:query(Conn, InsertQuery),
-    ?assertEqual({ok, [Column], [[Term]]}, mysql:query(Conn, SelectQuery)),
+    R = mysql:query(Conn, SelectQuery),
+    ?assertEqual({ok, [Column], [[Term]]}, R),
     ?assertEqual({ok, [Column], [[Term]]}, mysql:execute(Conn, SelectStmt, [])),
     mysql:query(Conn, <<"DELETE FROM ", Table/binary>>),
 
@@ -645,3 +675,14 @@ gen_server_coverage_test() ->
     {noreply, state} = mysql:handle_cast(foo, state),
     {noreply, state} = mysql:handle_info(foo, state),
     ok = mysql:terminate(kill, state).
+
+%% --- Utility functions
+db_version_string(Pid) ->
+  {ok, _, [[Version]]} = mysql:query(Pid, <<"SELECT @@version">>),
+  Version.
+
+parse_db_version(Version) ->
+  %% Remove stuff after dash for e.g. "5.5.40-0ubuntu0.12.04.1-log"
+  [Version1 | _] = binary:split(Version, <<"-">>),
+  lists:map(fun binary_to_integer/1,
+            binary:split(Version1, <<".">>, [global])).
