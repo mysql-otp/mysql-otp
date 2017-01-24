@@ -26,7 +26,7 @@
 %% @private
 -module(mysql_protocol).
 
--export([handshake/5, quit/2, ping/2,
+-export([handshake/6, quit/2, ping/2,
          query/4, fetch_query_response/3,
          prepare/3, unprepare/3, execute/5, fetch_execute_response/3]).
 
@@ -45,14 +45,14 @@
 %% @doc Performs a handshake using the supplied functions for communication.
 %% Returns an ok or an error record. Raises errors when various unimplemented
 %% features are requested.
--spec handshake(iodata(), iodata(), iodata() | undefined, atom(), term()) ->
-    #handshake{} | #error{}.
-handshake(Username, Password, Database, TcpModule, Socket) ->
+-spec handshake(iodata(), iodata(), iodata() | undefined, atom(),
+                term(), boolean()) -> #handshake{} | #error{}.
+handshake(Username, Password, Database, TcpModule, Socket, SetFoundRows) ->
     SeqNum0 = 0,
     {ok, HandshakePacket, SeqNum1} = recv_packet(TcpModule, Socket, SeqNum0),
     Handshake = parse_handshake(HandshakePacket),
     Response = build_handshake_response(Handshake, Username, Password,
-                                        Database),
+                                        Database, SetFoundRows),
     {ok, SeqNum2} = send_packet(TcpModule, Socket, Response, SeqNum1),
     {ok, ConfirmPacket, _SeqNum3} = recv_packet(TcpModule, Socket, SeqNum2),
     case parse_handshake_confirm(ConfirmPacket) of
@@ -86,7 +86,7 @@ query(Query, TcpModule, Socket, Timeout) ->
     fetch_query_response(TcpModule, Socket, Timeout).
 
 %% @doc This is used by query/4. If query/4 returns {error, timeout}, this
-%% function can be called to retry to fetch the results of the query. 
+%% function can be called to retry to fetch the results of the query.
 fetch_query_response(TcpModule, Socket, Timeout) ->
     fetch_response(TcpModule, Socket, Timeout, text, []).
 
@@ -226,15 +226,19 @@ server_version_to_list(ServerVersion) ->
 %% @doc The response sent by the client to the server after receiving the
 %% initial handshake from the server
 -spec build_handshake_response(#handshake{}, iodata(), iodata(),
-                               iodata() | undefined) -> binary().
-build_handshake_response(Handshake, Username, Password, Database) ->
+                               iodata() | undefined, boolean()) -> binary().
+build_handshake_response(Handshake, Username, Password, Database, SetFoundRows) ->
     %% We require these capabilities. Make sure the server handles them.
     CapabilityFlags0 = ?CLIENT_PROTOCOL_41 bor
                        ?CLIENT_TRANSACTIONS bor
                        ?CLIENT_SECURE_CONNECTION,
-    CapabilityFlags = case Database of
+    CapabilityFlags1 = case Database of
         undefined -> CapabilityFlags0;
         _         -> CapabilityFlags0 bor ?CLIENT_CONNECT_WITH_DB
+    end,
+    CapabilityFlags = case SetFoundRows of
+        true -> CapabilityFlags1 bor ?CLIENT_FOUND_ROWS;
+        _    -> CapabilityFlags1
     end,
     Handshake#handshake.capabilities band CapabilityFlags == CapabilityFlags
         orelse error(old_server_version),
@@ -404,9 +408,9 @@ fetch_resultset_rows(TcpModule, Socket, SeqNum, Acc) ->
 %% Parses a packet containing a column definition (part of a result set)
 parse_column_definition(Data) ->
     {<<"def">>, Rest1} = lenenc_str(Data),   %% catalog (always "def")
-    {_Schema, Rest2} = lenenc_str(Rest1),    %% schema-name 
-    {_Table, Rest3} = lenenc_str(Rest2),     %% virtual table-name 
-    {_OrgTable, Rest4} = lenenc_str(Rest3),  %% physical table-name 
+    {_Schema, Rest2} = lenenc_str(Rest1),    %% schema-name
+    {_Table, Rest3} = lenenc_str(Rest2),     %% virtual table-name
+    {_OrgTable, Rest4} = lenenc_str(Rest3),  %% physical table-name
     {Name, Rest5} = lenenc_str(Rest4),       %% virtual column name
     {_OrgName, Rest6} = lenenc_str(Rest5),   %% physical column name
     {16#0c, Rest7} = lenenc_int(Rest6),      %% length of the following fields
