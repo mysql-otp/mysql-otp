@@ -110,11 +110,11 @@ prepare_test() ->
                            warning_count = 0} when is_integer(StmtId),
                  Result),
     ok.
-    
+
 bad_protocol_version_test() ->
     Sock = mock_tcp:create([{recv, <<2, 0, 0, 0, 9, 0>>}]),
     ?assertError(unknown_protocol,
-                 mysql_protocol:handshake("foo", "bar", "db", mock_tcp, Sock)),
+                 mysql_protocol:handshake("foo", "bar", "db", mock_tcp, Sock, false)),
     mock_tcp:close(Sock).
 
 %% --- Helper functions for the above tests ---

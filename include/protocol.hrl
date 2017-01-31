@@ -26,6 +26,9 @@
 
 %% --- Capability flags ---
 
+%% Server: sends found rows instead of affected rows in EOF_Packet
+-define(CLIENT_FOUND_ROWS, 16#00000002).
+
 %% Server: supports schema-name in Handshake Response Packet
 %% Client: Handshake Response Packet contains a schema-name
 -define(CLIENT_CONNECT_WITH_DB, 16#00000008).
@@ -124,5 +127,3 @@
 -define(TYPE_VAR_STRING, 16#fd).
 -define(TYPE_STRING, 16#fe).
 -define(TYPE_GEOMETRY, 16#ff).
-
-

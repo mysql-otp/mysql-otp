@@ -112,6 +112,11 @@
 %%   <dd>The default time to wait for a response when executing a query or a
 %%       prepared statement. This can be given per query using `query/3,4' and
 %%       `execute/4'. The default is `infinity'.</dd>
+%%   <dt>`{found_rows, boolean()}'</dt>
+%%   <dd>If set to true, the connection will be established with
+%%       CLIENT_FOUND_ROWS capability. affected_rows/1 will now return the
+%%       number of found rows, not the number of rows changed by the
+%%       query.</dd>
 %%   <dt>`{query_cache_time, Timeout}'</dt>
 %%   <dd>The minimum number of milliseconds to cache prepared statements used
 %%       for parametrized queries with query/3.</dd>
@@ -122,7 +127,7 @@
 %% </dl>
 -spec start_link(Options) -> {ok, pid()} | ignore | {error, term()}
     when Options :: [Option],
-         Option :: {name, ServerName} | {host, iodata()} | {port, integer()} | 
+         Option :: {name, ServerName} | {host, iodata()} | {port, integer()} |
                    {user, iodata()} | {password, iodata()} |
                    {database, iodata()} |
                    {connect_timeout, timeout()} |
@@ -131,6 +136,7 @@
                    {prepare, NamedStatements} |
                    {queries, [iodata()]} |
                    {query_timeout, timeout()} |
+                   {found_rows, boolean()} |
                    {query_cache_time, non_neg_integer()},
          ServerName :: {local, Name :: atom()} |
                        {global, GlobalName :: term()} |
@@ -287,7 +293,9 @@ warning_count(Conn) ->
     gen_server:call(Conn, warning_count).
 
 %% @doc Returns the number of inserted, updated and deleted rows of the last
-%% executed query or prepared statement.
+%% executed query or prepared statement. If found_rows is set on the
+%% connection, for update operation the return value will equal to the number
+%% of rows matched by the query.
 -spec affected_rows(connection()) -> integer().
 affected_rows(Conn) ->
     gen_server:call(Conn, affected_rows).
@@ -327,7 +335,7 @@ transaction(Conn, Fun, Retries) ->
     transaction(Conn, Fun, [], Retries).
 
 %% @doc This function executes the functional object Fun with arguments Args as
-%% a transaction. 
+%% a transaction.
 %%
 %% The semantics are as close as possible to mnesia's transactions. Transactions
 %% can be nested and are restarted automatically when deadlocks are detected.
@@ -455,7 +463,7 @@ encode(Conn, Term) ->
                 query_timeout, query_cache_time,
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
                 transaction_level = 0, ping_ref = undefined,
-                stmts = dict:new(), query_cache = empty}).
+                stmts = dict:new(), query_cache = empty, cap_found_rows = false}).
 
 %% @private
 init(Opts) ->
@@ -472,6 +480,7 @@ init(Opts) ->
     QueryCacheTime = proplists:get_value(query_cache_time, Opts,
                                          ?default_query_cache_time),
     TcpOpts        = proplists:get_value(tcp_options, Opts, []),
+    SetFoundRows   = proplists:get_value(found_rows, Opts, false),
 
     PingTimeout = case KeepAlive of
         true         -> ?default_ping_timeout;
@@ -486,7 +495,7 @@ init(Opts) ->
     %% Exchange handshake communication.
     inet:setopts(Socket, [{active, false}]),
     Result = mysql_protocol:handshake(User, Password, Database, gen_tcp,
-                                      Socket),
+                                      Socket, SetFoundRows),
     inet:setopts(Socket, [{active, once}]),
     case Result of
         #handshake{server_version = Version, connection_id = ConnId,
@@ -498,7 +507,8 @@ init(Opts) ->
                            log_warnings = LogWarn,
                            ping_timeout = PingTimeout,
                            query_timeout = Timeout,
-                           query_cache_time = QueryCacheTime},
+                           query_cache_time = QueryCacheTime,
+                           cap_found_rows = (SetFoundRows =:= true)},
             %% Trap exit so that we can properly disconnect when we die.
             process_flag(trap_exit, true),
             State1 = schedule_ping(State),
@@ -896,14 +906,15 @@ log_warnings(#state{socket = Socket}, Query) ->
 %% @doc Makes a separate connection and execute KILL QUERY. We do this to get
 %% our main connection back to normal. KILL QUERY appeared in MySQL 5.0.0.
 kill_query(#state{connection_id = ConnId, host = Host, port = Port,
-                  user = User, password = Password}) ->
+                  user = User, password = Password,
+                  cap_found_rows = SetFoundRows}) ->
     %% Connect socket
     SockOpts = [{active, false}, binary, {packet, raw}],
     {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
 
     %% Exchange handshake communication.
     Result = mysql_protocol:handshake(User, Password, undefined, gen_tcp,
-                                      Socket),
+                                      Socket, SetFoundRows),
     case Result of
         #handshake{} ->
             %% Kill and disconnect

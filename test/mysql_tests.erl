@@ -166,6 +166,7 @@ query_test_() ->
           {"Autocommit",           fun () -> autocommit(Pid) end},
           {"Encode",               fun () -> encode(Pid) end},
           {"Basic queries",        fun () -> basic_queries(Pid) end},
+          {"FOUND_ROWS option",    fun () -> found_rows(Pid) end},
           {"Multi statements",     fun () -> multi_statements(Pid) end},
           {"Text protocol",        fun () -> text_protocol(Pid) end},
           {"Binary protocol",      fun () -> binary_protocol(Pid) end},
@@ -243,6 +244,26 @@ basic_queries(Pid) ->
                  mysql:query(Pid, <<"SELECT 42 AS i, 'foo' AS s;">>)),
 
     ok.
+
+found_rows(Pid) ->
+    Options = [{user, ?user}, {password, ?password}, {log_warnings, false},
+               {keep_alive, true}, {found_rows, true}],
+    {ok, FRPid} = mysql:start_link(Options),
+    ok = mysql:query(FRPid, <<"USE otptest">>),
+
+    ok = mysql:query(Pid, ?create_table_t),
+    ok = mysql:query(Pid, <<"INSERT INTO t (id, tx) VALUES (1, 'text')">>),
+
+    %% With no found_rows option, affected_rows for update returns 0
+    ok = mysql:query(Pid, <<"UPDATE t SET tx = 'text' WHERE id = 1">>),
+    ?assertEqual(0, mysql:affected_rows(Pid)),
+
+    %% With found_rows, affected_rows returns the number of rows found
+    ok = mysql:query(FRPid, <<"UPDATE t SET tx = 'text' WHERE id = 1">>),
+    ?assertEqual(1, mysql:affected_rows(FRPid)),
+
+    ok = mysql:query(Pid, <<"DROP TABLE t">>).
+
 
 multi_statements(Pid) ->
     %% Multiple statements, no result set
