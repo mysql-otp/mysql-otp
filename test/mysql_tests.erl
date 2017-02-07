@@ -511,15 +511,20 @@ datetime(Pid) ->
 json(Pid) ->
     Version = db_version_string(Pid),
     try
+        is_mariadb(Version) andalso throw(no_mariadb),
         Version1 = parse_db_version(Version),
-        Version1 >= [5, 7, 8] orelse throw(nope)
+        Version1 >= [5, 7, 8] orelse throw(version_too_small)
     of _ ->
         test_valid_json(Pid),
         test_invalid_json(Pid)
-    catch _:_ ->
-        error_logger:info_msg("Skipping JSON test. Current MySQL"
-                              " version is ~s. Required version is >= 5.7.8.~n",
-                              [Version])
+    catch
+        throw:no_mariadb ->
+            error_logger:info_msg("Skipping JSON test, not supported on"
+                                  " MariaDB.~n");
+        throw:version_too_small ->
+            error_logger:info_msg("Skipping JSON test. Current MySQL version"
+                                  " is ~s. Required version is >= 5.7.8.~n",
+                                  [Version])
     end.
 
 test_valid_json(Pid) ->
@@ -701,6 +706,9 @@ gen_server_coverage_test() ->
 db_version_string(Pid) ->
   {ok, _, [[Version]]} = mysql:query(Pid, <<"SELECT @@version">>),
   Version.
+
+is_mariadb(Version) ->
+    binary:match(Version, <<"MariaDB">>) =/= nomatch.
 
 parse_db_version(Version) ->
   %% Remove stuff after dash for e.g. "5.5.40-0ubuntu0.12.04.1-log"
