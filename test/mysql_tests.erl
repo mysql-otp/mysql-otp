@@ -440,18 +440,44 @@ int(Pid) ->
     write_read_text_binary(Pid, 127, <<"1000">>, <<"tint">>, <<"i">>),
     write_read_text_binary(Pid, -128, <<"-1000">>, <<"tint">>, <<"i">>),
     ok = mysql:query(Pid, "DROP TABLE tint"),
+    %% TINYINT UNSIGNED
+    ok = mysql:query(Pid, "CREATE TABLE tuint (i TINYINT UNSIGNED)"),
+    write_read_text_binary(Pid, 240, <<"240">>, <<"tuint">>, <<"i">>),
+    ok = mysql:query(Pid, "DROP TABLE tuint"),
     %% SMALLINT
     ok = mysql:query(Pid, "CREATE TABLE sint (i SMALLINT)"),
     write_read_text_binary(Pid, 32000, <<"32000">>, <<"sint">>, <<"i">>),
     write_read_text_binary(Pid, -32000, <<"-32000">>, <<"sint">>, <<"i">>),
     ok = mysql:query(Pid, "DROP TABLE sint"),
+    %% SMALLINT UNSIGNED
+    ok = mysql:query(Pid, "CREATE TABLE suint (i SMALLINT UNSIGNED)"),
+    write_read_text_binary(Pid, 64000, <<"64000">>, <<"suint">>, <<"i">>),
+    ok = mysql:query(Pid, "DROP TABLE suint"),
+    %% MEDIUMINT
+    ok = mysql:query(Pid, "CREATE TABLE mint (i MEDIUMINT)"),
+    write_read_text_binary(Pid, 8388000, <<"8388000">>,
+                           <<"mint">>, <<"i">>),
+    write_read_text_binary(Pid, -8388000, <<"-8388000">>,
+                           <<"mint">>, <<"i">>),
+    ok = mysql:query(Pid, "DROP TABLE mint"),
+    %% MEDIUMINT UNSIGNED
+    ok = mysql:query(Pid, "CREATE TABLE muint (i MEDIUMINT UNSIGNED)"),
+    write_read_text_binary(Pid, 16777000, <<"16777000">>,
+                           <<"muint">>, <<"i">>),
+    ok = mysql:query(Pid, "DROP TABLE muint"),
     %% BIGINT
     ok = mysql:query(Pid, "CREATE TABLE bint (i BIGINT)"),
     write_read_text_binary(Pid, 123456789012, <<"123456789012">>,
                            <<"bint">>, <<"i">>),
     write_read_text_binary(Pid, -123456789012, <<"-123456789012">>,
                            <<"bint">>, <<"i">>),
-    ok = mysql:query(Pid, "DROP TABLE bint").
+    ok = mysql:query(Pid, "DROP TABLE bint"),
+    %% BIGINT UNSIGNED
+    ok = mysql:query(Pid, "CREATE TABLE buint (i BIGINT UNSIGNED)"),
+    write_read_text_binary(Pid, 18446744073709551000,
+                           <<"18446744073709551000">>,
+                           <<"buint">>, <<"i">>),
+    ok = mysql:query(Pid, "DROP TABLE buint").
 
 %% The BIT(N) datatype in MySQL 5.0.3 and later: the equivallent to bitstring()
 bit(Pid) ->
