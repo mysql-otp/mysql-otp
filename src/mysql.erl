@@ -382,11 +382,11 @@ transaction(Conn, Fun, Args, Retries) when is_list(Args),
     %% The guard makes sure that we can apply Fun to Args. Any error we catch
     %% in the try-catch are actual errors that occurred in Fun.
     ok = gen_server:call(Conn, start_transaction),
-    try apply(Fun, Args) of
-        ResultOfFun ->
-            %% We must be able to rollback. Otherwise let's crash.
-            ok = gen_server:call(Conn, commit),
-            {atomic, ResultOfFun}
+    Result = try apply(Fun, Args) of
+                ResultOfFun ->
+                    %% We must be able to rollback. Otherwise let's crash.
+                    ok = gen_server:call(Conn, commit),
+                    {atomic, ResultOfFun}
     catch
         throw:{implicit_rollback, N, Reason} when N >= 1 ->
             %% Jump out of N nested transactions to restart the outer-most one.
@@ -431,7 +431,9 @@ transaction(Conn, Fun, Args, Retries) when is_list(Args),
                 exit  -> Reason
             end,
             {aborted, Aborted}
-    end.
+    end,
+    ok = gen_server:call(Conn, end_transaction),
+    Result.
 
 %% @doc Encodes a term as a MySQL literal so that it can be used to inside a
 %% query. If backslash escapes are enabled, backslashes and single quotes in
@@ -691,11 +693,12 @@ handle_call(backslash_escapes_enabled, _From, State = #state{status = S}) ->
     {reply, S band ?SERVER_STATUS_NO_BACKSLASH_ESCAPES == 0, State};
 handle_call(in_transaction, _From, State) ->
     {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};
-handle_call(start_transaction, _From,
+handle_call(start_transaction, {From, _Tag},
             State = #state{socket = Socket, transaction_level = L,
                            status = Status})
   when Status band ?SERVER_STATUS_IN_TRANS == 0, L == 0;
        Status band ?SERVER_STATUS_IN_TRANS /= 0, L > 0 ->
+    erlang:link(From),
     Query = case L of
         0 -> <<"BEGIN">>;
         _ -> <<"SAVEPOINT s", (integer_to_binary(L))/binary>>
@@ -706,6 +709,9 @@ handle_call(start_transaction, _From,
     inet:setopts(Socket, [{active, once}]),
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_level = L + 1}};
+handle_call(end_transaction, {From, _Tag}, State) ->
+    erlang:unlink(From),
+    {reply, ok, State};
 handle_call(rollback, _From, State = #state{socket = Socket, status = Status,
                                             transaction_level = L})
   when Status band ?SERVER_STATUS_IN_TRANS /= 0, L >= 1 ->
