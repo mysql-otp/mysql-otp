@@ -127,3 +127,8 @@
 -define(TYPE_VAR_STRING, 16#fd).
 -define(TYPE_STRING, 16#fe).
 -define(TYPE_GEOMETRY, 16#ff).
+
+
+%% --- Flags ---
+
+-define(FLAG_UNSIGNED, 16#20).

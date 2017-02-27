@@ -615,17 +615,49 @@ decode_binary(#col{type = T}, Data)
     %% As of MySQL 5.6.21 we receive SET and ENUM values as STRING, i.e. we
     %% cannot convert them to atom() or sets:set(), etc.
     lenenc_str(Data);
-decode_binary(#col{type = ?TYPE_LONGLONG},
-              <<Value:64/signed-little, Rest/binary>>) ->
-    {Value, Rest};
-decode_binary(#col{type = T}, <<Value:32/signed-little, Rest/binary>>)
+decode_binary(#col{type = ?TYPE_LONGLONG, flags = Flags},
+              <<Data:8/binary, Rest/binary>>) ->
+    if
+        (Flags band ?FLAG_UNSIGNED) == 0 ->
+            <<Value:64/signed-little>> = Data,
+            {Value, Rest};
+        true ->
+            <<Value:64/unsigned-little>> = Data,
+            {Value, Rest}
+    end;
+decode_binary(#col{type = T, flags = Flags}, <<Data:4/binary, Rest/binary>>)
   when T == ?TYPE_LONG; T == ?TYPE_INT24 ->
+    if
+        (Flags band ?FLAG_UNSIGNED) == 0 ->
+            <<Value:32/signed-little>> = Data,
+            {Value, Rest};
+        true ->
+            <<Value:32/unsigned-little>> = Data,
+            {Value, Rest}
+    end;
+decode_binary(#col{type = ?TYPE_SHORT, flags = Flags},
+              <<Data:2/binary, Rest/binary>>) ->
+    if
+        (Flags band ?FLAG_UNSIGNED) == 0 ->
+            <<Value:16/signed-little>> = Data,
+            {Value, Rest};
+        true ->
+            <<Value:16/unsigned-little>> = Data,
+            {Value, Rest}
+    end;
+decode_binary(#col{type = ?TYPE_YEAR},
+              <<Value:16/signed-little, Rest/binary>>) ->
     {Value, Rest};
-decode_binary(#col{type = T}, <<Value:16/signed-little, Rest/binary>>)
-  when T == ?TYPE_SHORT; T == ?TYPE_YEAR ->
-    {Value, Rest};
-decode_binary(#col{type = ?TYPE_TINY}, <<Value:8/signed, Rest/binary>>) ->
-    {Value, Rest};
+decode_binary(#col{type = ?TYPE_TINY, flags = Flags},
+              <<Data:1/binary, Rest/binary>>) ->
+    if
+        (Flags band ?FLAG_UNSIGNED) == 0 ->
+            <<Value:8/signed>> = Data,
+            {Value, Rest};
+        true ->
+            <<Value:8/unsigned>> = Data,
+            {Value, Rest}
+    end;
 decode_binary(#col{type = T, decimals = S, length = L}, Data)
   when T == ?TYPE_DECIMAL; T == ?TYPE_NEWDECIMAL ->
     %% Length is the max number of symbols incl. dot and minus sign, e.g. the
