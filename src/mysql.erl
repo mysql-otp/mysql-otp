@@ -489,7 +489,7 @@ init(Opts) ->
     end,
 
     %% Connect socket
-    SockOpts = [binary, {packet, raw} | TcpOpts],
+    SockOpts = [binary, {packet, raw},{active, false} | TcpOpts],
     {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
 
     %% Exchange handshake communication.
