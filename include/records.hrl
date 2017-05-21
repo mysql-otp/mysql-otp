@@ -27,6 +27,11 @@
                     auth_plugin_data :: binary(),
                     auth_plugin_name :: binary()}).
 
+-record(auth_method_switch, {
+          auth_plugin_name :: binary(),
+          auth_plugin_data :: binary()
+         }).
+
 %% OK packet, commonly used in the protocol.
 -record(ok, {affected_rows :: integer(),
              insert_id :: integer(),
