@@ -95,6 +95,13 @@ need MySQL running on localhost and give privileges to the `otptest` user:
 grant all privileges on otptest.* to otptest@localhost identified by 'otptest';
 ```
 
+Alternative if you are using Docker you can setup and run MySQL in a container.
+
+```bash
+docker run --name mysql-otp -e MYSQL_ROOT_PASSWORD=otptest -e MYSQL_USER=otptest -e MYSQL_PASSWORD=otptest -e MYSQL_DATABASE=otptest -p 3306:3306 -d mysql/mysql-server
+```
+
+
 If you run `make tests COVER=1` a coverage report will be generated. Open
 `cover/index.html` to see that any lines you have added or modified are covered
 by a test.
