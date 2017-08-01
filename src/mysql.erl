@@ -44,7 +44,7 @@
 -define(default_query_timeout, infinity).
 -define(default_query_cache_time, 60000). %% for query/3.
 -define(default_ping_timeout, 60000).
-
+-define(default_log_fun, error_logger).
 -define(cmd_timeout, 3000). %% Timeout used for various commands to the server
 
 %% Errors that cause "implicit rollback"
@@ -94,8 +94,14 @@
 %%   <dt>`{connect_timeout, Timeout}'</dt>
 %%   <dd>The maximum time to spend for start_link/1.</dd>
 %%   <dt>`{log_warnings, boolean()}'</dt>
-%%   <dd>Whether to fetch warnings and log them using error_logger; default
+%%   <dd>Whether to fetch warnings and log them using log_fun; default
 %%       true.</dd>
+%%   <dt>`{log_fun, fun()}`</dt>
+%%   <dd>Function callback when logging (used in conjunction with
+%%       `log_warnings` config). Callback function needs to be of the form:
+%%       `fun(LogLevel, MessageFormat, MessageArgs)`. Erlang's error_logger is
+%%       set as the default logging callback function for logging warnings.
+%%       </dd>
 %%   <dt>`{keep_alive, boolean() | timeout()}'</dt>
 %%   <dd>Send ping when unused for a certain time. Possible values are `true',
 %%       `false' and `integer() > 0' for an explicit interval in milliseconds.
@@ -132,6 +138,7 @@
                    {database, iodata()} |
                    {connect_timeout, timeout()} |
                    {log_warnings, boolean()} |
+                   {log_fun, fun()} |
                    {keep_alive, boolean() | timeout()} |
                    {prepare, NamedStatements} |
                    {queries, [iodata()]} |
@@ -459,7 +466,7 @@ encode(Conn, Term) ->
 %% Gen_server state
 -record(state, {server_version, connection_id, socket,
                 host, port, user, password, log_warnings,
-                ping_timeout,
+                log_fun, ping_timeout,
                 query_timeout, query_cache_time,
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
                 transaction_level = 0, ping_ref = undefined,
@@ -474,6 +481,7 @@ init(Opts) ->
     Password       = proplists:get_value(password, Opts, ?default_password),
     Database       = proplists:get_value(database, Opts, undefined),
     LogWarn        = proplists:get_value(log_warnings, Opts, true),
+    LogFun         = proplists:get_value(log_fun, Opts, ?default_log_fun),
     KeepAlive      = proplists:get_value(keep_alive, Opts, false),
     Timeout        = proplists:get_value(query_timeout, Opts,
                                          ?default_query_timeout),
@@ -505,6 +513,7 @@ init(Opts) ->
                            host = Host, port = Port, user = User,
                            password = Password, status = Status,
                            log_warnings = LogWarn,
+                           log_fun = LogFun,
                            ping_timeout = PingTimeout,
                            query_timeout = Timeout,
                            query_cache_time = QueryCacheTime,
@@ -893,7 +902,7 @@ clear_transaction_status(State = #state{status = Status}) ->
                 transaction_level = 0}.
 
 %% @doc Fetches and logs warnings. Query is the query that gave the warnings.
-log_warnings(#state{socket = Socket}, Query) ->
+log_warnings(#state{socket = Socket, log_fun = LogFun}, Query) ->
     inet:setopts(Socket, [{active, false}]),
     {ok, [#resultset{rows = Rows}]} = mysql_protocol:query(<<"SHOW WARNINGS">>,
                                                            gen_tcp, Socket,
@@ -901,13 +910,26 @@ log_warnings(#state{socket = Socket}, Query) ->
     inet:setopts(Socket, [{active, once}]),
     Lines = [[Level, " ", integer_to_binary(Code), ": ", Message, "\n"]
              || [Level, Code, Message] <- Rows],
-    error_logger:warning_msg("~s in ~s~n", [Lines, Query]).
+    log_callback(LogFun, warning, "~s in ~s~n", [Lines, Query]).
+
+log_callback(error_logger, Level, Msg, Args) ->
+    case Level of
+        warning ->
+            error_logger:warning_msg(Msg, Args);
+        error ->
+            error_logger:error_msg(Msg, Args)
+    end;
+log_callback({Mod, Fun}, Level, Msg, Args) ->
+    erlang:apply(Mod, Fun, [Level, Msg, Args]);
+log_callback(Fun, Level, Msg, Args) ->
+    erlang:apply(Fun, [Level, Msg, Args]).
 
 %% @doc Makes a separate connection and execute KILL QUERY. We do this to get
 %% our main connection back to normal. KILL QUERY appeared in MySQL 5.0.0.
 kill_query(#state{connection_id = ConnId, host = Host, port = Port,
                   user = User, password = Password,
-                  cap_found_rows = SetFoundRows}) ->
+                  cap_found_rows = SetFoundRows,
+                  log_fun = LogFun}) ->
     %% Connect socket
     SockOpts = [{active, false}, binary, {packet, raw}],
     {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
@@ -924,13 +946,14 @@ kill_query(#state{connection_id = ConnId, host = Host, port = Port,
                                                  Socket, ?cmd_timeout),
             mysql_protocol:quit(gen_tcp, Socket);
         #error{} = E ->
-            error_logger:error_msg("Failed to connect to kill query: ~p",
-                                   [error_to_reason(E)])
+            log_callback(LogFun, error, "Failed to connect to kill query: ~p~n",
+                [error_to_reason(E)])
     end.
 
 stop_server(Reason,
-            #state{socket = Socket, connection_id = ConnId} = State) ->
-  error_logger:error_msg("Connection Id ~p closing with reason: ~p~n",
-                         [ConnId, Reason]),
-  ok = gen_tcp:close(Socket),
-  {stop, Reason, State#state{socket = undefined, connection_id = undefined}}.
+            #state{socket = Socket, connection_id = ConnId,
+                   log_fun = LogFun} = State) ->
+    log_callback(LogFun, error, "Connection Id ~p closing with reason: ~p~n",
+                [ConnId, Reason]),
+    ok = gen_tcp:close(Socket),
+    {stop, Reason, State#state{socket = undefined, connection_id = undefined}}.

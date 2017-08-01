@@ -211,6 +211,37 @@ log_warnings_test() ->
                  " in INSERT INTO foo () VALUES ()\n", Log3),
     exit(Pid, normal).
 
+log_warnings_custom(Logger) ->
+    {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password}, {log_fun, Logger}]),
+    ok = mysql:query(Pid, <<"USE otptest">>),
+    ok = mysql:query(Pid, <<"DROP TABLE IF EXISTS foo">>),
+    ok = mysql:query(Pid, <<"SET SESSION sql_mode = ?">>, [?SQL_MODE]),
+    %% Capture error log to check that we get a warning logged
+    ok = mysql:query(Pid, "CREATE TABLE foo (x INT NOT NULL)"),
+    {ok, insrt} = mysql:prepare(Pid, insrt, "INSERT INTO foo () VALUES ()"),
+    {ok, ok, LoggedErrors} = error_logger_acc:capture(fun () ->
+        ok = mysql:query(Pid, "INSERT INTO foo () VALUES ()"),
+        ok = mysql:query(Pid, "INSeRT INtO foo () VaLUeS ()", []),
+        ok = mysql:execute(Pid, insrt, [])
+    end),
+    [{_, Log1}, {_, Log2}, {_, Log3}] = LoggedErrors,
+    ?assertEqual("Warning 1364: Field 'x' doesn't have a default value\n"
+                 " in INSERT INTO foo () VALUES ()\n", Log1),
+    ?assertEqual("Warning 1364: Field 'x' doesn't have a default value\n"
+                 " in INSeRT INtO foo () VaLUeS ()\n", Log2),
+    ?assertEqual("Warning 1364: Field 'x' doesn't have a default value\n"
+                 " in INSERT INTO foo () VALUES ()\n", Log3),
+    exit(Pid, normal).
+
+log_warnings_custom_fun_test() ->
+    Logger = fun(_Level, Msg, Args) ->
+        error_logger:warning_msg(Msg, Args)
+    end,
+    log_warnings_custom(Logger).
+
+log_warnings_custom_mod_fun_test() ->
+    log_warnings_custom({mock_log_fun, log_callback}).
+
 autocommit(Pid) ->
     ?assert(mysql:autocommit(Pid)),
     ok = mysql:query(Pid, <<"SET autocommit = 0">>),
