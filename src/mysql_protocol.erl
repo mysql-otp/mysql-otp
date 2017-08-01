@@ -656,7 +656,7 @@ decode_binary(#col{type = ?TYPE_FLOAT},
     %%     columns in mysql:
     %%
     %%     var yourNumber = some floating point value
-    %%     max decimal precision = 10 ^ (-5 + floor(yourNumber log 10))
+    %%     max decimal precision = 10 ^ (-5 + flooring(yourNumber log 10))
     %%     So:
     %%     0 < x < 10 -> max precision is 0.00001
     %%     10 <= x < 100 -> max precision is 0.0001
@@ -671,7 +671,7 @@ decode_binary(#col{type = ?TYPE_FLOAT},
     %%
     %% Now, instead of P = 0.00001 we want the inverse 100000.0 but if we
     %% compute Factor = 1 / P we get a precision loss, so instead we do this:
-    Factor = math:pow(10, floor(6 - math:log10(abs(Value)))),
+    Factor = math:pow(10, flooring(6 - math:log10(abs(Value)))),
     RoundedValue = round(Value * Factor) / Factor,
     {RoundedValue, Rest};
 decode_binary(#col{type = ?TYPE_BIT, length = Length}, Data) ->
@@ -731,7 +731,7 @@ decode_binary(#col{type = ?TYPE_TIME}, <<Length, Data/binary>>) ->
     end.
 
 %% @doc Like trunc/1 but towards negative infinity instead of towards zero.
-floor(Value) ->
+flooring(Value) ->
     Trunc = trunc(Value),
     if
         Trunc =< Value -> Trunc;
