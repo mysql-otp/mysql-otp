@@ -5,6 +5,7 @@ before_script:
   - mysql -uroot -e "grant all privileges on otptest.* to otptest@localhost identified by 'otptest'"
 script: 'make tests'
 otp_release:
+  - 20.0
   - 19.0
   - 18.3
   - 17.3
