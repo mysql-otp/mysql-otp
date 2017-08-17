@@ -2,7 +2,16 @@ language: erlang
 services:
   - mysql
 before_script:
+  - sudo service mysql stop
+  - SSLDIR=/etc/mysql/ make tests-prep
+  - sudo cp test/ssl/*.pem /etc/mysql/
+  - sudo chmod -R 660 /etc/mysql/*.pem
+  - sudo chown -R mysql:mysql /etc/mysql/*.pem
+  - cat test/ssl/my-ssl.cnf | sudo tee -a /etc/mysql/conf.d/my-ssl.cnf
+  - sudo service mysql start
+  - sleep 5
   - mysql -uroot -e "grant all privileges on otptest.* to otptest@localhost identified by 'otptest'"
+  - mysql -uroot -e "grant all privileges on otptestssl.* to otptestssl@localhost identified by 'otptestssl' require ssl"
 script: 'make tests'
 otp_release:
   - 19.0

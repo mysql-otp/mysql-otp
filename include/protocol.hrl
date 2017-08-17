@@ -37,6 +37,9 @@
 %% Client: uses the 4.1 protocol
 -define(CLIENT_PROTOCOL_41, 16#00000200).
 
+%% Client: supports SSL
+-define(CLIENT_SSL, 16#00000800).
+
 %% Server: can send status flags in EOF_Packet
 %% Client: expects status flags in EOF_Packet
 -define(CLIENT_TRANSACTIONS, 16#00002000).

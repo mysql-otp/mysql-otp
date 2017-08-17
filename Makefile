@@ -8,6 +8,7 @@
 #  - tests-report:   Creates doc/eunit.html with the coverage and eunit output.
 #  - gh-pages:       Generates docs and eunit reports and commits these in the
 #                    gh-pages which Github publishes automatically when pushed.
+.PHONY: gh-pages tests-report tests-prep CHANGELOG.md
 
 PROJECT = mysql
 EDOC_OPTS = {stylesheet_file,"priv/edoc-style.css"},{todo,true}
@@ -16,7 +17,8 @@ SHELL_PATH = -pa ebin
 
 include erlang.mk
 
-.PHONY: gh-pages tests-report CHANGELOG.md
+tests-prep:
+	cd test/ssl && $(MAKE)
 
 CHANGELOG.md:
 	./changelog.sh > $@

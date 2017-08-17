@@ -1,0 +1,4 @@
+[mysqld]
+ssl-ca=%%CACERT%%
+ssl-cert=%%SERVERCERT%%
+ssl-key=%%SERVERKEY%%
