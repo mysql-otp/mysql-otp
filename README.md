@@ -32,9 +32,10 @@ Synopsis
 --------
 
 ```Erlang
-%% Connect
+%% Connect (ssl option is not mandatory)
 {ok, Pid} = mysql:start_link([{host, "localhost"}, {user, "foo"},
-                              {password, "hello"}, {database, "test"}]),
+                              {password, "hello"}, {database, "test"},
+                              {ssl, [{cacertfile, "/path/to/ca.pem"}]}]),
 
 %% Select
 {ok, ColumnNames, Rows} =
@@ -88,12 +89,23 @@ Using *rebar*:
 Contributing
 ------------
 
-Run the eunit tests with `make tests`. For the suite `mysql_tests` you
-need MySQL running on localhost and give privileges to the `otptest` user:
+Before running the tests you'll need to generate SSL files and MySQL extra config file.
+In order to do so, please execute `make tests-prep`.
+
+The MySQL server configuration must include `my-ssl.cnf` file,
+which can be found in `test/ssl/`.
+**Do not run** `make tests-prep` after you start MySQL,
+because CA certificates will no longer match.
+
+For the suite `mysql_tests` you need to start MySQL on localhost and give
+privileges to the `otptest` and `otptestssl` users:
 
 ```SQL
 grant all privileges on otptest.* to otptest@localhost identified by 'otptest';
+grant all privileges on otptest.* to otptestssl@localhost identified by 'otptestssl' require ssl;
 ```
+
+EUnit tests are executed with `make tests`.
 
 If you run `make tests COVER=1` a coverage report will be generated. Open
 `cover/index.html` to see that any lines you have added or modified are covered

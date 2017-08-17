@@ -1,5 +1,6 @@
 %% MySQL/OTP – MySQL client library for Erlang/OTP
 %% Copyright (C) 2014-2016 Viktor Söderqvist
+%%               2017 Piotr Nosek
 %%
 %% This file is part of MySQL/OTP.
 %%
@@ -21,8 +22,10 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--define(user,     "otptest").
--define(password, "otptest").
+-define(user,         "otptest").
+-define(password,     "otptest").
+-define(ssl_user,     "otptestssl").
+-define(ssl_password, "otptestssl").
 
 %% We need to set a the SQL mode so it is consistent across MySQL versions
 %% and distributions.
@@ -49,26 +52,51 @@ failing_connect_test() ->
     receive
         {'EXIT', _Pid, {1045, <<"28000">>, <<"Access denie", _/binary>>}} -> ok
     after 1000 ->
-        ?assertEqual(ok, no_exit_message)
+        error(no_exit_message)
     end,
     process_flag(trap_exit, false).
 
 successful_connect_test() ->
     %% A connection with a registered name and execute initial queries and
     %% create prepared statements.
-    Options = [{name, {local, tardis}}, {user, ?user}, {password, ?password},
-               {queries, ["SET @foo = 'bar'", "SELECT 1",
-                          "SELECT 1; SELECT 2"]},
-               {prepare, [{foo, "SELECT @foo"}]}],
-    {ok, Pid} = mysql:start_link(Options),
-    %% Check that queries and prepare has been done.
-    ?assertEqual({ok, [<<"@foo">>], [[<<"bar">>]]},
-                 mysql:execute(Pid, foo, [])),
+    Pid = common_basic_check([{user, ?user}, {password, ?password}]),
+
     %% Test some gen_server callbacks not tested elsewhere
     State = get_state(Pid),
     ?assertMatch({ok, State}, mysql:code_change("0.1.0", State, [])),
     ?assertMatch({error, _}, mysql:code_change("2.0.0", unknown_state, [])),
-    exit(whereis(tardis), normal).
+    common_conn_close().
+
+successful_ssl_connect_test() ->
+    %% The same test as successful_connect_test(), minus gen_server checks,
+    %% plus SSL
+    [ application:start(App) || App <- [crypto, asn1, public_key, ssl] ],
+    common_basic_check([{ssl, [{cacertfile, "test/ssl/ca.pem"}]},
+                        {user, ?ssl_user}, {password, ?ssl_password}]),
+    common_conn_close(),
+    ok.
+
+common_basic_check(ExtraOpts) ->
+    Options = [{name, {local, tardis}},
+               {queries, ["SET @foo = 'bar'", "SELECT 1",
+                          "SELECT 1; SELECT 2"]},
+               {prepare, [{foo, "SELECT @foo"}]} | ExtraOpts],
+    {ok, Pid} = mysql:start_link(Options),
+    %% Check that queries and prepare has been done.
+    ?assertEqual({ok, [<<"@foo">>], [[<<"bar">>]]},
+                 mysql:execute(Pid, foo, [])),
+    Pid.
+
+common_conn_close() ->
+    Pid = whereis(tardis),
+    process_flag(trap_exit, true),
+    exit(Pid, normal),
+    receive
+        {'EXIT', Pid, normal} -> ok
+    after
+        5000 -> error({cant_stop_connection, Pid})
+    end,
+    process_flag(trap_exit, false).
 
 server_disconnect_test() ->
     process_flag(trap_exit, true),
@@ -102,7 +130,7 @@ tcp_error_test() ->
         receive
             {'EXIT', Pid, {tcp_error, tcp_reason}} -> ok
         after 1000 ->
-            ?assertEqual(ok, no_exit_message)
+            error(no_exit_message)
         end
     end),
     process_flag(trap_exit, false),

@@ -1,6 +1,7 @@
 %% MySQL/OTP – MySQL client library for Erlang/OTP
 %% Copyright (C) 2014-2015 Viktor Söderqvist,
 %%               2016 Johan Lövdahl
+%%               2017 Piotr Nosek, Michal Slaski
 %%
 %% This file is part of MySQL/OTP.
 %%
@@ -457,7 +458,7 @@ encode(Conn, Term) ->
 -include("server_status.hrl").
 
 %% Gen_server state
--record(state, {server_version, connection_id, socket,
+-record(state, {server_version, connection_id, socket, sockmod, ssl_opts,
                 host, port, user, password, log_warnings,
                 ping_timeout,
                 query_timeout, query_cache_time,
@@ -481,6 +482,8 @@ init(Opts) ->
                                          ?default_query_cache_time),
     TcpOpts        = proplists:get_value(tcp_options, Opts, []),
     SetFoundRows   = proplists:get_value(found_rows, Opts, false),
+    SSLOpts        = proplists:get_value(ssl, Opts, undefined),
+    SockMod0       = mysql_sock_tcp,
 
     PingTimeout = case KeepAlive of
         true         -> ?default_ping_timeout;
@@ -489,19 +492,21 @@ init(Opts) ->
     end,
 
     %% Connect socket
-    SockOpts = [binary, {packet, raw},{active, false} | TcpOpts],
-    {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
+    SockOpts = [binary, {packet, raw}, {active, false} | TcpOpts],
+    {ok, Socket0} = SockMod0:connect(Host, Port, SockOpts),
 
     %% Exchange handshake communication.
-    inet:setopts(Socket, [{active, false}]),
-    Result = mysql_protocol:handshake(User, Password, Database, gen_tcp,
-                                      Socket, SetFoundRows),
-    inet:setopts(Socket, [{active, once}]),
+    Result = mysql_protocol:handshake(User, Password, Database, SockMod0, SSLOpts,
+                                      Socket0, SetFoundRows),
     case Result of
-        #handshake{server_version = Version, connection_id = ConnId,
-                   status = Status} ->
+        {ok, Handshake, SockMod, Socket} ->
+            SockMod:setopts(Socket, [{active, once}]),
+            #handshake{server_version = Version, connection_id = ConnId,
+                       status = Status} = Handshake,
             State = #state{server_version = Version, connection_id = ConnId,
+                           sockmod = SockMod,
                            socket = Socket,
+                           ssl_opts = SSLOpts,
                            host = Host, port = Port, user = User,
                            password = Password, status = Status,
                            log_warnings = LogWarn,
@@ -565,12 +570,13 @@ init(Opts) ->
 handle_call({query, Query}, From, State) ->
     handle_call({query, Query, State#state.query_timeout}, From, State);
 handle_call({query, Query, Timeout}, _From, State) ->
+    SockMod = State#state.sockmod,
     Socket = State#state.socket,
-    inet:setopts(Socket, [{active, false}]),
-    {ok, Recs} = case mysql_protocol:query(Query, gen_tcp, Socket, Timeout) of
+    SockMod:setopts(Socket, [{active, false}]),
+    {ok, Recs} = case mysql_protocol:query(Query, SockMod, Socket, Timeout) of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
             kill_query(State),
-            mysql_protocol:fetch_query_response(gen_tcp, Socket, ?cmd_timeout);
+            mysql_protocol:fetch_query_response(SockMod, Socket, ?cmd_timeout);
         {error, timeout} ->
             %% For MySQL 4.x.x there is no way to recover from timeout except
             %% killing the connection itself.
@@ -578,7 +584,7 @@ handle_call({query, Query, Timeout}, _From, State) ->
         QueryResult ->
             QueryResult
     end,
-    inet:setopts(Socket, [{active, once}]),
+    SockMod:setopts(Socket, [{active, once}]),
     State1 = lists:foldl(fun update_state/2, State, Recs),
     State1#state.warning_count > 0 andalso State1#state.log_warnings
         andalso log_warnings(State1, Query),
@@ -589,7 +595,7 @@ handle_call({param_query, Query, Params}, From, State) ->
 handle_call({param_query, Query, Params, Timeout}, _From, State) ->
     %% Parametrized query: Prepared statement cached with the query as the key
     QueryBin = iolist_to_binary(Query),
-    #state{socket = Socket} = State,
+    #state{socket = Socket, sockmod = SockMod} = State,
     Cache = State#state.query_cache,
     {StmtResult, Cache1} = case mysql_cache:lookup(QueryBin, Cache) of
         {found, FoundStmt, NewCache} ->
@@ -597,9 +603,10 @@ handle_call({param_query, Query, Params, Timeout}, _From, State) ->
             {{ok, FoundStmt}, NewCache};
         not_found ->
             %% Prepare
-            inet:setopts(Socket, [{active, false}]),
-            Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
-            inet:setopts(Socket, [{active, once}]),
+            SockMod:setopts(Socket, [{active, false}]),
+	    SockMod = State#state.sockmod,
+            Rec = mysql_protocol:prepare(Query, SockMod, Socket),
+            SockMod:setopts(Socket, [{active, once}]),
             %State1 = update_state(Rec, State),
             case Rec of
                 #error{} = E ->
@@ -630,10 +637,11 @@ handle_call({execute, Stmt, Args, Timeout}, _From, State) ->
             {reply, {error, not_prepared}, State}
     end;
 handle_call({prepare, Query}, _From, State) ->
-    #state{socket = Socket} = State,
-    inet:setopts(Socket, [{active, false}]),
-    Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
-    inet:setopts(Socket, [{active, once}]),
+    #state{socket = Socket, sockmod = SockMod} = State,
+    SockMod:setopts(Socket, [{active, false}]),
+    SockMod = State#state.sockmod,
+    Rec = mysql_protocol:prepare(Query, SockMod, Socket),
+    SockMod:setopts(Socket, [{active, once}]),
     State1 = update_state(Rec, State),
     case Rec of
         #error{} = E ->
@@ -644,18 +652,19 @@ handle_call({prepare, Query}, _From, State) ->
             {reply, {ok, Id}, State2}
     end;
 handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) ->
-    #state{socket = Socket} = State,
+    #state{socket = Socket, sockmod = SockMod} = State,
     %% First unprepare if there is an old statement with this name.
-    inet:setopts(Socket, [{active, false}]),
+    SockMod:setopts(Socket, [{active, false}]),
+    SockMod = State#state.sockmod,
     State1 = case dict:find(Name, State#state.stmts) of
         {ok, OldStmt} ->
-            mysql_protocol:unprepare(OldStmt, gen_tcp, Socket),
+            mysql_protocol:unprepare(OldStmt, SockMod, Socket),
             State#state{stmts = dict:erase(Name, State#state.stmts)};
         error ->
             State
     end,
-    Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
-    inet:setopts(Socket, [{active, once}]),
+    Rec = mysql_protocol:prepare(Query, SockMod, Socket),
+    SockMod:setopts(Socket, [{active, once}]),
     State2 = update_state(Rec, State1),
     case Rec of
         #error{} = E ->
@@ -669,10 +678,11 @@ handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);
                                                   is_integer(Stmt) ->
     case dict:find(Stmt, State#state.stmts) of
         {ok, StmtRec} ->
-            #state{socket = Socket} = State,
-            inet:setopts(Socket, [{active, false}]),
-            mysql_protocol:unprepare(StmtRec, gen_tcp, Socket),
-            inet:setopts(Socket, [{active, once}]),
+            #state{socket = Socket, sockmod = SockMod} = State,
+            SockMod:setopts(Socket, [{active, false}]),
+            SockMod = State#state.sockmod,
+            mysql_protocol:unprepare(StmtRec, SockMod, Socket),
+            SockMod:setopts(Socket, [{active, once}]),
             State1 = State#state{stmts = dict:erase(Stmt, State#state.stmts)},
             State2 = schedule_ping(State1),
             {reply, ok, State2};
@@ -692,44 +702,47 @@ handle_call(backslash_escapes_enabled, _From, State = #state{status = S}) ->
 handle_call(in_transaction, _From, State) ->
     {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};
 handle_call(start_transaction, _From,
-            State = #state{socket = Socket, transaction_level = L,
-                           status = Status})
+            State = #state{socket = Socket, sockmod = SockMod,
+                           transaction_level = L, status = Status})
   when Status band ?SERVER_STATUS_IN_TRANS == 0, L == 0;
        Status band ?SERVER_STATUS_IN_TRANS /= 0, L > 0 ->
     Query = case L of
         0 -> <<"BEGIN">>;
         _ -> <<"SAVEPOINT s", (integer_to_binary(L))/binary>>
     end,
-    inet:setopts(Socket, [{active, false}]),
-    {ok, [Res = #ok{}]} = mysql_protocol:query(Query, gen_tcp, Socket,
+    SockMod:setopts(Socket, [{active, false}]),
+    SockMod = State#state.sockmod,
+    {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
                                                ?cmd_timeout),
-    inet:setopts(Socket, [{active, once}]),
+    SockMod:setopts(Socket, [{active, once}]),
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_level = L + 1}};
-handle_call(rollback, _From, State = #state{socket = Socket, status = Status,
-                                            transaction_level = L})
+handle_call(rollback, _From, State = #state{socket = Socket, sockmod = SockMod,
+                                            status = Status, transaction_level = L})
   when Status band ?SERVER_STATUS_IN_TRANS /= 0, L >= 1 ->
     Query = case L of
         1 -> <<"ROLLBACK">>;
         _ -> <<"ROLLBACK TO s", (integer_to_binary(L - 1))/binary>>
     end,
-    inet:setopts(Socket, [{active, false}]),
-    {ok, [Res = #ok{}]} = mysql_protocol:query(Query, gen_tcp, Socket,
+    SockMod:setopts(Socket, [{active, false}]),
+    SockMod = State#state.sockmod,
+    {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
                                                ?cmd_timeout),
-    inet:setopts(Socket, [{active, once}]),
+    SockMod:setopts(Socket, [{active, once}]),
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_level = L - 1}};
-handle_call(commit, _From, State = #state{socket = Socket, status = Status,
-                                          transaction_level = L})
+handle_call(commit, _From, State = #state{socket = Socket, sockmod = SockMod,
+                                          status = Status, transaction_level = L})
   when Status band ?SERVER_STATUS_IN_TRANS /= 0, L >= 1 ->
     Query = case L of
         1 -> <<"COMMIT">>;
         _ -> <<"RELEASE SAVEPOINT s", (integer_to_binary(L - 1))/binary>>
     end,
-    inet:setopts(Socket, [{active, false}]),
-    {ok, [Res = #ok{}]} = mysql_protocol:query(Query, gen_tcp, Socket,
+    SockMod:setopts(Socket, [{active, false}]),
+    SockMod = State#state.sockmod,
+    {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
                                                ?cmd_timeout),
-    inet:setopts(Socket, [{active, once}]),
+    SockMod:setopts(Socket, [{active, once}]),
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_level = L - 1}}.
 
@@ -743,21 +756,23 @@ handle_info(query_cache, #state{query_cache = Cache,
     %% Evict expired queries/statements in the cache used by query/3.
     {Evicted, Cache1} = mysql_cache:evict_older_than(Cache, CacheTime),
     %% Unprepare the evicted statements
-    #state{socket = Socket} = State,
-    inet:setopts(Socket, [{active, false}]),
+    #state{socket = Socket, sockmod = SockMod} = State,
+    SockMod:setopts(Socket, [{active, false}]),
+    SockMod = State#state.sockmod,
     lists:foreach(fun ({_Query, Stmt}) ->
-                      mysql_protocol:unprepare(Stmt, gen_tcp, Socket)
+                      mysql_protocol:unprepare(Stmt, SockMod, Socket)
                   end,
                   Evicted),
-    inet:setopts(Socket, [{active, once}]),
+    SockMod:setopts(Socket, [{active, once}]),
     %% If nonempty, schedule eviction again.
     mysql_cache:size(Cache1) > 0 andalso
         erlang:send_after(CacheTime, self(), query_cache),
     {noreply, State#state{query_cache = Cache1}};
-handle_info(ping, #state{socket = Socket} = State) ->
-    inet:setopts(Socket, [{active, false}]),
-    Ok = mysql_protocol:ping(gen_tcp, Socket),
-    inet:setopts(Socket, [{active, once}]),
+handle_info(ping, #state{socket = Socket, sockmod = SockMod} = State) ->
+    SockMod:setopts(Socket, [{active, false}]),
+    SockMod = State#state.sockmod,
+    Ok = mysql_protocol:ping(SockMod, Socket),
+    SockMod:setopts(Socket, [{active, once}]),
     {noreply, update_state(Ok, State)};
 handle_info({tcp_closed, _Socket}, State) ->
     stop_server(tcp_closed, State);
@@ -767,12 +782,12 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 %% @private
-terminate(Reason, #state{socket = Socket})
+terminate(Reason, #state{socket = Socket, sockmod = SockMod})
   when Reason == normal; Reason == shutdown ->
       %% Send the goodbye message for politeness.
-      inet:setopts(Socket, [{active, false}]),
-      R = mysql_protocol:quit(gen_tcp, Socket),
-      inet:setopts(Socket, [{active, once}]),
+      SockMod:setopts(Socket, [{active, false}]),
+      R = mysql_protocol:quit(SockMod, Socket),
+      SockMod:setopts(Socket, [{active, once}]),
       R;
 terminate(_Reason, _State) ->
     ok.
@@ -799,13 +814,14 @@ query_call(Conn, CallReq) ->
     end.
 
 %% @doc Executes a prepared statement and returns {Reply, NextState}.
-execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket}) ->
-    inet:setopts(Socket, [{active, false}]),
-    {ok, Recs} = case mysql_protocol:execute(Stmt, Args, gen_tcp, Socket,
+execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket, sockmod = SockMod}) ->
+    SockMod:setopts(Socket, [{active, false}]),
+    SockMod = State#state.sockmod,
+    {ok, Recs} = case mysql_protocol:execute(Stmt, Args, SockMod, Socket,
                                              Timeout) of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
             kill_query(State),
-            mysql_protocol:fetch_execute_response(gen_tcp, Socket,
+            mysql_protocol:fetch_execute_response(SockMod, Socket,
                                                   ?cmd_timeout);
         {error, timeout} ->
             %% For MySQL 4.x.x there is no way to recover from timeout except
@@ -814,7 +830,7 @@ execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket}) ->
         QueryResult ->
             QueryResult
     end,
-    inet:setopts(Socket, [{active, once}]),
+    SockMod:setopts(Socket, [{active, once}]),
     State1 = lists:foldl(fun update_state/2, State, Recs),
     State1#state.warning_count > 0 andalso State1#state.log_warnings
         andalso log_warnings(State1, Stmt#prepared.orig_query),
@@ -893,12 +909,13 @@ clear_transaction_status(State = #state{status = Status}) ->
                 transaction_level = 0}.
 
 %% @doc Fetches and logs warnings. Query is the query that gave the warnings.
-log_warnings(#state{socket = Socket}, Query) ->
-    inet:setopts(Socket, [{active, false}]),
+log_warnings(#state{socket = Socket, sockmod = SockMod} = State, Query) ->
+    SockMod:setopts(Socket, [{active, false}]),
+    SockMod = State#state.sockmod,
     {ok, [#resultset{rows = Rows}]} = mysql_protocol:query(<<"SHOW WARNINGS">>,
-                                                           gen_tcp, Socket,
+                                                           SockMod, Socket,
                                                            ?cmd_timeout),
-    inet:setopts(Socket, [{active, once}]),
+    SockMod:setopts(Socket, [{active, once}]),
     Lines = [[Level, " ", integer_to_binary(Code), ": ", Message, "\n"]
              || [Level, Code, Message] <- Rows],
     error_logger:warning_msg("~s in ~s~n", [Lines, Query]).
@@ -906,23 +923,22 @@ log_warnings(#state{socket = Socket}, Query) ->
 %% @doc Makes a separate connection and execute KILL QUERY. We do this to get
 %% our main connection back to normal. KILL QUERY appeared in MySQL 5.0.0.
 kill_query(#state{connection_id = ConnId, host = Host, port = Port,
-                  user = User, password = Password,
+                  user = User, password = Password, ssl_opts = SSLOpts,
                   cap_found_rows = SetFoundRows}) ->
     %% Connect socket
     SockOpts = [{active, false}, binary, {packet, raw}],
-    {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
+    {ok, Socket0} = mysql_sock_tcp:connect(Host, Port, SockOpts),
 
     %% Exchange handshake communication.
-    Result = mysql_protocol:handshake(User, Password, undefined, gen_tcp,
-                                      Socket, SetFoundRows),
+    Result = mysql_protocol:handshake(User, Password, undefined, mysql_sock_tcp,
+                                      SSLOpts, Socket0, SetFoundRows),
     case Result of
-        #handshake{} ->
+        {ok, #handshake{}, SockMod, Socket} ->
             %% Kill and disconnect
             IdBin = integer_to_binary(ConnId),
-            {ok, [#ok{}]} = mysql_protocol:query(<<"KILL QUERY ",
-                                                   IdBin/binary>>, gen_tcp,
-                                                 Socket, ?cmd_timeout),
-            mysql_protocol:quit(gen_tcp, Socket);
+            {ok, [#ok{}]} = mysql_protocol:query(<<"KILL QUERY ", IdBin/binary>>,
+                                                 SockMod, Socket, ?cmd_timeout),
+            mysql_protocol:quit(SockMod, Socket);
         #error{} = E ->
             error_logger:error_msg("Failed to connect to kill query: ~p",
                                    [error_to_reason(E)])
