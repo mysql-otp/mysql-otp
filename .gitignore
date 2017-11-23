@@ -1,3 +1,4 @@
+.erlang.mk
 .eunit
 deps
 *.o

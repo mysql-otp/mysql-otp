@@ -8,17 +8,24 @@
 #  - tests-report:   Creates doc/eunit.html with the coverage and eunit output.
 #  - gh-pages:       Generates docs and eunit reports and commits these in the
 #                    gh-pages which Github publishes automatically when pushed.
+#  - CHANGELOG.md:   Generates a changelog from the git commits and tags.
 .PHONY: gh-pages tests-report tests-prep CHANGELOG.md
 
 PROJECT = mysql
 EDOC_OPTS = {stylesheet_file,"priv/edoc-style.css"},{todo,true}
-PLT_APPS = crypto
+PLT_APPS = crypto ssl inets public_key
 SHELL_PATH = -pa ebin
+
+ERLANG_MK_BUILD_CONFIG = erlang-mk.build.config
 
 include erlang.mk
 
+# Generate keys for SSL tests. Requires configuring and restarting MySQL.
 tests-prep:
-	cd test/ssl && $(MAKE)
+	$(MAKE) -C test/ssl
+
+distclean::
+	$(MAKE) -C test/ssl clean
 
 CHANGELOG.md:
 	./changelog.sh > $@
