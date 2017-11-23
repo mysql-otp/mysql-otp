@@ -2,6 +2,23 @@ Change log
 ==========
 
 
+1.3.0
+-----
+* add erlang 20 for test [2017-09-21 13:32:38 +0200]
+* Add SSL connection support [2017-09-21 13:28:43 +0200]
+* Fix reading of unsigned integers in binary protocol [2017-08-02 00:09:54 +0200]
+* fix mysql connect timeout. [2017-08-02 00:06:42 +0200]
+* Add support for auth method switch [2017-08-02 00:05:04 +0200]
+* Fix tests for MariaDB [2017-08-01 23:58:33 +0200]
+* erlang 20 add floor/1 function, change the floor/1 funcion name in the self create module [2017-05-11 17:07:50 +0800]
+* Add test for found_rows option. [2017-01-31 10:52:43 +0100]
+* Allow setting CLIENT_FOUND_ROWS on handshake. [2017-01-31 10:45:17 +0100]
+* Add Erlang 19 and 18 to Travis build matrix [2016-08-27 02:04:37 +0200]
+* Add support for the MySQL JSON type [2016-08-27 01:41:43 +0200]
+* Explicitly set the SQL mode to a known value [2016-07-23 13:08:13 +0200]
+* Fix typo 'Gitbub' in docs [2016-07-01 15:44:29 +0200]
+* Update CHANGELOG.md [2016-06-18 06:37:52 +0200]
+
 1.2.0
 -----
 * Bump version to 1.2.0 [2016-06-18 06:37:07 +0200]
