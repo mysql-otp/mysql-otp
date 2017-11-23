@@ -10,7 +10,9 @@ SERVERCERT = server-cert.pem
 CASTRING = "/C=PL/L=Krakow/CN=MYSQL CA"
 SERVERSTRING = "/C=PL/L=Krakow/CN=localhost"
 
-all:
+all: my-ssl.cnf
+
+my-ssl.cnf:
 	openssl genrsa -out $(CAKEY) 2048
 	openssl req -x509 -new -nodes -key $(CAKEY) -sha256 -days 1024 -out $(CACERT) -subj $(CASTRING)
 	openssl genrsa -out $(SERVERKEY) 2048

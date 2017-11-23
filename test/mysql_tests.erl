@@ -67,15 +67,6 @@ successful_connect_test() ->
     ?assertMatch({error, _}, mysql:code_change("2.0.0", unknown_state, [])),
     common_conn_close().
 
-successful_ssl_connect_test() ->
-    %% The same test as successful_connect_test(), minus gen_server checks,
-    %% plus SSL
-    [ application:start(App) || App <- [crypto, asn1, public_key, ssl] ],
-    common_basic_check([{ssl, [{cacertfile, "test/ssl/ca.pem"}]},
-                        {user, ?ssl_user}, {password, ?ssl_password}]),
-    common_conn_close(),
-    ok.
-
 common_basic_check(ExtraOpts) ->
     Options = [{name, {local, tardis}},
                {queries, ["SET @foo = 'bar'", "SELECT 1",
