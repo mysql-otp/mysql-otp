@@ -89,23 +89,32 @@ Using *rebar*:
 
 Tests
 -----
-Before running the tests you'll need to generate SSL files and MySQL extra config file.
-In order to do so, please execute `make tests-prep`.
 
-The MySQL server configuration must include `my-ssl.cnf` file,
-which can be found in `test/ssl/`.
-**Do not run** `make tests-prep` after you start MySQL,
-because CA certificates will no longer match.
+EUnit tests are executed using `make tests` or `make eunit`.
 
-For the suite `mysql_tests` you need to start MySQL on localhost and give
-privileges to the `otptest` and `otptestssl` users:
+To run individual test suites, use `make eunit t=SUITE` where SUITE is one of
+`mysql_encode_tests`, `mysql_protocol_tests`, `mysql_tests`, `ssl_tests` or
+`transaction_tests`.
+
+The encode and protocol test suites does not require a
+running MySQL server on localhost.
+
+For the suites `mysql_tests`, `ssl_tests` and `transaction_tests` you need to
+start MySQL on localhost and give privileges to the user `otptest` and (for
+`ssl_tests`) to the user `otptestssl`:
 
 ```SQL
 grant all privileges on otptest.* to otptest@localhost identified by 'otptest';
 grant all privileges on otptest.* to otptestssl@localhost identified by 'otptestssl' require ssl;
 ```
 
-EUnit tests are executed with `make tests`.
+Before running the test suite `ssl_tests` you'll also need to generate SSL files
+and MySQL extra config file. In order to do so, please execute `make tests-prep`.
+
+The MySQL server configuration must include `my-ssl.cnf` file,
+which can be found in `test/ssl/`.
+**Do not run** `make tests-prep` after you start MySQL,
+because CA certificates will no longer match.
 
 If you run `make tests COVER=1` a coverage report will be generated. Open
 `cover/index.html` to see that any lines you have added or modified are covered
@@ -127,12 +136,15 @@ generated from the commit messages.
 Maintaining
 -----------
 
-Tag a new version using using sematic versioning rules.
+This is for the project's maintainer only.
+
+Tag a new version using using sematic versioning rules. Push tags using
+`git push --tags`.
 
 After tagging a new version, update the changelog using `make CHANGELOG.md` and
 commit it.
 
-Update the documentation and online coverage reports using `make gh-pages`. Then
+Update the online documentation and coverage reports using `make gh-pages`. Then
 push the gh-pages branch using `git push origin gh-pages`.
 
 License
