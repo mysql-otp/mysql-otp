@@ -16,6 +16,7 @@ Some of the features:
 * Each connection is a gen_server, which makes it compatible with Poolboy (for
   connection pooling) and ordinary OTP supervisors.
 * No records in the public API.
+* SSL.
 * Slow queries are interrupted without killing the connection (MySQL version
   ≥ 5.0.0).
 
@@ -77,18 +78,17 @@ Usage as a dependency
 Using *erlang.mk*:
 
     DEPS = mysql
-    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.2.0
+    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.3.0
 
 Using *rebar*:
 
     {deps, [
         {mysql, ".*", {git, "https://github.com/mysql-otp/mysql-otp",
-                       {tag, "1.2.0"}}}
+                       {tag, "1.3.0"}}}
     ]}.
 
-Contributing
-------------
-
+Tests
+-----
 Before running the tests you'll need to generate SSL files and MySQL extra config file.
 In order to do so, please execute `make tests-prep`.
 
@@ -111,6 +111,11 @@ If you run `make tests COVER=1` a coverage report will be generated. Open
 `cover/index.html` to see that any lines you have added or modified are covered
 by a test.
 
+Contributing
+------------
+
+Run the tests and also dialyzer using `make dialyze`.
+
 Linebreak code to 80 characters per line and follow a coding style similar to
 that of existing code.
 
@@ -118,6 +123,17 @@ Keep commit messages short and descriptive. Each commit message should describe
 the purpose of the commit, the feature added or bug fixed, so that the commit
 log can be used as a comprehensive change log. [CHANGELOG.md](CHANGELOG.md) is
 generated from the commit messages.
+
+Maintaining
+-----------
+
+Tag a new version using using sematic versioning rules.
+
+After tagging a new version, update the changelog using `make CHANGELOG.md` and
+commit it.
+
+Update the documentation and online coverage reports using `make gh-pages`. Then
+push the gh-pages branch using `git push origin gh-pages`.
 
 License
 -------
