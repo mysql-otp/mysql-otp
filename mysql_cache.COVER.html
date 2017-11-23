@@ -5,7 +5,7 @@
 <title>cover/mysql_cache.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_cache.erl by COVER 2016-07-01 at 15:51:33
+File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_cache.erl by COVER 2017-11-23 at 22:15:23
 
 ****************************************************************************
 
@@ -80,14 +80,14 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_cache.erl by C
         |  -spec lookup(Key :: K, Cache :: cache(K, V)) -&gt;
         |      {found, Value :: V, UpdatedCache :: cache(K, V)} | not_found.
         |  lookup(Key, {cache, StartTs, Dict}) -&gt;
-     6..|      case dict:find(Key, Dict) of
+     8..|      case dict:find(Key, Dict) of
         |          {ok, {Value, _OldTime}} -&gt;
      3..|              NewTime = timer:now_diff(os:timestamp(), StartTs) div 1000,
      3..|              Dict1 = dict:store(Key, {Value, NewTime}, Dict),
      3..|              Cache1 = {cache, StartTs, Dict1},
      3..|              {found, Value, Cache1};
         |          error -&gt;
-     3..|              not_found
+     5..|              not_found
         |      end;
         |  lookup(_Key, empty) -&gt;
      6..|      not_found.
@@ -109,8 +109,8 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_cache.erl by C
         |  -spec store(Key :: K, Value :: V, Cache :: cache(K, V)) -&gt; cache(K, V)
         |      when K :: term(), V :: term().
         |  store(Key, Value, {cache, StartTs, Dict}) -&gt;
-     2..|      Time = timer:now_diff(os:timestamp(), StartTs) div 1000,
-     2..|      {cache, StartTs, dict:store(Key, {Value, Time}, Dict)};
+     4..|      Time = timer:now_diff(os:timestamp(), StartTs) div 1000,
+     4..|      {cache, StartTs, dict:store(Key, {Value, Time}, Dict)};
         |  store(Key, Value, empty) -&gt;
      6..|      {cache, os:timestamp(), dict:store(Key, {Value, 0}, dict:new())}.
         |  

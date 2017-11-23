@@ -5,12 +5,13 @@
 <title>cover/mysql_protocol.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl by COVER 2016-07-01 at 15:51:33
+File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl by COVER 2017-11-23 at 22:15:23
 
 ****************************************************************************
 
         |  %% MySQL/OTP – MySQL client library for Erlang/OTP
         |  %% Copyright (C) 2014 Viktor Söderqvist
+        |  %%               2017 Piotr Nosek, Michal Slaski
         |  %%
         |  %% This file is part of MySQL/OTP.
         |  %%
@@ -37,7 +38,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  %% @private
         |  -module(mysql_protocol).
         |  
-        |  -export([handshake/5, quit/2, ping/2,
+        |  -export([handshake/7, quit/2, ping/2,
         |           query/4, fetch_query_response/3,
         |           prepare/3, unprepare/3, execute/5, fetch_execute_response/3]).
         |  
@@ -56,58 +57,85 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  %% @doc Performs a handshake using the supplied functions for communication.
         |  %% Returns an ok or an error record. Raises errors when various unimplemented
         |  %% features are requested.
-        |  -spec handshake(iodata(), iodata(), iodata() | undefined, atom(), term()) -&gt;
-        |      #handshake{} | #error{}.
-        |  handshake(Username, Password, Database, TcpModule, Socket) -&gt;
-    17..|      SeqNum0 = 0,
-    17..|      {ok, HandshakePacket, SeqNum1} = recv_packet(TcpModule, Socket, SeqNum0),
-    17..|      Handshake = parse_handshake(HandshakePacket),
-    16..|      Response = build_handshake_response(Handshake, Username, Password,
-        |                                          Database),
-    16..|      {ok, SeqNum2} = send_packet(TcpModule, Socket, Response, SeqNum1),
-    16..|      {ok, ConfirmPacket, _SeqNum3} = recv_packet(TcpModule, Socket, SeqNum2),
-    16..|      case parse_handshake_confirm(ConfirmPacket) of
+        |  -spec handshake(Username :: iodata(), Password :: iodata(),
+        |                  Database :: iodata() | undefined,
+        |                  SockModule :: module(), SSLOpts :: list() | undefined,
+        |                  Socket :: term(),
+        |                  SetFoundRows :: boolean()) -&gt;
+        |      {ok, #handshake{}, SockModule :: module(), Socket :: term()} |
+        |      #error{}.
+        |  handshake(Username, Password, Database, SockModule0, SSLOpts, Socket0,
+        |            SetFoundRows) -&gt;
+    19..|      SeqNum0 = 0,
+    19..|      {ok, HandshakePacket, SeqNum1} = recv_packet(SockModule0, Socket0, SeqNum0),
+    19..|      Handshake = parse_handshake(HandshakePacket),
+        |      {ok, SockModule, Socket, SeqNum2}
+    18..|      = maybe_do_ssl_upgrade(SockModule0, Socket0, SeqNum1, Handshake,
+        |                             SSLOpts, Database, SetFoundRows),
+    18..|      Response = build_handshake_response(Handshake, Username, Password,
+        |                                          Database, SetFoundRows),
+    18..|      {ok, SeqNum3} = send_packet(SockModule, Socket, Response, SeqNum2),
+    18..|      handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket,
+        |                                      SeqNum3).
+        |  
+        |  handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket,
+        |                                  SeqNum0) -&gt;
+    18..|      {ok, ConfirmPacket, SeqNum1} = recv_packet(SockModule, Socket, SeqNum0),
+    18..|      case parse_handshake_confirm(ConfirmPacket) of
         |          #ok{status = OkStatus} -&gt;
-    15..|              OkStatus = Handshake#handshake.status,
-    15..|              Handshake;
+    17..|              OkStatus = Handshake#handshake.status,
+    17..|              {ok, Handshake, SockModule, Socket};
+        |          #auth_method_switch{auth_plugin_name = AuthPluginName,
+        |                              auth_plugin_data = AuthPluginData} -&gt;
+<font color=red>     0..|              Hash = case AuthPluginName of</font>
+        |                         &lt;&lt;&gt;&gt; -&gt;
+<font color=red>     0..|                             hash_password(Password, AuthPluginData);</font>
+        |                         &lt;&lt;"mysql_native_password"&gt;&gt; -&gt;
+<font color=red>     0..|                             hash_password(Password, AuthPluginData);</font>
+        |                         UnknownAuthMethod -&gt;
+<font color=red>     0..|                             error({auth_method, UnknownAuthMethod})</font>
+        |                     end,
+<font color=red>     0..|              {ok, SeqNum2} = send_packet(SockModule, Socket, Hash, SeqNum1),</font>
+<font color=red>     0..|              handshake_finish_or_switch_auth(Handshake, Password, SockModule,</font>
+        |                                              Socket, SeqNum2);
         |          Error -&gt;
      1..|              Error
         |      end.
         |  
         |  -spec quit(atom(), term()) -&gt; ok.
-        |  quit(TcpModule, Socket) -&gt;
-    12..|      {ok, SeqNum1} = send_packet(TcpModule, Socket, &lt;&lt;?COM_QUIT&gt;&gt;, 0),
-    12..|      case recv_packet(TcpModule, Socket, SeqNum1) of
-    12..|          {error, closed} -&gt; ok;            %% MySQL 5.5.40 and more
+        |  quit(SockModule, Socket) -&gt;
+    14..|      {ok, SeqNum1} = send_packet(SockModule, Socket, &lt;&lt;?COM_QUIT&gt;&gt;, 0),
+    14..|      case recv_packet(SockModule, Socket, SeqNum1) of
+    14..|          {error, closed} -&gt; ok;            %% MySQL 5.5.40 and more
 <font color=red>     0..|          {ok, ?ok_pattern, _SeqNum2} -&gt; ok %% Some older MySQL versions?</font>
         |      end.
         |  
         |  -spec ping(atom(), term()) -&gt; #ok{}.
-        |  ping(TcpModule, Socket) -&gt;
-     4..|      {ok, SeqNum1} = send_packet(TcpModule, Socket, &lt;&lt;?COM_PING&gt;&gt;, 0),
-     3..|      {ok, OkPacket, _SeqNum2} = recv_packet(TcpModule, Socket, SeqNum1),
+        |  ping(SockModule, Socket) -&gt;
+     4..|      {ok, SeqNum1} = send_packet(SockModule, Socket, &lt;&lt;?COM_PING&gt;&gt;, 0),
+     3..|      {ok, OkPacket, _SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
      3..|      parse_ok_packet(OkPacket).
         |  
         |  -spec query(Query :: iodata(), atom(), term(), timeout()) -&gt;
         |      {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
-        |  query(Query, TcpModule, Socket, Timeout) -&gt;
-   384..|      Req = &lt;&lt;?COM_QUERY, (iolist_to_binary(Query))/binary&gt;&gt;,
-   384..|      SeqNum0 = 0,
-   384..|      {ok, _SeqNum1} = send_packet(TcpModule, Socket, Req, SeqNum0),
-   384..|      fetch_query_response(TcpModule, Socket, Timeout).
+        |  query(Query, SockModule, Socket, Timeout) -&gt;
+   434..|      Req = &lt;&lt;?COM_QUERY, (iolist_to_binary(Query))/binary&gt;&gt;,
+   434..|      SeqNum0 = 0,
+   434..|      {ok, _SeqNum1} = send_packet(SockModule, Socket, Req, SeqNum0),
+   434..|      fetch_query_response(SockModule, Socket, Timeout).
         |  
         |  %% @doc This is used by query/4. If query/4 returns {error, timeout}, this
-        |  %% function can be called to retry to fetch the results of the query. 
-        |  fetch_query_response(TcpModule, Socket, Timeout) -&gt;
-   385..|      fetch_response(TcpModule, Socket, Timeout, text, []).
+        |  %% function can be called to retry to fetch the results of the query.
+        |  fetch_query_response(SockModule, Socket, Timeout) -&gt;
+   435..|      fetch_response(SockModule, Socket, Timeout, text, []).
         |  
         |  %% @doc Prepares a statement.
         |  -spec prepare(iodata(), atom(), term()) -&gt; #error{} | #prepared{}.
-        |  prepare(Query, TcpModule, Socket) -&gt;
-    95..|      Req = &lt;&lt;?COM_STMT_PREPARE, (iolist_to_binary(Query))/binary&gt;&gt;,
-    95..|      {ok, SeqNum1} = send_packet(TcpModule, Socket, Req, 0),
-    95..|      {ok, Resp, SeqNum2} = recv_packet(TcpModule, Socket, SeqNum1),
-    95..|      case Resp of
+        |  prepare(Query, SockModule, Socket) -&gt;
+   110..|      Req = &lt;&lt;?COM_STMT_PREPARE, (iolist_to_binary(Query))/binary&gt;&gt;,
+   110..|      {ok, SeqNum1} = send_packet(SockModule, Socket, Req, 0),
+   110..|      {ok, Resp, SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
+   110..|      case Resp of
         |          ?error_pattern -&gt;
      3..|              parse_error_packet(Resp);
         |          &lt;&lt;?OK,
@@ -121,16 +149,16 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |              %% contain any useful data at all. They are always TYPE_VAR_STRING
         |              %% with charset 'binary' so we have to select a type ourselves for
         |              %% the parameters we have in execute/4.
-    92..|              {_ParamDefs, SeqNum3} =
-        |                  fetch_column_definitions_if_any(NumParams, TcpModule, Socket,
+   107..|              {_ParamDefs, SeqNum3} =
+        |                  fetch_column_definitions_if_any(NumParams, SockModule, Socket,
         |                                                  SeqNum2),
         |              %% Column Definition Block. We get column definitions in execute
         |              %% too, so we don't need them here. We *could* store them to be able
         |              %% to provide the user with some info about a prepared statement.
-    92..|              {_ColDefs, _SeqNum4} =
-        |                  fetch_column_definitions_if_any(NumColumns, TcpModule, Socket,
+   107..|              {_ColDefs, _SeqNum4} =
+        |                  fetch_column_definitions_if_any(NumColumns, SockModule, Socket,
         |                                                  SeqNum3),
-    92..|              #prepared{statement_id = StmtId,
+   107..|              #prepared{statement_id = StmtId,
         |                        orig_query = Query,
         |                        param_count = NumParams,
         |                        warning_count = WarningCount}
@@ -138,48 +166,48 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  
         |  %% @doc Deallocates a prepared statement.
         |  -spec unprepare(#prepared{}, atom(), term()) -&gt; ok.
-        |  unprepare(#prepared{statement_id = Id}, TcpModule, Socket) -&gt;
-    78..|      {ok, _SeqNum} = send_packet(TcpModule, Socket,
+        |  unprepare(#prepared{statement_id = Id}, SockModule, Socket) -&gt;
+    90..|      {ok, _SeqNum} = send_packet(SockModule, Socket,
         |                                  &lt;&lt;?COM_STMT_CLOSE, Id:32/little&gt;&gt;, 0),
-    78..|      ok.
+    90..|      ok.
         |  
         |  %% @doc Executes a prepared statement.
         |  -spec execute(#prepared{}, [term()], atom(), term(), timeout()) -&gt;
         |      {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
         |  execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
-        |          TcpModule, Socket, Timeout) when ParamCount == length(ParamValues) -&gt;
+        |          SockModule, Socket, Timeout) when ParamCount == length(ParamValues) -&gt;
         |      %% Flags Constant Name
         |      %% 0x00 CURSOR_TYPE_NO_CURSOR
         |      %% 0x01 CURSOR_TYPE_READ_ONLY
         |      %% 0x02 CURSOR_TYPE_FOR_UPDATE
         |      %% 0x04 CURSOR_TYPE_SCROLLABLE
-   171..|      Flags = 0,
-   171..|      Req0 = &lt;&lt;?COM_STMT_EXECUTE, Id:32/little, Flags, 1:32/little&gt;&gt;,
-   171..|      Req = case ParamCount of
+   192..|      Flags = 0,
+   192..|      Req0 = &lt;&lt;?COM_STMT_EXECUTE, Id:32/little, Flags, 1:32/little&gt;&gt;,
+   192..|      Req = case ParamCount of
         |          0 -&gt;
-    98..|              Req0;
+   111..|              Req0;
         |          _ -&gt;
         |              %% We can't use the parameter types returned by the prepare call.
         |              %% They are all reported as ?TYPE_VAR_STRING with character
         |              %% set 'binary'.
-    73..|              NullBitMap = build_null_bitmap(ParamValues),
+    81..|              NullBitMap = build_null_bitmap(ParamValues),
         |              %% What does it mean to *not* bind new params? To use the same
         |              %% params as last time? Right now we always bind params each time.
-    73..|              NewParamsBoundFlag = 1,
-    73..|              Req1 = &lt;&lt;Req0/binary, NullBitMap/binary, NewParamsBoundFlag&gt;&gt;,
+    81..|              NewParamsBoundFlag = 1,
+    81..|              Req1 = &lt;&lt;Req0/binary, NullBitMap/binary, NewParamsBoundFlag&gt;&gt;,
         |              %% For each value, first append type and signedness (16#80 signed or
         |              %% 00 unsigned) for all values and then the binary encoded values.
-    73..|              EncodedParams = lists:map(fun encode_param/1, ParamValues),
-    73..|              {TypesAndSigns, EncValues} = lists:unzip(EncodedParams),
-    73..|              iolist_to_binary([Req1, TypesAndSigns, EncValues])
+    81..|              EncodedParams = lists:map(fun encode_param/1, ParamValues),
+    81..|              {TypesAndSigns, EncValues} = lists:unzip(EncodedParams),
+    81..|              iolist_to_binary([Req1, TypesAndSigns, EncValues])
         |      end,
-   171..|      {ok, _SeqNum1} = send_packet(TcpModule, Socket, Req, 0),
-   171..|      fetch_execute_response(TcpModule, Socket, Timeout).
+   192..|      {ok, _SeqNum1} = send_packet(SockModule, Socket, Req, 0),
+   192..|      fetch_execute_response(SockModule, Socket, Timeout).
         |  
         |  %% @doc This is used by execute/5. If execute/5 returns {error, timeout}, this
         |  %% function can be called to retry to fetch the results of the query.
-        |  fetch_execute_response(TcpModule, Socket, Timeout) -&gt;
-   173..|      fetch_response(TcpModule, Socket, Timeout, binary, []).
+        |  fetch_execute_response(SockModule, Socket, Timeout) -&gt;
+   194..|      fetch_response(SockModule, Socket, Timeout, binary, []).
         |  
         |  %% --- internal ---
         |  
@@ -189,7 +217,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  -spec parse_handshake(binary()) -&gt; #handshake{}.
         |  parse_handshake(&lt;&lt;10, Rest/binary&gt;&gt;) -&gt;
         |      %% Protocol version 10.
-    16..|      {ServerVersion, Rest1} = nulterm_str(Rest),
+    18..|      {ServerVersion, Rest1} = nulterm_str(Rest),
         |      &lt;&lt;ConnectionId:32/little,
         |        AuthPluginDataPart1:8/binary-unit:8,
         |        0, %% "filler" -- everything below is optional
@@ -199,24 +227,24 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |        CapabilitiesUpper:16/little,
         |        AuthPluginDataLength:8,     %% if cabab &amp; CLIENT_PLUGIN_AUTH, otherwise 0
         |        _Reserved:10/binary-unit:8, %% 10 unused (reserved) bytes
-    16..|        Rest3/binary&gt;&gt; = Rest1,
-    16..|      Capabilities = CapabilitiesLower + 16#10000 * CapabilitiesUpper,
-    16..|      Len = case AuthPluginDataLength of
+    18..|        Rest3/binary&gt;&gt; = Rest1,
+    18..|      Capabilities = CapabilitiesLower + 16#10000 * CapabilitiesUpper,
+    18..|      Len = case AuthPluginDataLength of
 <font color=red>     0..|          0 -&gt; 13;   %% Server has not CLIENT_PLUGIN_AUTH</font>
-    16..|          K -&gt; K - 8 %% Part 2 length = Total length minus the 8 bytes in part 1.
+    18..|          K -&gt; K - 8 %% Part 2 length = Total length minus the 8 bytes in part 1.
         |      end,
-    16..|      &lt;&lt;AuthPluginDataPart2:Len/binary-unit:8, AuthPluginName/binary&gt;&gt; = Rest3,
-    16..|      AuthPluginData = &lt;&lt;AuthPluginDataPart1/binary, AuthPluginDataPart2/binary&gt;&gt;,
+    18..|      &lt;&lt;AuthPluginDataPart2:Len/binary-unit:8, AuthPluginName/binary&gt;&gt; = Rest3,
+    18..|      AuthPluginData = &lt;&lt;AuthPluginDataPart1/binary, AuthPluginDataPart2/binary&gt;&gt;,
         |      %% "Due to Bug#59453 the auth-plugin-name is missing the terminating
         |      %% NUL-char in versions prior to 5.5.10 and 5.6.2."
         |      %% Strip the final NUL byte if any.
         |      %% This may also be &lt;&lt;&gt;&gt; in older versions.
-    16..|      L = byte_size(AuthPluginName) - 1,
-    16..|      AuthPluginName1 = case AuthPluginName of
-    16..|          &lt;&lt;AuthPluginNameTrimmed:L/binary, 0&gt;&gt; -&gt; AuthPluginNameTrimmed;
+    18..|      L = byte_size(AuthPluginName) - 1,
+    18..|      AuthPluginName1 = case AuthPluginName of
+    18..|          &lt;&lt;AuthPluginNameTrimmed:L/binary, 0&gt;&gt; -&gt; AuthPluginNameTrimmed;
 <font color=red>     0..|          _ -&gt; AuthPluginName</font>
         |      end,
-    16..|      #handshake{server_version = server_version_to_list(ServerVersion),
+    18..|      #handshake{server_version = server_version_to_list(ServerVersion),
         |                 connection_id = ConnectionId,
         |                 capabilities = Capabilities,
         |                 character_set = CharacterSet,
@@ -230,49 +258,75 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  -spec server_version_to_list(binary()) -&gt; [integer()].
         |  server_version_to_list(ServerVersion) -&gt;
         |      %% This must work with e.g. "5.5.40-0ubuntu0.12.04.1-log" and "5.5.33a".
-    16..|      {match, Parts} = re:run(ServerVersion, &lt;&lt;"^(\\d+)\\.(\\d+)\\.(\\d+)"&gt;&gt;,
+    18..|      {match, Parts} = re:run(ServerVersion, &lt;&lt;"^(\\d+)\\.(\\d+)\\.(\\d+)"&gt;&gt;,
         |                              [{capture, all_but_first, binary}]),
-    16..|      lists:map(fun binary_to_integer/1, Parts).
+    18..|      lists:map(fun binary_to_integer/1, Parts).
+        |  
+        |  -spec maybe_do_ssl_upgrade(SockModule0 :: module(),
+        |                             Socket0 :: term(),
+        |                             SeqNum1 :: non_neg_integer(),
+        |                             Handshake :: #handshake{},
+        |                             SSLOpts :: undefined | list(),
+        |                             Database :: iodata() | undefined,
+        |                             SetFoundRows :: boolean()) -&gt;
+        |      {ok, SockModule :: module(), Socket :: term(),
+        |       SeqNum2 :: non_neg_integer()}.
+        |  maybe_do_ssl_upgrade(SockModule0, Socket0, SeqNum1, _Handshake, undefined,
+        |                       _Database, _SetFoundRows) -&gt;
+    17..|      {ok, SockModule0, Socket0, SeqNum1};
+        |  maybe_do_ssl_upgrade(SockModule0, Socket0, SeqNum1, Handshake, SSLOpts,
+        |                       Database, SetFoundRows) -&gt;
+     1..|      Response = build_handshake_response(Handshake, Database, SetFoundRows),
+     1..|      {ok, SeqNum2} = send_packet(SockModule0, Socket0, Response, SeqNum1),
+     1..|      case mysql_sock_ssl:connect(Socket0, SSLOpts, 5000) of
+        |          {ok, SSLSocket} -&gt;
+     1..|              {ok, ssl, SSLSocket, SeqNum2};
+        |          {error, Reason} -&gt;
+<font color=red>     0..|              exit({failed_to_upgrade_socket, Reason})</font>
+        |      end.
+        |  
+        |  -spec build_handshake_response(#handshake{}, iodata() | undefined, boolean()) -&gt;
+        |      binary().
+        |  build_handshake_response(Handshake, Database, SetFoundRows) -&gt;
+     1..|      CapabilityFlags = basic_capabilities(Database /= undefined, SetFoundRows),
+     1..|      verify_server_capabilities(Handshake, CapabilityFlags),
+     1..|      ClientCapabilities = add_client_capabilities(CapabilityFlags),
+     1..|      ClientSSLCapabilities = ClientCapabilities bor ?CLIENT_SSL,
+     1..|      CharacterSet = ?UTF8,
+     1..|      &lt;&lt;ClientSSLCapabilities:32/little,
+        |        ?MAX_BYTES_PER_PACKET:32/little,
+        |        CharacterSet:8,
+        |        0:23/unit:8&gt;&gt;.
         |  
         |  %% @doc The response sent by the client to the server after receiving the
         |  %% initial handshake from the server
         |  -spec build_handshake_response(#handshake{}, iodata(), iodata(),
-        |                                 iodata() | undefined) -&gt; binary().
-        |  build_handshake_response(Handshake, Username, Password, Database) -&gt;
-        |      %% We require these capabilities. Make sure the server handles them.
-    16..|      CapabilityFlags0 = ?CLIENT_PROTOCOL_41 bor
-        |                         ?CLIENT_TRANSACTIONS bor
-        |                         ?CLIENT_SECURE_CONNECTION,
-    16..|      CapabilityFlags = case Database of
-    15..|          undefined -&gt; CapabilityFlags0;
-     1..|          _         -&gt; CapabilityFlags0 bor ?CLIENT_CONNECT_WITH_DB
-        |      end,
-    16..|      Handshake#handshake.capabilities band CapabilityFlags == CapabilityFlags
-<font color=red>     0..|          orelse error(old_server_version),</font>
+        |                                 iodata() | undefined, boolean()) -&gt; binary().
+        |  build_handshake_response(Handshake, Username, Password, Database,
+        |                           SetFoundRows) -&gt;
+    18..|      CapabilityFlags = basic_capabilities(Database /= undefined, SetFoundRows),
+    18..|      verify_server_capabilities(Handshake, CapabilityFlags),
         |      %% Add some extra capability flags only for signalling to the server what
         |      %% the client wants to do. The server doesn't say it handles them although
         |      %% it does. (http://bugs.mysql.com/bug.php?id=42268)
-    16..|      ClientCapabilityFlags = CapabilityFlags bor
-        |                              ?CLIENT_MULTI_STATEMENTS bor
-        |                              ?CLIENT_MULTI_RESULTS bor
-        |                              ?CLIENT_PS_MULTI_RESULTS,
-    16..|      Hash = case Handshake#handshake.auth_plugin_name of
+    18..|      ClientCapabilityFlags = add_client_capabilities(CapabilityFlags),
+    18..|      Hash = case Handshake#handshake.auth_plugin_name of
         |          &lt;&lt;&gt;&gt; -&gt;
         |              %% Server doesn't know auth plugins
 <font color=red>     0..|              hash_password(Password, Handshake#handshake.auth_plugin_data);</font>
         |          &lt;&lt;"mysql_native_password"&gt;&gt; -&gt;
-    16..|              hash_password(Password, Handshake#handshake.auth_plugin_data);
+    18..|              hash_password(Password, Handshake#handshake.auth_plugin_data);
         |          UnknownAuthMethod -&gt;
 <font color=red>     0..|              error({auth_method, UnknownAuthMethod})</font>
         |      end,
-    16..|      HashLength = size(Hash),
-    16..|      CharacterSet = ?UTF8,
-    16..|      UsernameUtf8 = unicode:characters_to_binary(Username),
-    16..|      DbBin = case Database of
-    15..|          undefined -&gt; &lt;&lt;&gt;&gt;;
+    18..|      HashLength = size(Hash),
+    18..|      CharacterSet = ?UTF8,
+    18..|      UsernameUtf8 = unicode:characters_to_binary(Username),
+    18..|      DbBin = case Database of
+    17..|          undefined -&gt; &lt;&lt;&gt;&gt;;
      1..|          _         -&gt; &lt;&lt;(iolist_to_binary(Database))/binary, 0&gt;&gt;
         |      end,
-    16..|      &lt;&lt;ClientCapabilityFlags:32/little,
+    18..|      &lt;&lt;ClientCapabilityFlags:32/little,
         |        ?MAX_BYTES_PER_PACKET:32/little,
         |        CharacterSet:8,
         |        0:23/unit:8, %% reserverd
@@ -282,15 +336,46 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |        Hash/binary,
         |        DbBin/binary&gt;&gt;.
         |  
+        |  -spec verify_server_capabilities(Handshake :: #handshake{},
+        |                                   CapabilityFlags :: integer()) -&gt;
+        |      true | no_return().
+        |  verify_server_capabilities(Handshake, CapabilityFlags) -&gt;
+        |      %% We require these capabilities. Make sure the server handles them.
+    19..|      Handshake#handshake.capabilities band CapabilityFlags == CapabilityFlags
+<font color=red>     0..|          orelse error(old_server_version).</font>
+        |  
+        |  -spec basic_capabilities(ConnectWithDB :: boolean(),
+        |                           SetFoundRows :: boolean()) -&gt; integer().
+        |  basic_capabilities(ConnectWithDB, SetFoundRows) -&gt;
+    19..|      CapabilityFlags0 = ?CLIENT_PROTOCOL_41 bor
+        |                         ?CLIENT_TRANSACTIONS bor
+        |                         ?CLIENT_SECURE_CONNECTION,
+    19..|      CapabilityFlags1 = case ConnectWithDB of
+     1..|                             true -&gt; CapabilityFlags0 bor ?CLIENT_CONNECT_WITH_DB;
+    18..|                             _ -&gt; CapabilityFlags0
+        |                         end,
+    19..|      case SetFoundRows of
+     1..|          true -&gt; CapabilityFlags1 bor ?CLIENT_FOUND_ROWS;
+    18..|          _    -&gt; CapabilityFlags1
+        |      end.
+        |  
+        |  -spec add_client_capabilities(Caps :: integer()) -&gt; integer().
+        |  add_client_capabilities(Caps) -&gt;
+        |      Caps bor
+        |      ?CLIENT_MULTI_STATEMENTS bor
+    19..|      ?CLIENT_MULTI_RESULTS bor
+        |      ?CLIENT_PS_MULTI_RESULTS.
+        |  
         |  %% @doc Handles the second packet from the server, when we have replied to the
         |  %% initial handshake. Returns an error if the server returns an error. Raises
         |  %% an error if unimplemented features are required.
-        |  -spec parse_handshake_confirm(binary()) -&gt; #ok{} | #error{}.
+        |  -spec parse_handshake_confirm(binary()) -&gt; #ok{} | #auth_method_switch{} |
+        |                                             #error{}.
         |  parse_handshake_confirm(Packet) -&gt;
-    16..|      case Packet of
+    18..|      case Packet of
         |          ?ok_pattern -&gt;
         |              %% Connection complete.
-    15..|              parse_ok_packet(Packet);
+    17..|              parse_ok_packet(Packet);
         |          ?error_pattern -&gt;
         |              %% Access denied, insufficient client capabilities, etc.
      1..|              parse_error_packet(Packet);
@@ -300,11 +385,11 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |              %% switch to Old Password Authentication if CLIENT_PLUGIN_AUTH
         |              %% capability is not supported (by either the client or the server)"
 <font color=red>     0..|              error(old_auth);</font>
-        |          &lt;&lt;?EOF, _/binary&gt;&gt; -&gt;
+        |          &lt;&lt;?EOF, AuthMethodSwitch/binary&gt;&gt; -&gt;
         |              %% "Authentication Method Switch Request Packet. If both server and
         |              %% client support CLIENT_PLUGIN_AUTH capability, server can send
         |              %% this packet to ask client to use another authentication method."
-<font color=red>     0..|              error(auth_method_switch)</font>
+<font color=red>     0..|              parse_auth_method_switch(AuthMethodSwitch)</font>
         |      end.
         |  
         |  %% -- both text and binary protocol --
@@ -314,32 +399,32 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  %% prepared statements).
         |  -spec fetch_response(atom(), term(), timeout(), text | binary, list()) -&gt;
         |      {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
-        |  fetch_response(TcpModule, Socket, Timeout, Proto, Acc) -&gt;
-   565..|      case recv_packet(TcpModule, Socket, Timeout, any) of
+        |  fetch_response(SockModule, Socket, Timeout, Proto, Acc) -&gt;
+   637..|      case recv_packet(SockModule, Socket, Timeout, any) of
         |          {ok, Packet, SeqNum2} -&gt;
-   562..|              Result = case Packet of
+   634..|              Result = case Packet of
         |                  ?ok_pattern -&gt;
-   334..|                      parse_ok_packet(Packet);
+   377..|                      parse_ok_packet(Packet);
         |                  ?error_pattern -&gt;
      4..|                      parse_error_packet(Packet);
         |                  ResultPacket -&gt;
         |                      %% The first packet in a resultset is only the column count.
-   224..|                      {ColCount, &lt;&lt;&gt;&gt;} = lenenc_int(ResultPacket),
-   224..|                      R0 = fetch_resultset(TcpModule, Socket, ColCount, SeqNum2),
-   224..|                      case R0 of
+   253..|                      {ColCount, &lt;&lt;&gt;&gt;} = lenenc_int(ResultPacket),
+   253..|                      R0 = fetch_resultset(SockModule, Socket, ColCount, SeqNum2),
+   253..|                      case R0 of
         |                          #error{} = E -&gt;
         |                              %% TODO: Find a way to get here + testcase
      1..|                              E;
         |                          #resultset{} = R -&gt;
-   223..|                              parse_resultset(R, ColCount, Proto)
+   252..|                              parse_resultset(R, ColCount, Proto)
         |                      end
         |              end,
-   562..|              Acc1 = [Result | Acc],
-   562..|              case more_results_exists(Result) of
+   634..|              Acc1 = [Result | Acc],
+   634..|              case more_results_exists(Result) of
         |                  true -&gt;
-     7..|                      fetch_response(TcpModule, Socket, Timeout, Proto, Acc1);
+     8..|                      fetch_response(SockModule, Socket, Timeout, Proto, Acc1);
         |                  false -&gt;
-   555..|                      {ok, lists:reverse(Acc1)}
+   626..|                      {ok, lists:reverse(Acc1)}
         |              end;
         |          {error, timeout} -&gt;
      3..|              {error, timeout}
@@ -351,48 +436,50 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  %% be parsed.
         |  -spec fetch_resultset(atom(), term(), integer(), integer()) -&gt;
         |      #resultset{} | #error{}.
-        |  fetch_resultset(TcpModule, Socket, FieldCount, SeqNum) -&gt;
-   224..|      {ok, ColDefs, SeqNum1} = fetch_column_definitions(TcpModule, Socket, SeqNum,
-        |                                                        FieldCount, []),
-   224..|      {ok, DelimiterPacket, SeqNum2} = recv_packet(TcpModule, Socket, SeqNum1),
-   224..|      #eof{status = S, warning_count = W} = parse_eof_packet(DelimiterPacket),
-   224..|      case fetch_resultset_rows(TcpModule, Socket, SeqNum2, []) of
+        |  fetch_resultset(SockModule, Socket, FieldCount, SeqNum) -&gt;
+   253..|      {ok, ColDefs, SeqNum1} = fetch_column_definitions(SockModule, Socket,
+        |                                                        SeqNum, FieldCount, []),
+   253..|      {ok, DelimiterPacket, SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
+   253..|      #eof{status = S, warning_count = W} = parse_eof_packet(DelimiterPacket),
+   253..|      case fetch_resultset_rows(SockModule, Socket, SeqNum2, []) of
         |          {ok, Rows, _SeqNum3} -&gt;
-   223..|              ColDefs1 = lists:map(fun parse_column_definition/1, ColDefs),
-   223..|              #resultset{cols = ColDefs1, rows = Rows,
+   252..|              ColDefs1 = lists:map(fun parse_column_definition/1, ColDefs),
+   252..|              #resultset{cols = ColDefs1, rows = Rows,
         |                         status = S, warning_count = W};
         |          #error{} = E -&gt;
      1..|              E
         |      end.
         |  
-        |  parse_resultset(#resultset{cols = ColDefs, rows = Rows} = R, ColumnCount, text) -&gt;
+        |  parse_resultset(#resultset{cols = ColDefs, rows = Rows} = R, ColumnCount,
+        |                  text) -&gt;
         |      %% Parse the rows according to the 'text protocol' representation.
-   120..|      Rows1 = [decode_text_row(ColumnCount, ColDefs, Row) || Row &lt;- Rows],
-   120..|      R#resultset{rows = Rows1};
-        |  parse_resultset(#resultset{cols = ColDefs, rows = Rows} = R, ColumnCount, binary) -&gt;
+   136..|      Rows1 = [decode_text_row(ColumnCount, ColDefs, Row) || Row &lt;- Rows],
+   136..|      R#resultset{rows = Rows1};
+        |  parse_resultset(#resultset{cols = ColDefs, rows = Rows} = R, ColumnCount,
+        |                  binary) -&gt;
         |      %% Parse the rows according to the 'binary protocol' representation.
-   103..|      Rows1 = [decode_binary_row(ColumnCount, ColDefs, Row) || Row &lt;- Rows],
-   103..|      R#resultset{rows = Rows1}.
+   116..|      Rows1 = [decode_binary_row(ColumnCount, ColDefs, Row) || Row &lt;- Rows],
+   116..|      R#resultset{rows = Rows1}.
         |  
         |  more_results_exists(#ok{status = S}) -&gt;
-   334..|      S band ?SERVER_MORE_RESULTS_EXISTS /= 0;
+   377..|      S band ?SERVER_MORE_RESULTS_EXISTS /= 0;
         |  more_results_exists(#error{}) -&gt;
      5..|      false; %% No status bits for error
         |  more_results_exists(#resultset{status = S}) -&gt;
-   223..|      S band ?SERVER_MORE_RESULTS_EXISTS /= 0.
+   252..|      S band ?SERVER_MORE_RESULTS_EXISTS /= 0.
         |  
         |  %% @doc Receives NumLeft column definition packets. They are not parsed.
         |  %% @see parse_column_definition/1
         |  -spec fetch_column_definitions(atom(), term(), SeqNum :: integer(),
         |                                 NumLeft :: integer(), Acc :: [binary()]) -&gt;
         |      {ok, ColDefPackets :: [binary()], NextSeqNum :: integer()}.
-        |  fetch_column_definitions(TcpModule, Socket, SeqNum, NumLeft, Acc)
+        |  fetch_column_definitions(SockModule, Socket, SeqNum, NumLeft, Acc)
         |    when NumLeft &gt; 0 -&gt;
-   380..|      {ok, Packet, SeqNum1} = recv_packet(TcpModule, Socket, SeqNum),
-   380..|      fetch_column_definitions(TcpModule, Socket, SeqNum1, NumLeft - 1,
+   424..|      {ok, Packet, SeqNum1} = recv_packet(SockModule, Socket, SeqNum),
+   424..|      fetch_column_definitions(SockModule, Socket, SeqNum1, NumLeft - 1,
         |                               [Packet | Acc]);
-        |  fetch_column_definitions(_TcpModule, _Socket, SeqNum, 0, Acc) -&gt;
-   322..|      {ok, lists:reverse(Acc), SeqNum}.
+        |  fetch_column_definitions(_SockModule, _Socket, SeqNum, 0, Acc) -&gt;
+   366..|      {ok, lists:reverse(Acc), SeqNum}.
         |  
         |  %% @doc Fetches rows in a result set. There is a packet per row. The row packets
         |  %% are not decoded. This function can be used for both the binary and the text
@@ -401,26 +488,26 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |      {ok, Rows, integer()} | #error{}
         |      when Acc :: [binary()],
         |           Rows :: [binary()].
-        |  fetch_resultset_rows(TcpModule, Socket, SeqNum, Acc) -&gt;
-   444..|      {ok, Packet, SeqNum1} = recv_packet(TcpModule, Socket, SeqNum),
-   444..|      case Packet of
+        |  fetch_resultset_rows(SockModule, Socket, SeqNum, Acc) -&gt;
+   502..|      {ok, Packet, SeqNum1} = recv_packet(SockModule, Socket, SeqNum),
+   502..|      case Packet of
         |          ?error_pattern -&gt;
      1..|              parse_error_packet(Packet);
         |          ?eof_pattern -&gt;
-   223..|              {ok, lists:reverse(Acc), SeqNum1};
+   252..|              {ok, lists:reverse(Acc), SeqNum1};
         |          Row -&gt;
-   220..|              fetch_resultset_rows(TcpModule, Socket, SeqNum1, [Row | Acc])
+   249..|              fetch_resultset_rows(SockModule, Socket, SeqNum1, [Row | Acc])
         |      end.
         |  
         |  %% Parses a packet containing a column definition (part of a result set)
         |  parse_column_definition(Data) -&gt;
-   250..|      {&lt;&lt;"def"&gt;&gt;, Rest1} = lenenc_str(Data),   %% catalog (always "def")
-   250..|      {_Schema, Rest2} = lenenc_str(Rest1),    %% schema-name 
-   250..|      {_Table, Rest3} = lenenc_str(Rest2),     %% virtual table-name 
-   250..|      {_OrgTable, Rest4} = lenenc_str(Rest3),  %% physical table-name 
-   250..|      {Name, Rest5} = lenenc_str(Rest4),       %% virtual column name
-   250..|      {_OrgName, Rest6} = lenenc_str(Rest5),   %% physical column name
-   250..|      {16#0c, Rest7} = lenenc_int(Rest6),      %% length of the following fields
+   279..|      {&lt;&lt;"def"&gt;&gt;, Rest1} = lenenc_str(Data),   %% catalog (always "def")
+   279..|      {_Schema, Rest2} = lenenc_str(Rest1),    %% schema-name
+   279..|      {_Table, Rest3} = lenenc_str(Rest2),     %% virtual table-name
+   279..|      {_OrgTable, Rest4} = lenenc_str(Rest3),  %% physical table-name
+   279..|      {Name, Rest5} = lenenc_str(Rest4),       %% virtual column name
+   279..|      {_OrgName, Rest6} = lenenc_str(Rest5),   %% physical column name
+   279..|      {16#0c, Rest7} = lenenc_int(Rest6),      %% length of the following fields
         |                                               %% (always 0x0c)
         |      &lt;&lt;Charset:16/little,        %% column character set
         |        Length:32/little,         %% maximum length of the field
@@ -429,12 +516,12 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |        Decimals:8,               %% max shown decimal digits:
         |        0,  %% "filler"           %%   - 0x00 for integers and static strings
         |        0,                        %%   - 0x1f for dynamic strings, double, float
-   250..|        Rest8/binary&gt;&gt; = Rest7,   %%   - 0x00 to 0x51 for decimals
+   279..|        Rest8/binary&gt;&gt; = Rest7,   %%   - 0x00 to 0x51 for decimals
         |      %% Here, if command was COM_FIELD_LIST {
         |      %%   default values: lenenc_str
         |      %% }
-   250..|      &lt;&lt;&gt;&gt; = Rest8,
-   250..|      #col{name = Name, type = Type, charset = Charset, length = Length,
+   279..|      &lt;&lt;&gt;&gt; = Rest8,
+   279..|      #col{name = Name, type = Type, charset = Charset, length = Length,
         |           decimals = Decimals, flags = Flags}.
         |  
         |  %% -- text protocol --
@@ -443,37 +530,37 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |                        ColumnDefinitions :: [#col{}],
         |                        Data :: binary()) -&gt; [term()].
         |  decode_text_row(_NumColumns, ColumnDefs, Data) -&gt;
-   120..|      decode_text_row_acc(ColumnDefs, Data, []).
+   136..|      decode_text_row_acc(ColumnDefs, Data, []).
         |  
         |  %% parses Data using ColDefs and builds the values Acc.
         |  decode_text_row_acc([ColDef | ColDefs], Data, Acc) -&gt;
-   137..|      case Data of
+   153..|      case Data of
         |          &lt;&lt;16#fb, Rest/binary&gt;&gt; -&gt;
         |              %% NULL
      1..|              decode_text_row_acc(ColDefs, Rest, [null | Acc]);
         |          _ -&gt;
         |              %% Every thing except NULL
-   136..|              {Text, Rest} = lenenc_str(Data),
-   136..|              Term = decode_text(ColDef, Text),
-   136..|              decode_text_row_acc(ColDefs, Rest, [Term | Acc])
+   152..|              {Text, Rest} = lenenc_str(Data),
+   152..|              Term = decode_text(ColDef, Text),
+   152..|              decode_text_row_acc(ColDefs, Rest, [Term | Acc])
         |      end;
         |  decode_text_row_acc([], &lt;&lt;&gt;&gt;, Acc) -&gt;
-   120..|      lists:reverse(Acc).
+   136..|      lists:reverse(Acc).
         |  
         |  %% @doc When receiving data in the text protocol, we get everything as binaries
         |  %% (except NULL). This function is used to parse these string values.
         |  decode_text(#col{type = T}, Text)
         |    when T == ?TYPE_TINY; T == ?TYPE_SHORT; T == ?TYPE_LONG; T == ?TYPE_LONGLONG;
         |         T == ?TYPE_INT24; T == ?TYPE_YEAR -&gt;
-    48..|      binary_to_integer(Text);
+    63..|      binary_to_integer(Text);
         |  decode_text(#col{type = T}, Text)
         |    when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
         |         T == ?TYPE_ENUM; T == ?TYPE_SET; T == ?TYPE_LONG_BLOB;
         |         T == ?TYPE_MEDIUM_BLOB; T == ?TYPE_BLOB; T == ?TYPE_TINY_BLOB;
-        |         T == ?TYPE_GEOMETRY -&gt;
+        |         T == ?TYPE_GEOMETRY; T == ?TYPE_JSON -&gt;
         |      %% As of MySQL 5.6.21 we receive SET and ENUM values as STRING, i.e. we
         |      %% cannot convert them to atom() or sets:set(), etc.
-    23..|      Text;
+    24..|      Text;
         |  decode_text(#col{type = ?TYPE_BIT, length = Length}, Text) -&gt;
         |      %% Convert to &lt;&lt;_:Length/bitstring&gt;&gt;
      5..|      decode_bitstring(Text, Length);
@@ -536,13 +623,13 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  
         |  %% @doc If NumColumns is non-zero, fetches this number of column definitions
         |  %% and an EOF packet. Used by prepare/3.
-        |  fetch_column_definitions_if_any(0, _TcpModule, _Socket, SeqNum) -&gt;
-    86..|      {[], SeqNum};
-        |  fetch_column_definitions_if_any(N, TcpModule, Socket, SeqNum) -&gt;
-    98..|      {ok, Defs, SeqNum1} = fetch_column_definitions(TcpModule, Socket, SeqNum,
+        |  fetch_column_definitions_if_any(0, _SockModule, _Socket, SeqNum) -&gt;
+   101..|      {[], SeqNum};
+        |  fetch_column_definitions_if_any(N, SockModule, Socket, SeqNum) -&gt;
+   113..|      {ok, Defs, SeqNum1} = fetch_column_definitions(SockModule, Socket, SeqNum,
         |                                                     N, []),
-    98..|      {ok, ?eof_pattern, SeqNum2} = recv_packet(TcpModule, Socket, SeqNum1),
-    98..|      {Defs, SeqNum2}.
+   113..|      {ok, ?eof_pattern, SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
+   113..|      {Defs, SeqNum2}.
         |  
         |  %% @doc Decodes a packet representing a row in a binary result set.
         |  %% It consists of a 0 byte, then a null bitmap, then the values.
@@ -552,8 +639,8 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |                          ColumnDefs :: [#col{}],
         |                          Data :: binary()) -&gt; [term()].
         |  decode_binary_row(NumColumns, ColumnDefs, &lt;&lt;0, Data/binary&gt;&gt;) -&gt;
-   100..|      {NullBitMap, Rest} = null_bitmap_decode(NumColumns, Data, 2),
-   100..|      decode_binary_row_acc(ColumnDefs, NullBitMap, Rest, []).
+   113..|      {NullBitMap, Rest} = null_bitmap_decode(NumColumns, Data, 2),
+   113..|      decode_binary_row_acc(ColumnDefs, NullBitMap, Rest, []).
         |  
         |  %% @doc Accumulating helper for decode_binary_row/3.
         |  decode_binary_row_acc([_|ColDefs], &lt;&lt;1:1, NullBitMap/bitstring&gt;&gt;, Data, Acc) -&gt;
@@ -562,10 +649,10 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  decode_binary_row_acc([ColDef | ColDefs], &lt;&lt;0:1, NullBitMap/bitstring&gt;&gt;, Data,
         |                        Acc) -&gt;
         |      %% Not NULL
-   109..|      {Term, Rest} = decode_binary(ColDef, Data),
-   109..|      decode_binary_row_acc(ColDefs, NullBitMap, Rest, [Term | Acc]);
+   122..|      {Term, Rest} = decode_binary(ColDef, Data),
+   122..|      decode_binary_row_acc(ColDefs, NullBitMap, Rest, [Term | Acc]);
         |  decode_binary_row_acc([], _, &lt;&lt;&gt;&gt;, Acc) -&gt;
-   100..|      lists:reverse(Acc).
+   113..|      lists:reverse(Acc).
         |  
         |  %% @doc Decodes a null bitmap as stored by MySQL and returns it in a strait
         |  %% bitstring counting bits from left to right in a tuple with remaining data.
@@ -577,11 +664,11 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |      {NullBitstring :: bitstring(), Rest :: binary()}.
         |  null_bitmap_decode(NumColumns, Data, BitOffset) -&gt;
         |      %% Binary shift right by 3 is equivallent to integer division by 8.
-   101..|      BitMapLength = (NumColumns + BitOffset + 7) bsr 3,
-   101..|      &lt;&lt;NullBitstring0:BitMapLength/binary, Rest/binary&gt;&gt; = Data,
-   101..|      &lt;&lt;_:BitOffset, NullBitstring:NumColumns/bitstring, _/bitstring&gt;&gt; =
-   101..|          &lt;&lt; &lt;&lt;(reverse_byte(B))/binary&gt;&gt; || &lt;&lt;B:1/binary&gt;&gt; &lt;= NullBitstring0 &gt;&gt;,
-   101..|      {NullBitstring, Rest}.
+   114..|      BitMapLength = (NumColumns + BitOffset + 7) bsr 3,
+   114..|      &lt;&lt;NullBitstring0:BitMapLength/binary, Rest/binary&gt;&gt; = Data,
+   114..|      &lt;&lt;_:BitOffset, NullBitstring:NumColumns/bitstring, _/bitstring&gt;&gt; =
+   114..|          &lt;&lt; &lt;&lt;(reverse_byte(B))/binary&gt;&gt; || &lt;&lt;B:1/binary&gt;&gt; &lt;= NullBitstring0 &gt;&gt;,
+   114..|      {NullBitstring, Rest}.
         |  
         |  %% @doc The reverse of null_bitmap_decode/3. The number of columns is taken to
         |  %% be the number of bits in NullBitstring. Returns the MySQL null bitmap as a
@@ -589,23 +676,23 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  %% be inserted before the other bits.
         |  -spec null_bitmap_encode(bitstring(), integer()) -&gt; binary().
         |  null_bitmap_encode(NullBitstring, BitOffset) -&gt;
-    74..|      PayloadLength = bit_size(NullBitstring) + BitOffset,
+    82..|      PayloadLength = bit_size(NullBitstring) + BitOffset,
         |      %% Round up to a multiple of 8.
-    74..|      BitMapLength = (PayloadLength + 7) band bnot 7,
-    74..|      PadBitsLength = BitMapLength - PayloadLength,
-    74..|      PaddedBitstring = &lt;&lt;0:BitOffset, NullBitstring/bitstring, 0:PadBitsLength&gt;&gt;,
-    74..|      &lt;&lt; &lt;&lt;(reverse_byte(B))/binary&gt;&gt; || &lt;&lt;B:1/binary&gt;&gt; &lt;= PaddedBitstring &gt;&gt;.
+    82..|      BitMapLength = (PayloadLength + 7) band bnot 7,
+    82..|      PadBitsLength = BitMapLength - PayloadLength,
+    82..|      PaddedBitstring = &lt;&lt;0:BitOffset, NullBitstring/bitstring, 0:PadBitsLength&gt;&gt;,
+    82..|      &lt;&lt; &lt;&lt;(reverse_byte(B))/binary&gt;&gt; || &lt;&lt;B:1/binary&gt;&gt; &lt;= PaddedBitstring &gt;&gt;.
         |  
         |  %% Reverses the bits in a byte.
         |  reverse_byte(&lt;&lt;A:1, B:1, C:1, D:1, E:1, F:1, G:1, H:1&gt;&gt;) -&gt;
-   179..|      &lt;&lt;H:1, G:1, F:1, E:1, D:1, C:1, B:1, A:1&gt;&gt;.
+   200..|      &lt;&lt;H:1, G:1, F:1, E:1, D:1, C:1, B:1, A:1&gt;&gt;.
         |  
         |  %% @doc Used for executing prepared statements. The bit offset whould be 0 in
         |  %% this case.
         |  -spec build_null_bitmap([any()]) -&gt; binary().
         |  build_null_bitmap(Values) -&gt;
-    73..|      Bits = &lt;&lt; &lt;&lt;(case V of null -&gt; 1; _ -&gt; 0 end):1&gt;&gt; || V &lt;- Values &gt;&gt;,
-    73..|      null_bitmap_encode(Bits, 0).
+    81..|      Bits = &lt;&lt; &lt;&lt;(case V of null -&gt; 1; _ -&gt; 0 end):1&gt;&gt; || V &lt;- Values &gt;&gt;,
+    81..|      null_bitmap_encode(Bits, 0).
         |  
         |  %% Decodes a value as received in the 'binary protocol' result set.
         |  %%
@@ -618,20 +705,44 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |    when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
         |         T == ?TYPE_ENUM; T == ?TYPE_SET; T == ?TYPE_LONG_BLOB;
         |         T == ?TYPE_MEDIUM_BLOB; T == ?TYPE_BLOB; T == ?TYPE_TINY_BLOB;
-        |         T == ?TYPE_GEOMETRY -&gt;
+        |         T == ?TYPE_GEOMETRY; T == ?TYPE_JSON -&gt;
         |      %% As of MySQL 5.6.21 we receive SET and ENUM values as STRING, i.e. we
         |      %% cannot convert them to atom() or sets:set(), etc.
-     4..|      lenenc_str(Data);
-        |  decode_binary(#col{type = ?TYPE_LONGLONG},
-        |                &lt;&lt;Value:64/signed-little, Rest/binary&gt;&gt;) -&gt;
+     5..|      lenenc_str(Data);
+        |  decode_binary(#col{type = ?TYPE_LONGLONG, flags = F},
+        |                &lt;&lt;Value:64/signed-little, Rest/binary&gt;&gt;)
+        |    when F band ?UNSIGNED_FLAG == 0 -&gt;
      7..|      {Value, Rest};
-        |  decode_binary(#col{type = T}, &lt;&lt;Value:32/signed-little, Rest/binary&gt;&gt;)
-        |    when T == ?TYPE_LONG; T == ?TYPE_INT24 -&gt;
-     9..|      {Value, Rest};
-        |  decode_binary(#col{type = T}, &lt;&lt;Value:16/signed-little, Rest/binary&gt;&gt;)
-        |    when T == ?TYPE_SHORT; T == ?TYPE_YEAR -&gt;
-     5..|      {Value, Rest};
-        |  decode_binary(#col{type = ?TYPE_TINY}, &lt;&lt;Value:8/signed, Rest/binary&gt;&gt;) -&gt;
+        |  decode_binary(#col{type = ?TYPE_LONGLONG, flags = F},
+        |                &lt;&lt;Value:64/unsigned-little, Rest/binary&gt;&gt;)
+        |    when F band ?UNSIGNED_FLAG /= 0 -&gt;
+     2..|      {Value, Rest};
+        |  decode_binary(#col{type = T, flags = F},
+        |                &lt;&lt;Value:32/signed-little, Rest/binary&gt;&gt;)
+        |    when (T == ?TYPE_LONG orelse T == ?TYPE_INT24) andalso
+        |         F band ?UNSIGNED_FLAG == 0 -&gt;
+    13..|      {Value, Rest};
+        |  decode_binary(#col{type = T, flags = F},
+        |                &lt;&lt;Value:32/unsigned-little, Rest/binary&gt;&gt;)
+        |    when (T == ?TYPE_LONG orelse T == ?TYPE_INT24) andalso
+        |         F band ?UNSIGNED_FLAG /= 0 -&gt;
+     2..|      {Value, Rest};
+        |  decode_binary(#col{type = ?TYPE_SHORT, flags = F},
+        |                &lt;&lt;Value:16/signed-little, Rest/binary&gt;&gt;)
+        |    when F band ?UNSIGNED_FLAG == 0 -&gt;
+     4..|      {Value, Rest};
+        |  decode_binary(#col{type = T, flags = F},
+        |                &lt;&lt;Value:16/unsigned-little, Rest/binary&gt;&gt;)
+        |    when (T == ?TYPE_SHORT orelse T == ?TYPE_YEAR) andalso
+        |         F band ?UNSIGNED_FLAG /= 0 -&gt;
+     3..|      {Value, Rest};
+        |  decode_binary(#col{type = ?TYPE_TINY, flags = F},
+        |                &lt;&lt;Value:8/unsigned, Rest/binary&gt;&gt;)
+        |    when F band ?UNSIGNED_FLAG /= 0 -&gt;
+     2..|      {Value, Rest};
+        |  decode_binary(#col{type = ?TYPE_TINY, flags = F},
+        |                &lt;&lt;Value:8/signed, Rest/binary&gt;&gt;)
+        |    when F band ?UNSIGNED_FLAG == 0 -&gt;
      4..|      {Value, Rest};
         |  decode_binary(#col{type = T, decimals = S, length = L}, Data)
         |    when T == ?TYPE_DECIMAL; T == ?TYPE_NEWDECIMAL -&gt;
@@ -663,7 +774,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |      %%     columns in mysql:
         |      %%
         |      %%     var yourNumber = some floating point value
-        |      %%     max decimal precision = 10 ^ (-5 + floor(yourNumber log 10))
+        |      %%     max decimal precision = 10 ^ (-5 + flooring(yourNumber log 10))
         |      %%     So:
         |      %%     0 &lt; x &lt; 10 -&gt; max precision is 0.00001
         |      %%     10 &lt;= x &lt; 100 -&gt; max precision is 0.0001
@@ -678,7 +789,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |      %%
         |      %% Now, instead of P = 0.00001 we want the inverse 100000.0 but if we
         |      %% compute Factor = 1 / P we get a precision loss, so instead we do this:
-    27..|      Factor = math:pow(10, floor(6 - math:log10(abs(Value)))),
+    27..|      Factor = math:pow(10, flooring(6 - math:log10(abs(Value)))),
     27..|      RoundedValue = round(Value * Factor) / Factor,
     27..|      {RoundedValue, Rest};
         |  decode_binary(#col{type = ?TYPE_BIT, length = Length}, Data) -&gt;
@@ -738,7 +849,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |      end.
         |  
         |  %% @doc Like trunc/1 but towards negative infinity instead of towards zero.
-        |  floor(Value) -&gt;
+        |  flooring(Value) -&gt;
     27..|      Trunc = trunc(Value),
     27..|      if
     21..|          Trunc =&lt; Value -&gt; Trunc;
@@ -752,21 +863,21 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  encode_param(null) -&gt;
      1..|      {&lt;&lt;?TYPE_NULL, 0&gt;&gt;, &lt;&lt;&gt;&gt;};
         |  encode_param(Value) when is_binary(Value) -&gt;
-     8..|      EncLength = lenenc_int_encode(byte_size(Value)),
-     8..|      {&lt;&lt;?TYPE_VAR_STRING, 0&gt;&gt;, &lt;&lt;EncLength/binary, Value/binary&gt;&gt;};
+    10..|      EncLength = lenenc_int_encode(byte_size(Value)),
+    10..|      {&lt;&lt;?TYPE_VAR_STRING, 0&gt;&gt;, &lt;&lt;EncLength/binary, Value/binary&gt;&gt;};
         |  encode_param(Value) when is_list(Value) -&gt;
      1..|      encode_param(unicode:characters_to_binary(Value));
         |  encode_param(Value) when is_integer(Value), Value &gt;= 0 -&gt;
         |      %% We send positive integers with the 'unsigned' flag set.
-    25..|      if
+    30..|      if
         |          Value =&lt; 16#ff -&gt;
-    20..|              {&lt;&lt;?TYPE_TINY, 16#80&gt;&gt;, &lt;&lt;Value:8&gt;&gt;};
+    21..|              {&lt;&lt;?TYPE_TINY, 16#80&gt;&gt;, &lt;&lt;Value:8&gt;&gt;};
         |          Value =&lt; 16#ffff -&gt;
-     2..|              {&lt;&lt;?TYPE_SHORT, 16#80&gt;&gt;, &lt;&lt;Value:16/little&gt;&gt;};
+     3..|              {&lt;&lt;?TYPE_SHORT, 16#80&gt;&gt;, &lt;&lt;Value:16/little&gt;&gt;};
         |          Value =&lt; 16#ffffffff -&gt;
-     1..|              {&lt;&lt;?TYPE_LONG, 16#80&gt;&gt;, &lt;&lt;Value:32/little&gt;&gt;};
+     3..|              {&lt;&lt;?TYPE_LONG, 16#80&gt;&gt;, &lt;&lt;Value:32/little&gt;&gt;};
         |          Value =&lt; 16#ffffffffffffffff -&gt;
-     1..|              {&lt;&lt;?TYPE_LONGLONG, 16#80&gt;&gt;, &lt;&lt;Value:64/little&gt;&gt;};
+     2..|              {&lt;&lt;?TYPE_LONGLONG, 16#80&gt;&gt;, &lt;&lt;Value:64/little&gt;&gt;};
         |          true -&gt;
         |              %% If larger than a 64-bit int we send it as a string. MySQL does
         |              %% silently cast strings in aithmetic expressions. Also, DECIMALs
@@ -774,13 +885,13 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
      1..|              encode_param(integer_to_binary(Value))
         |      end;
         |  encode_param(Value) when is_integer(Value), Value &lt; 0 -&gt;
-     6..|      if
+     7..|      if
         |          Value &gt;= -16#80 -&gt;
      2..|              {&lt;&lt;?TYPE_TINY, 0&gt;&gt;, &lt;&lt;Value:8&gt;&gt;};
         |          Value &gt;= -16#8000 -&gt;
      1..|              {&lt;&lt;?TYPE_SHORT, 0&gt;&gt;, &lt;&lt;Value:16/little&gt;&gt;};
         |          Value &gt;= -16#80000000 -&gt;
-     1..|              {&lt;&lt;?TYPE_LONG, 0&gt;&gt;, &lt;&lt;Value:32/little&gt;&gt;};
+     2..|              {&lt;&lt;?TYPE_LONG, 0&gt;&gt;, &lt;&lt;Value:32/little&gt;&gt;};
         |          Value &gt;= -16#8000000000000000 -&gt;
      1..|              {&lt;&lt;?TYPE_LONGLONG, 0&gt;&gt;, &lt;&lt;Value:64/little&gt;&gt;};
         |          true -&gt;
@@ -853,44 +964,44 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  
         |  %% -- Protocol basics: packets --
         |  
-        |  %% @doc Wraps Data in packet headers, sends it by calling TcpModule:send/2 with
+        |  %% @doc Wraps Data in packet headers, sends it by calling SockModule:send/2 with
         |  %% Socket and returns {ok, SeqNum1} where SeqNum1 is the next sequence number.
         |  -spec send_packet(atom(), term(), Data :: binary(), SeqNum :: integer()) -&gt;
         |      {ok, NextSeqNum :: integer()}.
-        |  send_packet(TcpModule, Socket, Data, SeqNum) -&gt;
-   760..|      {WithHeaders, SeqNum1} = add_packet_headers(Data, SeqNum),
-   760..|      ok = TcpModule:send(Socket, WithHeaders),
-   759..|      {ok, SeqNum1}.
+        |  send_packet(SockModule, Socket, Data, SeqNum) -&gt;
+   863..|      {WithHeaders, SeqNum1} = add_packet_headers(Data, SeqNum),
+   863..|      ok = SockModule:send(Socket, WithHeaders),
+   862..|      {ok, SeqNum1}.
         |  
         |  %% @see recv_packet/4
-        |  recv_packet(TcpModule, Socket, SeqNum) -&gt;
-  1289..|      recv_packet(TcpModule, Socket, infinity, SeqNum).
+        |  recv_packet(SockModule, Socket, SeqNum) -&gt;
+  1456..|      recv_packet(SockModule, Socket, infinity, SeqNum).
         |  
-        |  %% @doc Receives data by calling TcpModule:recv/2 and removes the packet
+        |  %% @doc Receives data by calling SockModule:recv/2 and removes the packet
         |  %% headers. Returns the packet contents and the next packet sequence number.
         |  -spec recv_packet(atom(), term(), timeout(), integer() | any) -&gt;
         |      {ok, Data :: binary(), NextSeqNum :: integer()} | {error, term()}.
-        |  recv_packet(TcpModule, Socket, Timeout, SeqNum) -&gt;
-  1854..|      recv_packet(TcpModule, Socket, Timeout, SeqNum, &lt;&lt;&gt;&gt;).
+        |  recv_packet(SockModule, Socket, Timeout, SeqNum) -&gt;
+  2093..|      recv_packet(SockModule, Socket, Timeout, SeqNum, &lt;&lt;&gt;&gt;).
         |  
         |  %% @doc Accumulating helper for recv_packet/4
         |  -spec recv_packet(atom(), term(), timeout(), integer() | any, binary()) -&gt;
         |      {ok, Data :: binary(), NextSeqNum :: integer()} | {error, term()}.
-        |  recv_packet(TcpModule, Socket, Timeout, ExpectSeqNum, Acc) -&gt;
-  1854..|      case TcpModule:recv(Socket, 4, Timeout) of
+        |  recv_packet(SockModule, Socket, Timeout, ExpectSeqNum, Acc) -&gt;
+  2093..|      case SockModule:recv(Socket, 4, Timeout) of
         |          {ok, Header} -&gt;
-  1839..|              {Size, SeqNum, More} = parse_packet_header(Header),
-  1839..|              true = SeqNum == ExpectSeqNum orelse ExpectSeqNum == any,
-  1839..|              {ok, Body} = TcpModule:recv(Socket, Size),
-  1839..|              Acc1 = &lt;&lt;Acc/binary, Body/binary&gt;&gt;,
-  1839..|              NextSeqNum = (SeqNum + 1) band 16#ff,
-  1839..|              case More of
-  1839..|                  false -&gt; {ok, Acc1, NextSeqNum};
-<font color=red>     0..|                  true  -&gt; recv_packet(TcpModule, Socket, Timeout, NextSeqNum,</font>
+  2076..|              {Size, SeqNum, More} = parse_packet_header(Header),
+  2076..|              true = SeqNum == ExpectSeqNum orelse ExpectSeqNum == any,
+  2076..|              {ok, Body} = SockModule:recv(Socket, Size),
+  2076..|              Acc1 = &lt;&lt;Acc/binary, Body/binary&gt;&gt;,
+  2076..|              NextSeqNum = (SeqNum + 1) band 16#ff,
+  2076..|              case More of
+  2076..|                  false -&gt; {ok, Acc1, NextSeqNum};
+<font color=red>     0..|                  true  -&gt; recv_packet(SockModule, Socket, Timeout, NextSeqNum,</font>
         |                                       Acc1)
         |              end;
         |          {error, Reason} -&gt;
-    15..|              {error, Reason}
+    17..|              {error, Reason}
         |      end.
         |  
         |  %% @doc Parses a packet header (32 bits) and returns a tuple.
@@ -908,26 +1019,26 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |       SeqNum :: integer(),
         |       MorePacketsExist :: boolean()}.
         |  parse_packet_header(&lt;&lt;PacketLength:24/little-integer, SeqNum:8/integer&gt;&gt;) -&gt;
-  1840..|      {PacketLength, SeqNum, PacketLength == 16#ffffff}.
+  2077..|      {PacketLength, SeqNum, PacketLength == 16#ffffff}.
         |  
         |  %% @doc Splits a packet body into chunks and wraps them in headers. The
         |  %% resulting list is ready to sent to the socket.
         |  -spec add_packet_headers(PacketBody :: iodata(), SeqNum :: integer()) -&gt;
         |      {PacketWithHeaders :: iodata(), NextSeqNum :: integer()}.
         |  add_packet_headers(PacketBody, SeqNum) -&gt;
-   761..|      Bin = iolist_to_binary(PacketBody),
-   761..|      Size = size(Bin),
-   761..|      SeqNum1 = (SeqNum + 1) band 16#ff,
+   864..|      Bin = iolist_to_binary(PacketBody),
+   864..|      Size = size(Bin),
+   864..|      SeqNum1 = (SeqNum + 1) band 16#ff,
         |      %% Todo: implement the case when Size &gt;= 16#ffffff.
-   761..|      if Size &lt; 16#ffffff -&gt;
-   761..|          {[&lt;&lt;Size:24/little, SeqNum:8&gt;&gt;, Bin], SeqNum1}
+   864..|      if Size &lt; 16#ffffff -&gt;
+   864..|          {[&lt;&lt;Size:24/little, SeqNum:8&gt;&gt;, Bin], SeqNum1}
         |      end.
         |  
         |  -spec parse_ok_packet(binary()) -&gt; #ok{}.
         |  parse_ok_packet(&lt;&lt;?OK:8, Rest/binary&gt;&gt;) -&gt;
-   353..|      {AffectedRows, Rest1} = lenenc_int(Rest),
-   353..|      {InsertId, Rest2} = lenenc_int(Rest1),
-   353..|      &lt;&lt;StatusFlags:16/little, WarningCount:16/little, Msg/binary&gt;&gt; = Rest2,
+   398..|      {AffectedRows, Rest1} = lenenc_int(Rest),
+   398..|      {InsertId, Rest2} = lenenc_int(Rest1),
+   398..|      &lt;&lt;StatusFlags:16/little, WarningCount:16/little, Msg/binary&gt;&gt; = Rest2,
         |      %% We have CLIENT_PROTOCOL_41 but not CLIENT_SESSION_TRACK enabled. The
         |      %% protocol is conditional. This is from the protocol documentation:
         |      %%
@@ -945,7 +1056,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |      %% } else {
         |      %%   string&lt;EOF&gt; info
         |      %% }
-   353..|      #ok{affected_rows = AffectedRows,
+   398..|      #ok{affected_rows = AffectedRows,
         |          insert_id = InsertId,
         |          status = StatusFlags,
         |          warning_count = WarningCount,
@@ -962,7 +1073,25 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  parse_eof_packet(&lt;&lt;?EOF:8, NumWarnings:16/little, StatusFlags:16/little&gt;&gt;) -&gt;
         |      %% EOF packet, 4.1 protocol.
         |      %% (Older protocol: &lt;&lt;?EOF:8&gt;&gt;)
-   225..|      #eof{status = StatusFlags, warning_count = NumWarnings}.
+   254..|      #eof{status = StatusFlags, warning_count = NumWarnings}.
+        |  
+        |  -spec parse_auth_method_switch(binary()) -&gt; #auth_method_switch{}.
+        |  parse_auth_method_switch(AMSData) -&gt;
+<font color=red>     0..|      {AuthPluginName, AuthPluginData} = get_null_terminated_binary(AMSData),</font>
+<font color=red>     0..|      #auth_method_switch{</font>
+        |         auth_plugin_name = AuthPluginName,
+        |         auth_plugin_data = AuthPluginData
+        |        }.
+        |  
+        |  -spec get_null_terminated_binary(binary()) -&gt; {Binary :: binary(),
+        |                                                 Rest :: binary()}.
+        |  get_null_terminated_binary(In) -&gt;
+<font color=red>     0..|      get_null_terminated_binary(In, &lt;&lt;&gt;&gt;).</font>
+        |  
+        |  get_null_terminated_binary(&lt;&lt;0, Rest/binary&gt;&gt;, Acc) -&gt;
+<font color=red>     0..|      {Acc, Rest};</font>
+        |  get_null_terminated_binary(&lt;&lt;Ch, Rest/binary&gt;&gt;, Acc) -&gt;
+<font color=red>     0..|      get_null_terminated_binary(Rest, &lt;&lt;Acc/binary, Ch&gt;&gt;).</font>
         |  
         |  -spec hash_password(Password :: iodata(), Salt :: binary()) -&gt; Hash :: binary().
         |  hash_password(Password, Salt) -&gt;
@@ -974,32 +1103,33 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |      %%
         |      %% The auth data is obviously nul-terminated. For the "native" auth
         |      %% method, it should be a 20 byte salt, so let's trim it in this case.
-    18..|      PasswordBin = case erlang:is_binary(Password) of
+    20..|      PasswordBin = case erlang:is_binary(Password) of
      2..|          true -&gt; Password;
-    16..|          false -&gt; erlang:iolist_to_binary(Password)
+    18..|          false -&gt; erlang:iolist_to_binary(Password)
         |      end,
-    18..|      case PasswordBin =:= &lt;&lt;&gt;&gt; of
+    20..|      case PasswordBin =:= &lt;&lt;&gt;&gt; of
      1..|          true -&gt; &lt;&lt;&gt;&gt;;
-    17..|          false -&gt; hash_non_empty_password(Password, Salt)
+    19..|          false -&gt; hash_non_empty_password(Password, Salt)
         |      end.
         |  
-        |  -spec hash_non_empty_password(Password :: iodata(), Salt :: binary()) -&gt; Hash :: binary().
+        |  -spec hash_non_empty_password(Password :: iodata(), Salt :: binary()) -&gt;
+        |      Hash :: binary().
         |  hash_non_empty_password(Password, Salt) -&gt;
-    17..|      Salt1 = case Salt of
-    16..|          &lt;&lt;SaltNoNul:20/binary-unit:8, 0&gt;&gt; -&gt; SaltNoNul;
+    19..|      Salt1 = case Salt of
+    18..|          &lt;&lt;SaltNoNul:20/binary-unit:8, 0&gt;&gt; -&gt; SaltNoNul;
      1..|          _ when size(Salt) == 20           -&gt; Salt
         |      end,
         |      %% Hash as described above.
-    17..|      &lt;&lt;Hash1Num:160&gt;&gt; = Hash1 = crypto:hash(sha, Password),
-    17..|      Hash2 = crypto:hash(sha, Hash1),
-    17..|      &lt;&lt;Hash3Num:160&gt;&gt; = crypto:hash(sha, &lt;&lt;Salt1/binary, Hash2/binary&gt;&gt;),
-    17..|      &lt;&lt;(Hash1Num bxor Hash3Num):160&gt;&gt;.
+    19..|      &lt;&lt;Hash1Num:160&gt;&gt; = Hash1 = crypto:hash(sha, Password),
+    19..|      Hash2 = crypto:hash(sha, Hash1),
+    19..|      &lt;&lt;Hash3Num:160&gt;&gt; = crypto:hash(sha, &lt;&lt;Salt1/binary, Hash2/binary&gt;&gt;),
+    19..|      &lt;&lt;(Hash1Num bxor Hash3Num):160&gt;&gt;.
         |  
         |  %% --- Lowlevel: variable length integers and strings ---
         |  
         |  %% lenenc_int/1 decodes length-encoded-integer values
         |  -spec lenenc_int(Input :: binary()) -&gt; {Value :: integer(), Rest :: binary()}.
-  2843..|  lenenc_int(&lt;&lt;Value:8, Rest/bits&gt;&gt;) when Value &lt; 251 -&gt; {Value, Rest};
+  3182..|  lenenc_int(&lt;&lt;Value:8, Rest/bits&gt;&gt;) when Value &lt; 251 -&gt; {Value, Rest};
      1..|  lenenc_int(&lt;&lt;16#fc:8, Value:16/little, Rest/binary&gt;&gt;) -&gt; {Value, Rest};
      1..|  lenenc_int(&lt;&lt;16#fd:8, Value:24/little, Rest/binary&gt;&gt;) -&gt; {Value, Rest};
      1..|  lenenc_int(&lt;&lt;16#fe:8, Value:64/little, Rest/binary&gt;&gt;) -&gt; {Value, Rest}.
@@ -1008,7 +1138,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  %% Values not representable in 64 bits are not accepted.
         |  -spec lenenc_int_encode(0..16#ffffffffffffffff) -&gt; binary().
         |  lenenc_int_encode(Value) when Value &gt;= 0 -&gt;
-    14..|      if Value &lt; 251 -&gt; &lt;&lt;Value&gt;&gt;;
+    16..|      if Value &lt; 251 -&gt; &lt;&lt;Value&gt;&gt;;
      1..|         Value =&lt; 16#ffff -&gt; &lt;&lt;16#fc, Value:16/little&gt;&gt;;
      1..|         Value =&lt; 16#ffffff -&gt; &lt;&lt;16#fd, Value:24/little&gt;&gt;;
      1..|         Value =&lt; 16#ffffffffffffffff -&gt; &lt;&lt;16#fe, Value:64/little&gt;&gt;
@@ -1017,15 +1147,15 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  %% lenenc_str/1 decodes length-encoded-string values
         |  -spec lenenc_str(Input :: binary()) -&gt; {String :: binary(), Rest :: binary()}.
         |  lenenc_str(Bin) -&gt;
-  1662..|      {Length, Rest} = lenenc_int(Bin),
-  1662..|      &lt;&lt;String:Length/binary, Rest1/binary&gt;&gt; = Rest,
-  1662..|      {String, Rest1}.
+  1853..|      {Length, Rest} = lenenc_int(Bin),
+  1853..|      &lt;&lt;String:Length/binary, Rest1/binary&gt;&gt; = Rest,
+  1853..|      {String, Rest1}.
         |  
         |  %% nts/1 decodes a nul-terminated string
         |  -spec nulterm_str(Input :: binary()) -&gt; {String :: binary(), Rest :: binary()}.
         |  nulterm_str(Bin) -&gt;
-    17..|      [String, Rest] = binary:split(Bin, &lt;&lt;0&gt;&gt;),
-    17..|      {String, Rest}.
+    19..|      [String, Rest] = binary:split(Bin, &lt;&lt;0&gt;&gt;),
+    19..|      {String, Rest}.
         |  
         |  -ifdef(TEST).
         |  -include_lib("eunit/include/eunit.hrl").

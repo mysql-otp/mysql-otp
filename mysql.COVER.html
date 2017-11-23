@@ -5,13 +5,14 @@
 <title>cover/mysql.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2016-07-01 at 15:51:33
+File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2017-11-23 at 22:15:23
 
 ****************************************************************************
 
         |  %% MySQL/OTP – MySQL client library for Erlang/OTP
         |  %% Copyright (C) 2014-2015 Viktor Söderqvist,
         |  %%               2016 Johan Lövdahl
+        |  %%               2017 Piotr Nosek, Michal Slaski
         |  %%
         |  %% This file is part of MySQL/OTP.
         |  %%
@@ -123,6 +124,11 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |  %%   &lt;dd&gt;The default time to wait for a response when executing a query or a
         |  %%       prepared statement. This can be given per query using `query/3,4' and
         |  %%       `execute/4'. The default is `infinity'.&lt;/dd&gt;
+        |  %%   &lt;dt&gt;`{found_rows, boolean()}'&lt;/dt&gt;
+        |  %%   &lt;dd&gt;If set to true, the connection will be established with
+        |  %%       CLIENT_FOUND_ROWS capability. affected_rows/1 will now return the
+        |  %%       number of found rows, not the number of rows changed by the
+        |  %%       query.&lt;/dd&gt;
         |  %%   &lt;dt&gt;`{query_cache_time, Timeout}'&lt;/dt&gt;
         |  %%   &lt;dd&gt;The minimum number of milliseconds to cache prepared statements used
         |  %%       for parametrized queries with query/3.&lt;/dd&gt;
@@ -133,7 +139,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |  %% &lt;/dl&gt;
         |  -spec start_link(Options) -&gt; {ok, pid()} | ignore | {error, term()}
         |      when Options :: [Option],
-        |           Option :: {name, ServerName} | {host, iodata()} | {port, integer()} | 
+        |           Option :: {name, ServerName} | {host, iodata()} | {port, integer()} |
         |                     {user, iodata()} | {password, iodata()} |
         |                     {database, iodata()} |
         |                     {connect_timeout, timeout()} |
@@ -142,41 +148,42 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |                     {prepare, NamedStatements} |
         |                     {queries, [iodata()]} |
         |                     {query_timeout, timeout()} |
+        |                     {found_rows, boolean()} |
         |                     {query_cache_time, non_neg_integer()},
         |           ServerName :: {local, Name :: atom()} |
         |                         {global, GlobalName :: term()} |
         |                         {via, Module :: atom(), ViaName :: term()},
         |           NamedStatements :: [{StatementName :: atom(), Statement :: iodata()}].
         |  start_link(Options) -&gt;
-    13..|      GenSrvOpts = [{timeout, proplists:get_value(connect_timeout, Options,
+    15..|      GenSrvOpts = [{timeout, proplists:get_value(connect_timeout, Options,
         |                                                  ?default_connect_timeout)}],
-    13..|      Ret = case proplists:get_value(name, Options) of
+    15..|      Ret = case proplists:get_value(name, Options) of
         |          undefined -&gt;
-    12..|              gen_server:start_link(?MODULE, Options, GenSrvOpts);
+    13..|              gen_server:start_link(?MODULE, Options, GenSrvOpts);
         |          ServerName -&gt;
-     1..|              gen_server:start_link(ServerName, ?MODULE, Options, GenSrvOpts)
+     2..|              gen_server:start_link(ServerName, ?MODULE, Options, GenSrvOpts)
         |      end,
-    13..|      case Ret of
+    15..|      case Ret of
         |          {ok, Pid} -&gt;
         |              %% Initial queries
-    12..|              Queries = proplists:get_value(queries, Options, []),
-    12..|              lists:foreach(fun (Query) -&gt;
-     3..|                                case mysql:query(Pid, Query) of
-     1..|                                    ok -&gt; ok;
-     1..|                                    {ok, _, _} -&gt; ok;
-     1..|                                    {ok, _} -&gt; ok
+    14..|              Queries = proplists:get_value(queries, Options, []),
+    14..|              lists:foreach(fun (Query) -&gt;
+     6..|                                case mysql:query(Pid, Query) of
+     2..|                                    ok -&gt; ok;
+     2..|                                    {ok, _, _} -&gt; ok;
+     2..|                                    {ok, _} -&gt; ok
         |                                end
         |                            end,
         |                            Queries),
         |              %% Prepare
-    12..|              Prepare = proplists:get_value(prepare, Options, []),
-    12..|              lists:foreach(fun ({Name, Stmt}) -&gt;
-     1..|                                {ok, Name} = mysql:prepare(Pid, Name, Stmt)
+    14..|              Prepare = proplists:get_value(prepare, Options, []),
+    14..|              lists:foreach(fun ({Name, Stmt}) -&gt;
+     2..|                                {ok, Name} = mysql:prepare(Pid, Name, Stmt)
         |                            end,
         |                            Prepare);
      1..|          _ -&gt; ok
         |      end,
-    13..|      Ret.
+    15..|      Ret.
         |  
         |  %% @doc Executes a query with the query timeout as given to start_link/1.
         |  %%
@@ -193,7 +200,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |           Query :: iodata(),
         |           Result :: query_result().
         |  query(Conn, Query) -&gt;
-   333..|      query_call(Conn, {query, Query}).
+   383..|      query_call(Conn, {query, Query}).
         |  
         |  %% @doc Depending on the 3rd argument this function does different things.
         |  %%
@@ -214,7 +221,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |           Params :: [term()],
         |           Result :: query_result().
         |  query(Conn, Query, Params) when is_list(Params) -&gt;
-     7..|      query_call(Conn, {param_query, Query, Params});
+     9..|      query_call(Conn, {param_query, Query, Params});
         |  query(Conn, Query, Timeout) when is_integer(Timeout); Timeout == infinity -&gt;
      2..|      query_call(Conn, {query, Query, Timeout}).
         |  
@@ -247,7 +254,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |         Params :: [term()],
         |         Result :: query_result().
         |  execute(Conn, StatementRef, Params) -&gt;
-   164..|      query_call(Conn, {execute, StatementRef, Params}).
+   183..|      query_call(Conn, {execute, StatementRef, Params}).
         |  
         |  %% @doc Executes a prepared statement.
         |  %% @see prepare/2
@@ -270,7 +277,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |         StatementId :: integer(),
         |         Reason :: server_reason().
         |  prepare(Conn, Query) -&gt;
-    79..|      gen_server:call(Conn, {prepare, Query}).
+    91..|      gen_server:call(Conn, {prepare, Query}).
         |  
         |  %% @doc Creates a prepared statement from the passed query and associates it
         |  %% with the given name.
@@ -281,7 +288,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |         Query :: iodata(),
         |         Reason :: server_reason().
         |  prepare(Conn, Name, Query) -&gt;
-     8..|      gen_server:call(Conn, {prepare, Name, Query}).
+     9..|      gen_server:call(Conn, {prepare, Name, Query}).
         |  
         |  %% @doc Deallocates a prepared statement.
         |  -spec unprepare(Conn, StatementRef) -&gt; ok | {error, Reason}
@@ -289,7 +296,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |         StatementRef :: atom() | integer(),
         |         Reason :: server_reason() | not_prepared.
         |  unprepare(Conn, StatementRef) -&gt;
-    78..|      gen_server:call(Conn, {unprepare, StatementRef}).
+    90..|      gen_server:call(Conn, {unprepare, StatementRef}).
         |  
         |  %% @doc Returns the number of warnings generated by the last query/2 or
         |  %% execute/3 calls.
@@ -298,10 +305,12 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
      2..|      gen_server:call(Conn, warning_count).
         |  
         |  %% @doc Returns the number of inserted, updated and deleted rows of the last
-        |  %% executed query or prepared statement.
+        |  %% executed query or prepared statement. If found_rows is set on the
+        |  %% connection, for update operation the return value will equal to the number
+        |  %% of rows matched by the query.
         |  -spec affected_rows(connection()) -&gt; integer().
         |  affected_rows(Conn) -&gt;
-     1..|      gen_server:call(Conn, affected_rows).
+     3..|      gen_server:call(Conn, affected_rows).
         |  
         |  %% @doc Returns true if auto-commit is enabled and false otherwise.
         |  -spec autocommit(connection()) -&gt; boolean().
@@ -338,7 +347,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
      2..|      transaction(Conn, Fun, [], Retries).
         |  
         |  %% @doc This function executes the functional object Fun with arguments Args as
-        |  %% a transaction. 
+        |  %% a transaction.
         |  %%
         |  %% The semantics are as close as possible to mnesia's transactions. Transactions
         |  %% can be nested and are restarted automatically when deadlocks are detected.
@@ -460,60 +469,66 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |  -include("server_status.hrl").
         |  
         |  %% Gen_server state
-        |  -record(state, {server_version, connection_id, socket,
+        |  -record(state, {server_version, connection_id, socket, sockmod, ssl_opts,
         |                  host, port, user, password, log_warnings,
         |                  ping_timeout,
         |                  query_timeout, query_cache_time,
         |                  affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
         |                  transaction_level = 0, ping_ref = undefined,
-        |                  stmts = dict:new(), query_cache = empty}).
+        |                  stmts = dict:new(), query_cache = empty, cap_found_rows = false}).
         |  
         |  %% @private
         |  init(Opts) -&gt;
         |      %% Connect
-    13..|      Host           = proplists:get_value(host, Opts, ?default_host),
-    13..|      Port           = proplists:get_value(port, Opts, ?default_port),
-    13..|      User           = proplists:get_value(user, Opts, ?default_user),
-    13..|      Password       = proplists:get_value(password, Opts, ?default_password),
-    13..|      Database       = proplists:get_value(database, Opts, undefined),
-    13..|      LogWarn        = proplists:get_value(log_warnings, Opts, true),
-    13..|      KeepAlive      = proplists:get_value(keep_alive, Opts, false),
-    13..|      Timeout        = proplists:get_value(query_timeout, Opts,
+    15..|      Host           = proplists:get_value(host, Opts, ?default_host),
+    15..|      Port           = proplists:get_value(port, Opts, ?default_port),
+    15..|      User           = proplists:get_value(user, Opts, ?default_user),
+    15..|      Password       = proplists:get_value(password, Opts, ?default_password),
+    15..|      Database       = proplists:get_value(database, Opts, undefined),
+    15..|      LogWarn        = proplists:get_value(log_warnings, Opts, true),
+    15..|      KeepAlive      = proplists:get_value(keep_alive, Opts, false),
+    15..|      Timeout        = proplists:get_value(query_timeout, Opts,
         |                                           ?default_query_timeout),
-    13..|      QueryCacheTime = proplists:get_value(query_cache_time, Opts,
+    15..|      QueryCacheTime = proplists:get_value(query_cache_time, Opts,
         |                                           ?default_query_cache_time),
-    13..|      TcpOpts        = proplists:get_value(tcp_options, Opts, []),
+    15..|      TcpOpts        = proplists:get_value(tcp_options, Opts, []),
+    15..|      SetFoundRows   = proplists:get_value(found_rows, Opts, false),
+    15..|      SSLOpts        = proplists:get_value(ssl, Opts, undefined),
+    15..|      SockMod0       = mysql_sock_tcp,
         |  
-    13..|      PingTimeout = case KeepAlive of
-     1..|          true         -&gt; ?default_ping_timeout;
-    11..|          false        -&gt; infinity;
+    15..|      PingTimeout = case KeepAlive of
+     2..|          true         -&gt; ?default_ping_timeout;
+    12..|          false        -&gt; infinity;
      1..|          N when N &gt; 0 -&gt; N
         |      end,
         |  
         |      %% Connect socket
-    13..|      SockOpts = [binary, {packet, raw} | TcpOpts],
-    13..|      {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
+    15..|      SockOpts = [binary, {packet, raw}, {active, false} | TcpOpts],
+    15..|      {ok, Socket0} = SockMod0:connect(Host, Port, SockOpts),
         |  
         |      %% Exchange handshake communication.
-    13..|      inet:setopts(Socket, [{active, false}]),
-    13..|      Result = mysql_protocol:handshake(User, Password, Database, gen_tcp,
-        |                                        Socket),
-    13..|      inet:setopts(Socket, [{active, once}]),
-    13..|      case Result of
-        |          #handshake{server_version = Version, connection_id = ConnId,
-        |                     status = Status} -&gt;
-    12..|              State = #state{server_version = Version, connection_id = ConnId,
+    15..|      Result = mysql_protocol:handshake(User, Password, Database, SockMod0, SSLOpts,
+        |                                        Socket0, SetFoundRows),
+    15..|      case Result of
+        |          {ok, Handshake, SockMod, Socket} -&gt;
+    14..|              SockMod:setopts(Socket, [{active, once}]),
+        |              #handshake{server_version = Version, connection_id = ConnId,
+    14..|                         status = Status} = Handshake,
+    14..|              State = #state{server_version = Version, connection_id = ConnId,
+        |                             sockmod = SockMod,
         |                             socket = Socket,
+        |                             ssl_opts = SSLOpts,
         |                             host = Host, port = Port, user = User,
         |                             password = Password, status = Status,
         |                             log_warnings = LogWarn,
         |                             ping_timeout = PingTimeout,
         |                             query_timeout = Timeout,
-        |                             query_cache_time = QueryCacheTime},
+        |                             query_cache_time = QueryCacheTime,
+        |                             cap_found_rows = (SetFoundRows =:= true)},
         |              %% Trap exit so that we can properly disconnect when we die.
-    12..|              process_flag(trap_exit, true),
-    12..|              State1 = schedule_ping(State),
-    12..|              {ok, State1};
+    14..|              process_flag(trap_exit, true),
+    14..|              State1 = schedule_ping(State),
+    14..|              {ok, State1};
         |          #error{} = E -&gt;
      1..|              {stop, error_to_reason(E)}
         |      end.
@@ -564,119 +579,124 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |  %%       nesting level.&lt;/dd&gt;
         |  %% &lt;/dl&gt;
         |  handle_call({query, Query}, From, State) -&gt;
-   333..|      handle_call({query, Query, State#state.query_timeout}, From, State);
+   383..|      handle_call({query, Query, State#state.query_timeout}, From, State);
         |  handle_call({query, Query, Timeout}, _From, State) -&gt;
-   335..|      Socket = State#state.socket,
-   335..|      inet:setopts(Socket, [{active, false}]),
-   335..|      {ok, Recs} = case mysql_protocol:query(Query, gen_tcp, Socket, Timeout) of
+   385..|      SockMod = State#state.sockmod,
+   385..|      Socket = State#state.socket,
+   385..|      SockMod:setopts(Socket, [{active, false}]),
+   385..|      {ok, Recs} = case mysql_protocol:query(Query, SockMod, Socket, Timeout) of
         |          {error, timeout} when State#state.server_version &gt;= [5, 0, 0] -&gt;
      1..|              kill_query(State),
-     1..|              mysql_protocol:fetch_query_response(gen_tcp, Socket, ?cmd_timeout);
+     1..|              mysql_protocol:fetch_query_response(SockMod, Socket, ?cmd_timeout);
         |          {error, timeout} -&gt;
         |              %% For MySQL 4.x.x there is no way to recover from timeout except
         |              %% killing the connection itself.
 <font color=red>     0..|              exit(timeout);</font>
         |          QueryResult -&gt;
-   334..|              QueryResult
+   384..|              QueryResult
         |      end,
-   335..|      inet:setopts(Socket, [{active, once}]),
-   335..|      State1 = lists:foldl(fun update_state/2, State, Recs),
-   335..|      State1#state.warning_count &gt; 0 andalso State1#state.log_warnings
+   385..|      SockMod:setopts(Socket, [{active, once}]),
+   385..|      State1 = lists:foldl(fun update_state/2, State, Recs),
+   385..|      State1#state.warning_count &gt; 0 andalso State1#state.log_warnings
      1..|          andalso log_warnings(State1, Query),
-   335..|      handle_query_call_reply(Recs, Query, State1, []);
+   385..|      handle_query_call_reply(Recs, Query, State1, []);
         |  handle_call({param_query, Query, Params}, From, State) -&gt;
-     7..|      handle_call({param_query, Query, Params, State#state.query_timeout}, From,
+     9..|      handle_call({param_query, Query, Params, State#state.query_timeout}, From,
         |                  State);
         |  handle_call({param_query, Query, Params, Timeout}, _From, State) -&gt;
         |      %% Parametrized query: Prepared statement cached with the query as the key
-     8..|      QueryBin = iolist_to_binary(Query),
-     8..|      #state{socket = Socket} = State,
-     8..|      Cache = State#state.query_cache,
-     8..|      {StmtResult, Cache1} = case mysql_cache:lookup(QueryBin, Cache) of
+    10..|      QueryBin = iolist_to_binary(Query),
+    10..|      #state{socket = Socket, sockmod = SockMod} = State,
+    10..|      Cache = State#state.query_cache,
+    10..|      {StmtResult, Cache1} = case mysql_cache:lookup(QueryBin, Cache) of
         |          {found, FoundStmt, NewCache} -&gt;
         |              %% Found
      1..|              {{ok, FoundStmt}, NewCache};
         |          not_found -&gt;
         |              %% Prepare
-     7..|              inet:setopts(Socket, [{active, false}]),
-     7..|              Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
-     7..|              inet:setopts(Socket, [{active, once}]),
+     9..|              SockMod:setopts(Socket, [{active, false}]),
+     9..|  	    SockMod = State#state.sockmod,
+     9..|              Rec = mysql_protocol:prepare(Query, SockMod, Socket),
+     9..|              SockMod:setopts(Socket, [{active, once}]),
         |              %State1 = update_state(Rec, State),
-     7..|              case Rec of
+     9..|              case Rec of
         |                  #error{} = E -&gt;
      1..|                      {{error, error_to_reason(E)}, Cache};
         |                  #prepared{} = Stmt -&gt;
         |                      %% If the first entry in the cache, start the timer.
-     6..|                      Cache == empty andalso begin
+     8..|                      Cache == empty andalso begin
      5..|                          When = State#state.query_cache_time * 2,
      5..|                          erlang:send_after(When, self(), query_cache)
         |                      end,
-     6..|                      {{ok, Stmt}, mysql_cache:store(QueryBin, Stmt, Cache)}
+     8..|                      {{ok, Stmt}, mysql_cache:store(QueryBin, Stmt, Cache)}
         |              end
         |      end,
-     8..|      case StmtResult of
+    10..|      case StmtResult of
         |          {ok, StmtRec} -&gt;
-     7..|              State1 = State#state{query_cache = Cache1},
-     7..|              execute_stmt(StmtRec, Params, Timeout, State1);
+     9..|              State1 = State#state{query_cache = Cache1},
+     9..|              execute_stmt(StmtRec, Params, Timeout, State1);
         |          PrepareError -&gt;
      1..|              {reply, PrepareError, State}
         |      end;
         |  handle_call({execute, Stmt, Args}, From, State) -&gt;
-   164..|      handle_call({execute, Stmt, Args, State#state.query_timeout}, From, State);
+   183..|      handle_call({execute, Stmt, Args, State#state.query_timeout}, From, State);
         |  handle_call({execute, Stmt, Args, Timeout}, _From, State) -&gt;
-   165..|      case dict:find(Stmt, State#state.stmts) of
+   184..|      case dict:find(Stmt, State#state.stmts) of
         |          {ok, StmtRec} -&gt;
-   164..|              execute_stmt(StmtRec, Args, Timeout, State);
+   183..|              execute_stmt(StmtRec, Args, Timeout, State);
         |          error -&gt;
      1..|              {reply, {error, not_prepared}, State}
         |      end;
         |  handle_call({prepare, Query}, _From, State) -&gt;
-    79..|      #state{socket = Socket} = State,
-    79..|      inet:setopts(Socket, [{active, false}]),
-    79..|      Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
-    79..|      inet:setopts(Socket, [{active, once}]),
-    79..|      State1 = update_state(Rec, State),
-    79..|      case Rec of
+    91..|      #state{socket = Socket, sockmod = SockMod} = State,
+    91..|      SockMod:setopts(Socket, [{active, false}]),
+    91..|      SockMod = State#state.sockmod,
+    91..|      Rec = mysql_protocol:prepare(Query, SockMod, Socket),
+    91..|      SockMod:setopts(Socket, [{active, once}]),
+    91..|      State1 = update_state(Rec, State),
+    91..|      case Rec of
         |          #error{} = E -&gt;
      1..|              {reply, {error, error_to_reason(E)}, State1};
         |          #prepared{statement_id = Id} = Stmt -&gt;
-    78..|              Stmts1 = dict:store(Id, Stmt, State1#state.stmts),
-    78..|              State2 = State#state{stmts = Stmts1},
-    78..|              {reply, {ok, Id}, State2}
+    90..|              Stmts1 = dict:store(Id, Stmt, State1#state.stmts),
+    90..|              State2 = State#state{stmts = Stmts1},
+    90..|              {reply, {ok, Id}, State2}
         |      end;
         |  handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) -&gt;
-     8..|      #state{socket = Socket} = State,
+     9..|      #state{socket = Socket, sockmod = SockMod} = State,
         |      %% First unprepare if there is an old statement with this name.
-     8..|      inet:setopts(Socket, [{active, false}]),
-     8..|      State1 = case dict:find(Name, State#state.stmts) of
+     9..|      SockMod:setopts(Socket, [{active, false}]),
+     9..|      SockMod = State#state.sockmod,
+     9..|      State1 = case dict:find(Name, State#state.stmts) of
         |          {ok, OldStmt} -&gt;
-     1..|              mysql_protocol:unprepare(OldStmt, gen_tcp, Socket),
+     1..|              mysql_protocol:unprepare(OldStmt, SockMod, Socket),
      1..|              State#state{stmts = dict:erase(Name, State#state.stmts)};
         |          error -&gt;
-     7..|              State
+     8..|              State
         |      end,
-     8..|      Rec = mysql_protocol:prepare(Query, gen_tcp, Socket),
-     8..|      inet:setopts(Socket, [{active, once}]),
-     8..|      State2 = update_state(Rec, State1),
-     8..|      case Rec of
+     9..|      Rec = mysql_protocol:prepare(Query, SockMod, Socket),
+     9..|      SockMod:setopts(Socket, [{active, once}]),
+     9..|      State2 = update_state(Rec, State1),
+     9..|      case Rec of
         |          #error{} = E -&gt;
      1..|              {reply, {error, error_to_reason(E)}, State2};
         |          #prepared{} = Stmt -&gt;
-     7..|              Stmts1 = dict:store(Name, Stmt, State2#state.stmts),
-     7..|              State3 = State2#state{stmts = Stmts1},
-     7..|              {reply, {ok, Name}, State3}
+     8..|              Stmts1 = dict:store(Name, Stmt, State2#state.stmts),
+     8..|              State3 = State2#state{stmts = Stmts1},
+     8..|              {reply, {ok, Name}, State3}
         |      end;
         |  handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);
         |                                                    is_integer(Stmt) -&gt;
-    78..|      case dict:find(Stmt, State#state.stmts) of
+    90..|      case dict:find(Stmt, State#state.stmts) of
         |          {ok, StmtRec} -&gt;
-    76..|              #state{socket = Socket} = State,
-    76..|              inet:setopts(Socket, [{active, false}]),
-    76..|              mysql_protocol:unprepare(StmtRec, gen_tcp, Socket),
-    76..|              inet:setopts(Socket, [{active, once}]),
-    76..|              State1 = State#state{stmts = dict:erase(Stmt, State#state.stmts)},
-    76..|              State2 = schedule_ping(State1),
-    76..|              {reply, ok, State2};
+    88..|              #state{socket = Socket, sockmod = SockMod} = State,
+    88..|              SockMod:setopts(Socket, [{active, false}]),
+    88..|              SockMod = State#state.sockmod,
+    88..|              mysql_protocol:unprepare(StmtRec, SockMod, Socket),
+    88..|              SockMod:setopts(Socket, [{active, once}]),
+    88..|              State1 = State#state{stmts = dict:erase(Stmt, State#state.stmts)},
+    88..|              State2 = schedule_ping(State1),
+    88..|              {reply, ok, State2};
         |          error -&gt;
      2..|              {reply, {error, not_prepared}, State}
         |      end;
@@ -685,7 +705,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |  handle_call(insert_id, _From, State) -&gt;
      1..|      {reply, State#state.insert_id, State};
         |  handle_call(affected_rows, _From, State) -&gt;
-     1..|      {reply, State#state.affected_rows, State};
+     3..|      {reply, State#state.affected_rows, State};
         |  handle_call(autocommit, _From, State) -&gt;
      3..|      {reply, State#state.status band ?SERVER_STATUS_AUTOCOMMIT /= 0, State};
         |  handle_call(backslash_escapes_enabled, _From, State = #state{status = S}) -&gt;
@@ -693,44 +713,47 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |  handle_call(in_transaction, _From, State) -&gt;
      8..|      {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};
         |  handle_call(start_transaction, _From,
-        |              State = #state{socket = Socket, transaction_level = L,
-        |                             status = Status})
+        |              State = #state{socket = Socket, sockmod = SockMod,
+        |                             transaction_level = L, status = Status})
         |    when Status band ?SERVER_STATUS_IN_TRANS == 0, L == 0;
         |         Status band ?SERVER_STATUS_IN_TRANS /= 0, L &gt; 0 -&gt;
     24..|      Query = case L of
     15..|          0 -&gt; &lt;&lt;"BEGIN"&gt;&gt;;
      9..|          _ -&gt; &lt;&lt;"SAVEPOINT s", (integer_to_binary(L))/binary&gt;&gt;
         |      end,
-    24..|      inet:setopts(Socket, [{active, false}]),
-    24..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, gen_tcp, Socket,
+    24..|      SockMod:setopts(Socket, [{active, false}]),
+    24..|      SockMod = State#state.sockmod,
+    24..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
         |                                                 ?cmd_timeout),
-    24..|      inet:setopts(Socket, [{active, once}]),
+    24..|      SockMod:setopts(Socket, [{active, once}]),
     24..|      State1 = update_state(Res, State),
     24..|      {reply, ok, State1#state{transaction_level = L + 1}};
-        |  handle_call(rollback, _From, State = #state{socket = Socket, status = Status,
-        |                                              transaction_level = L})
+        |  handle_call(rollback, _From, State = #state{socket = Socket, sockmod = SockMod,
+        |                                              status = Status, transaction_level = L})
         |    when Status band ?SERVER_STATUS_IN_TRANS /= 0, L &gt;= 1 -&gt;
      4..|      Query = case L of
      3..|          1 -&gt; &lt;&lt;"ROLLBACK"&gt;&gt;;
      1..|          _ -&gt; &lt;&lt;"ROLLBACK TO s", (integer_to_binary(L - 1))/binary&gt;&gt;
         |      end,
-     4..|      inet:setopts(Socket, [{active, false}]),
-     4..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, gen_tcp, Socket,
+     4..|      SockMod:setopts(Socket, [{active, false}]),
+     4..|      SockMod = State#state.sockmod,
+     4..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
         |                                                 ?cmd_timeout),
-     4..|      inet:setopts(Socket, [{active, once}]),
+     4..|      SockMod:setopts(Socket, [{active, once}]),
      4..|      State1 = update_state(Res, State),
      4..|      {reply, ok, State1#state{transaction_level = L - 1}};
-        |  handle_call(commit, _From, State = #state{socket = Socket, status = Status,
-        |                                            transaction_level = L})
+        |  handle_call(commit, _From, State = #state{socket = Socket, sockmod = SockMod,
+        |                                            status = Status, transaction_level = L})
         |    when Status band ?SERVER_STATUS_IN_TRANS /= 0, L &gt;= 1 -&gt;
     13..|      Query = case L of
      8..|          1 -&gt; &lt;&lt;"COMMIT"&gt;&gt;;
      5..|          _ -&gt; &lt;&lt;"RELEASE SAVEPOINT s", (integer_to_binary(L - 1))/binary&gt;&gt;
         |      end,
-    13..|      inet:setopts(Socket, [{active, false}]),
-    13..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, gen_tcp, Socket,
+    13..|      SockMod:setopts(Socket, [{active, false}]),
+    13..|      SockMod = State#state.sockmod,
+    13..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
         |                                                 ?cmd_timeout),
-    13..|      inet:setopts(Socket, [{active, once}]),
+    13..|      SockMod:setopts(Socket, [{active, once}]),
     13..|      State1 = update_state(Res, State),
     13..|      {reply, ok, State1#state{transaction_level = L - 1}}.
         |  
@@ -744,21 +767,23 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |      %% Evict expired queries/statements in the cache used by query/3.
      1..|      {Evicted, Cache1} = mysql_cache:evict_older_than(Cache, CacheTime),
         |      %% Unprepare the evicted statements
-     1..|      #state{socket = Socket} = State,
-     1..|      inet:setopts(Socket, [{active, false}]),
+     1..|      #state{socket = Socket, sockmod = SockMod} = State,
+     1..|      SockMod:setopts(Socket, [{active, false}]),
+     1..|      SockMod = State#state.sockmod,
      1..|      lists:foreach(fun ({_Query, Stmt}) -&gt;
-     1..|                        mysql_protocol:unprepare(Stmt, gen_tcp, Socket)
+     1..|                        mysql_protocol:unprepare(Stmt, SockMod, Socket)
         |                    end,
         |                    Evicted),
-     1..|      inet:setopts(Socket, [{active, once}]),
+     1..|      SockMod:setopts(Socket, [{active, once}]),
         |      %% If nonempty, schedule eviction again.
      1..|      mysql_cache:size(Cache1) &gt; 0 andalso
 <font color=red>     0..|          erlang:send_after(CacheTime, self(), query_cache),</font>
      1..|      {noreply, State#state{query_cache = Cache1}};
-        |  handle_info(ping, #state{socket = Socket} = State) -&gt;
-     4..|      inet:setopts(Socket, [{active, false}]),
-     4..|      Ok = mysql_protocol:ping(gen_tcp, Socket),
-     3..|      inet:setopts(Socket, [{active, once}]),
+        |  handle_info(ping, #state{socket = Socket, sockmod = SockMod} = State) -&gt;
+     4..|      SockMod:setopts(Socket, [{active, false}]),
+     4..|      SockMod = State#state.sockmod,
+     4..|      Ok = mysql_protocol:ping(SockMod, Socket),
+     3..|      SockMod:setopts(Socket, [{active, once}]),
      3..|      {noreply, update_state(Ok, State)};
         |  handle_info({tcp_closed, _Socket}, State) -&gt;
      1..|      stop_server(tcp_closed, State);
@@ -768,13 +793,13 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
      2..|      {noreply, State}.
         |  
         |  %% @private
-        |  terminate(Reason, #state{socket = Socket})
+        |  terminate(Reason, #state{socket = Socket, sockmod = SockMod})
         |    when Reason == normal; Reason == shutdown -&gt;
         |        %% Send the goodbye message for politeness.
-     9..|        inet:setopts(Socket, [{active, false}]),
-     9..|        R = mysql_protocol:quit(gen_tcp, Socket),
-     9..|        inet:setopts(Socket, [{active, once}]),
-     9..|        R;
+    11..|        SockMod:setopts(Socket, [{active, false}]),
+    11..|        R = mysql_protocol:quit(SockMod, Socket),
+    11..|        SockMod:setopts(Socket, [{active, once}]),
+    11..|        R;
         |  terminate(_Reason, _State) -&gt;
      4..|      ok.
         |  
@@ -790,36 +815,37 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |  %% checks the reply and sometimes throws an exception when we need to jump out
         |  %% of a transaction.
         |  query_call(Conn, CallReq) -&gt;
-   508..|      case gen_server:call(Conn, CallReq, infinity) of
+   579..|      case gen_server:call(Conn, CallReq, infinity) of
         |          {implicit_commit, _NestingLevel, Query} -&gt;
      1..|              error({implicit_commit, Query});
         |          {implicit_rollback, _NestingLevel, _ServerReason} = ImplicitRollback -&gt;
      3..|              throw(ImplicitRollback);
         |          Result -&gt;
-   504..|              Result
+   575..|              Result
         |      end.
         |  
         |  %% @doc Executes a prepared statement and returns {Reply, NextState}.
-        |  execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket}) -&gt;
-   171..|      inet:setopts(Socket, [{active, false}]),
-   171..|      {ok, Recs} = case mysql_protocol:execute(Stmt, Args, gen_tcp, Socket,
+        |  execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket, sockmod = SockMod}) -&gt;
+   192..|      SockMod:setopts(Socket, [{active, false}]),
+   192..|      SockMod = State#state.sockmod,
+   192..|      {ok, Recs} = case mysql_protocol:execute(Stmt, Args, SockMod, Socket,
         |                                               Timeout) of
         |          {error, timeout} when State#state.server_version &gt;= [5, 0, 0] -&gt;
      2..|              kill_query(State),
-     2..|              mysql_protocol:fetch_execute_response(gen_tcp, Socket,
+     2..|              mysql_protocol:fetch_execute_response(SockMod, Socket,
         |                                                    ?cmd_timeout);
         |          {error, timeout} -&gt;
         |              %% For MySQL 4.x.x there is no way to recover from timeout except
         |              %% killing the connection itself.
 <font color=red>     0..|              exit(timeout);</font>
         |          QueryResult -&gt;
-   169..|              QueryResult
+   190..|              QueryResult
         |      end,
-   171..|      inet:setopts(Socket, [{active, once}]),
-   171..|      State1 = lists:foldl(fun update_state/2, State, Recs),
-   171..|      State1#state.warning_count &gt; 0 andalso State1#state.log_warnings
+   192..|      SockMod:setopts(Socket, [{active, once}]),
+   192..|      State1 = lists:foldl(fun update_state/2, State, Recs),
+   192..|      State1#state.warning_count &gt; 0 andalso State1#state.log_warnings
      2..|          andalso log_warnings(State1, Stmt#prepared.orig_query),
-   171..|      handle_query_call_reply(Recs, Stmt#prepared.orig_query, State1, []).
+   192..|      handle_query_call_reply(Recs, Stmt#prepared.orig_query, State1, []).
         |  
         |  %% @doc Produces a tuple to return as an error reason.
         |  -spec error_to_reason(#error{}) -&gt; server_reason().
@@ -830,31 +856,31 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |  %% ping.
         |  -spec update_state(#ok{} | #eof{} | any(), #state{}) -&gt; #state{}.
         |  update_state(Rec, State) -&gt;
-   644..|      State1 = case Rec of
+   729..|      State1 = case Rec of
         |          #ok{status = S, affected_rows = R, insert_id = Id, warning_count = W} -&gt;
-   334..|              State#state{status = S, affected_rows = R, insert_id = Id,
+   377..|              State#state{status = S, affected_rows = R, insert_id = Id,
         |                          warning_count = W};
         |          #resultset{status = S, warning_count = W} -&gt;
-   219..|              State#state{status = S, warning_count = W};
+   248..|              State#state{status = S, warning_count = W};
         |          #prepared{warning_count = W} -&gt;
-    85..|              State#state{warning_count = W};
+    98..|              State#state{warning_count = W};
         |          _Other -&gt;
         |              %% This includes errors.
         |              %% Reset some things. (Note: We don't reset status and insert_id.)
      6..|              State#state{warning_count = 0, affected_rows = 0}
         |      end,
-   644..|      schedule_ping(State1).
+   729..|      schedule_ping(State1).
         |  
         |  %% @doc Produces a reply for handle_call/3 for queries and prepared statements.
         |  handle_query_call_reply([], _Query, State, ResultSetsAcc) -&gt;
-   501..|      Reply = case ResultSetsAcc of
-   285..|          []                    -&gt; ok;
-   213..|          [{ColumnNames, Rows}] -&gt; {ok, ColumnNames, Rows};
-     3..|          [_|_]                 -&gt; {ok, lists:reverse(ResultSetsAcc)}
+   572..|      Reply = case ResultSetsAcc of
+   328..|          []                    -&gt; ok;
+   240..|          [{ColumnNames, Rows}] -&gt; {ok, ColumnNames, Rows};
+     4..|          [_|_]                 -&gt; {ok, lists:reverse(ResultSetsAcc)}
         |      end,
-   501..|      {reply, Reply, State};
+   572..|      {reply, Reply, State};
         |  handle_query_call_reply([Rec|Recs], Query, State, ResultSetsAcc) -&gt;
-   513..|      case Rec of
+   585..|      case Rec of
         |          #ok{status = Status} when Status band ?SERVER_STATUS_IN_TRANS == 0,
         |                                    State#state.transaction_level &gt; 0 -&gt;
         |              %% DDL statements (e.g. CREATE TABLE, ALTER TABLE, etc.) result in
@@ -862,11 +888,11 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
      1..|              Reply = {implicit_commit, State#state.transaction_level, Query},
      1..|              {reply, Reply, State#state{transaction_level = 0}};
         |          #ok{} -&gt;
-   289..|              handle_query_call_reply(Recs, Query, State, ResultSetsAcc);
+   332..|              handle_query_call_reply(Recs, Query, State, ResultSetsAcc);
         |          #resultset{cols = ColDefs, rows = Rows} -&gt;
-   219..|              Names = [Def#col.name || Def &lt;- ColDefs],
-   219..|              ResultSetsAcc1 = [{Names, Rows} | ResultSetsAcc],
-   219..|              handle_query_call_reply(Recs, Query, State, ResultSetsAcc1);
+   248..|              Names = [Def#col.name || Def &lt;- ColDefs],
+   248..|              ResultSetsAcc1 = [{Names, Rows} | ResultSetsAcc],
+   248..|              handle_query_call_reply(Recs, Query, State, ResultSetsAcc1);
         |          #error{code = Code} when State#state.transaction_level &gt; 0,
         |                                   (Code == ?ERROR_DEADLOCK orelse
         |                                    Code == ?ERROR_LOCK_WAIT_TIMEOUT) -&gt;
@@ -881,10 +907,10 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |  
         |  %% @doc Schedules (or re-schedules) ping.
         |  schedule_ping(State = #state{ping_timeout = infinity}) -&gt;
-   136..|      State;
+   144..|      State;
         |  schedule_ping(State = #state{ping_timeout = Timeout, ping_ref = Ref}) -&gt;
-   596..|      is_reference(Ref) andalso erlang:cancel_timer(Ref),
-   596..|      State#state{ping_ref = erlang:send_after(Timeout, self(), ping)}.
+   687..|      is_reference(Ref) andalso erlang:cancel_timer(Ref),
+   687..|      State#state{ping_ref = erlang:send_after(Timeout, self(), ping)}.
         |  
         |  %% @doc Since errors don't return a status but some errors cause an implicit
         |  %% rollback, we use this function to clear fix the transaction bit in the
@@ -894,12 +920,13 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |                  transaction_level = 0}.
         |  
         |  %% @doc Fetches and logs warnings. Query is the query that gave the warnings.
-        |  log_warnings(#state{socket = Socket}, Query) -&gt;
-     3..|      inet:setopts(Socket, [{active, false}]),
+        |  log_warnings(#state{socket = Socket, sockmod = SockMod} = State, Query) -&gt;
+     3..|      SockMod:setopts(Socket, [{active, false}]),
+     3..|      SockMod = State#state.sockmod,
      3..|      {ok, [#resultset{rows = Rows}]} = mysql_protocol:query(&lt;&lt;"SHOW WARNINGS"&gt;&gt;,
-        |                                                             gen_tcp, Socket,
+        |                                                             SockMod, Socket,
         |                                                             ?cmd_timeout),
-     3..|      inet:setopts(Socket, [{active, once}]),
+     3..|      SockMod:setopts(Socket, [{active, once}]),
      3..|      Lines = [[Level, " ", integer_to_binary(Code), ": ", Message, "\n"]
      3..|               || [Level, Code, Message] &lt;- Rows],
      3..|      error_logger:warning_msg("~s in ~s~n", [Lines, Query]).
@@ -907,22 +934,22 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql.erl by COVER 2
         |  %% @doc Makes a separate connection and execute KILL QUERY. We do this to get
         |  %% our main connection back to normal. KILL QUERY appeared in MySQL 5.0.0.
         |  kill_query(#state{connection_id = ConnId, host = Host, port = Port,
-        |                    user = User, password = Password}) -&gt;
+        |                    user = User, password = Password, ssl_opts = SSLOpts,
+        |                    cap_found_rows = SetFoundRows}) -&gt;
         |      %% Connect socket
      3..|      SockOpts = [{active, false}, binary, {packet, raw}],
-     3..|      {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
+     3..|      {ok, Socket0} = mysql_sock_tcp:connect(Host, Port, SockOpts),
         |  
         |      %% Exchange handshake communication.
-     3..|      Result = mysql_protocol:handshake(User, Password, undefined, gen_tcp,
-        |                                        Socket),
+     3..|      Result = mysql_protocol:handshake(User, Password, undefined, mysql_sock_tcp,
+        |                                        SSLOpts, Socket0, SetFoundRows),
      3..|      case Result of
-        |          #handshake{} -&gt;
+        |          {ok, #handshake{}, SockMod, Socket} -&gt;
         |              %% Kill and disconnect
      3..|              IdBin = integer_to_binary(ConnId),
-     3..|              {ok, [#ok{}]} = mysql_protocol:query(&lt;&lt;"KILL QUERY ",
-        |                                                     IdBin/binary&gt;&gt;, gen_tcp,
-        |                                                   Socket, ?cmd_timeout),
-     3..|              mysql_protocol:quit(gen_tcp, Socket);
+     3..|              {ok, [#ok{}]} = mysql_protocol:query(&lt;&lt;"KILL QUERY ", IdBin/binary&gt;&gt;,
+        |                                                   SockMod, Socket, ?cmd_timeout),
+     3..|              mysql_protocol:quit(SockMod, Socket);
         |          #error{} = E -&gt;
 <font color=red>     0..|              error_logger:error_msg("Failed to connect to kill query: ~p",</font>
         |                                     [error_to_reason(E)])
