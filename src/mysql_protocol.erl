@@ -72,7 +72,8 @@ handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket,
     {ok, ConfirmPacket, SeqNum1} = recv_packet(SockModule, Socket, SeqNum0),
     case parse_handshake_confirm(ConfirmPacket) of
         #ok{status = OkStatus} ->
-            OkStatus = Handshake#handshake.status,
+            true = (OkStatus == Handshake#handshake.status)
+                    orelse (OkStatus == (16#4000 bor Handshake#handshake.status)),
             {ok, Handshake, SockModule, Socket};
         #auth_method_switch{auth_plugin_name = AuthPluginName,
                             auth_plugin_data = AuthPluginData} ->
