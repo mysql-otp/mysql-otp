@@ -67,13 +67,13 @@ handshake(Username, Password, Database, SockModule0, SSLOpts, Socket0,
     handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket,
                                     SeqNum3).
 
-handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket,
-                                SeqNum0) ->
+handshake_finish_or_switch_auth(Handshake = #handshake{status = Status}, Password,
+                                SockModule, Socket, SeqNum0) ->
     {ok, ConfirmPacket, SeqNum1} = recv_packet(SockModule, Socket, SeqNum0),
     case parse_handshake_confirm(ConfirmPacket) of
         #ok{status = OkStatus} ->
-            true = (OkStatus == Handshake#handshake.status)
-                    orelse (OkStatus == (16#4000 bor Handshake#handshake.status)),
+            %% check status, ignoring bit 16#4000, SERVER_SESSION_STATE_CHANGED.
+            Status = OkStatus band bnot 16#4000,
             {ok, Handshake, SockModule, Socket};
         #auth_method_switch{auth_plugin_name = AuthPluginName,
                             auth_plugin_data = AuthPluginData} ->
