@@ -1,5 +1,5 @@
 %% MySQL/OTP – MySQL client library for Erlang/OTP
-%% Copyright (C) 2014-2016 Viktor Söderqvist
+%% Copyright (C) 2014-2018 Viktor Söderqvist
 %%
 %% This file is part of MySQL/OTP.
 %%
@@ -18,7 +18,7 @@
 
 {application, mysql, [
     {description, "MySQL/OTP - Erlang MySQL client driver"},
-    {vsn, "1.2.0"},
+    {vsn, "1.3.1"},
     {modules, []},
     {registered, []},
     {applications, []}

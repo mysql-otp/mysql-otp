@@ -78,13 +78,13 @@ Usage as a dependency
 Using *erlang.mk*:
 
     DEPS = mysql
-    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.3.0
+    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.3.1
 
 Using *rebar*:
 
     {deps, [
         {mysql, ".*", {git, "https://github.com/mysql-otp/mysql-otp",
-                       {tag, "1.3.0"}}}
+                       {tag, "1.3.1"}}}
     ]}.
 
 Tests
@@ -136,16 +136,16 @@ generated from the commit messages.
 Maintaining
 -----------
 
-This is for the project's maintainer only.
+This is for the project's maintainer(s) only.
 
-Tag a new version using using sematic versioning rules. Push tags using
-`git push --tags`.
+Tagging a new version:
 
-After tagging a new version, update the changelog using `make CHANGELOG.md` and
-commit it.
-
-Update the online documentation and coverage reports using `make gh-pages`. Then
-push the gh-pages branch using `git push origin gh-pages`.
+1. Before tagging, update src/mysql.app.src and README.md with the new version.
+2. Tag and push tags using `git push --tags`.
+3. After tagging a new version:
+  * Update the changelog using `make CHANGELOG.md` and commit it.
+  * Update the online documentation and coverage reports using `make gh-pages`.
+    Then push the gh-pages branch using `git push origin gh-pages`.
 
 License
 -------
