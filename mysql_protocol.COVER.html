@@ -5,7 +5,7 @@
 <title>cover/mysql_protocol.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl by COVER 2017-11-23 at 22:15:23
+File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl by COVER 2018-01-05 at 07:29:00
 
 ****************************************************************************
 
@@ -78,12 +78,13 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
     18..|      handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket,
         |                                      SeqNum3).
         |  
-        |  handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket,
-        |                                  SeqNum0) -&gt;
+        |  handshake_finish_or_switch_auth(Handshake = #handshake{status = Status}, Password,
+        |                                  SockModule, Socket, SeqNum0) -&gt;
     18..|      {ok, ConfirmPacket, SeqNum1} = recv_packet(SockModule, Socket, SeqNum0),
     18..|      case parse_handshake_confirm(ConfirmPacket) of
         |          #ok{status = OkStatus} -&gt;
-    17..|              OkStatus = Handshake#handshake.status,
+        |              %% check status, ignoring bit 16#4000, SERVER_SESSION_STATE_CHANGED.
+    17..|              Status = OkStatus band bnot 16#4000,
     17..|              {ok, Handshake, SockModule, Socket};
         |          #auth_method_switch{auth_plugin_name = AuthPluginName,
         |                              auth_plugin_data = AuthPluginData} -&gt;
