@@ -1,3 +1,9 @@
+Updates available in this repository
+====================================
+
+* Add support of sending packets size greater than 16#ffffff (0xffffff).
+
+
 MySQL/OTP
 =========
 
