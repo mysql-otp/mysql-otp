@@ -1018,11 +1018,18 @@ parse_packet_header(<<PacketLength:24/little-integer, SeqNum:8/integer>>) ->
 add_packet_headers(PacketBody, SeqNum) ->
     Bin = iolist_to_binary(PacketBody),
     Size = size(Bin),
-    SeqNum1 = (SeqNum + 1) band 16#ff,
-    %% Todo: implement the case when Size >= 16#ffffff.
-    if Size < 16#ffffff ->
-        {[<<Size:24/little, SeqNum:8>>, Bin], SeqNum1}
-    end.
+    add_packet_headers(Bin, Size, <<>>, SeqNum).
+
+%% @doc Manages all sizes of datas to send even with sizes greater than 0xffffff (16#ffffff).
+-spec add_packet_headers(PacketBody :: iodata(), Size :: integer(), Acc :: iodata(), SeqNum :: integer()) ->
+    {PacketWithHeaders :: iodata(), NextSeqNum :: integer()}.
+add_packet_headers(Bin, Size, Acc, SeqNum) when Size > 16#ffffff ->
+    NextSeqNum = (SeqNum + 1) band 16#ff,
+    << Payload:16#ffffff/binary, Rest/binary >> = Bin,
+    add_packet_headers(Rest, Size - 16#ffffff, << Acc/binary, 16#ff, 16#ff, 16#ff, SeqNum:8, Payload/binary >>, NextSeqNum);
+add_packet_headers(Bin, Size, Acc, SeqNum) ->
+    NextSeqNum = (SeqNum + 1) band 16#ff,
+    { [Acc, <<Size:24/little, SeqNum:8>>, Bin], NextSeqNum}.
 
 -spec parse_ok_packet(binary()) -> #ok{}.
 parse_ok_packet(<<?OK:8, Rest/binary>>) ->
@@ -1258,6 +1265,23 @@ parse_header_test() ->
 add_packet_headers_test() ->
     {Data, 43} = add_packet_headers(<<"foo">>, 42),
     ?assertEqual(<<3, 0, 0, 42, "foo">>, list_to_binary(Data)).
+
+add_packet_headers_equal_to_0xffffff_test() ->
+	BigBin = erlang:list_to_binary([16#01 || I <- lists:seq(1, 16#ffffff)]),
+    {Data, 43} = add_packet_headers(BigBin, 42),
+    ?assertEqual(<<16#ff, 16#ff, 16#ff, 42, BigBin/binary>>, list_to_binary(Data)).
+
+add_packet_headers_greater_than_0xffffff_test() ->
+	BigBin = erlang:list_to_binary([16#01 || I <- lists:seq(1, 16#ffffff)]),
+    {Data, 44} = add_packet_headers(<<BigBin/binary, "foo">>, 42),
+    ?assertEqual(<<16#ff, 16#ff, 16#ff, 42, BigBin/binary, 3, 0, 0, 43, "foo">>, list_to_binary(Data)).
+
+add_packet_headers_2_times_greater_than_0xffffff_test() ->
+	BigBin = erlang:list_to_binary([16#01 || I <- lists:seq(1, 16#ffffff)]),
+    {Data, 45} = add_packet_headers(<<BigBin/binary, BigBin/binary, "foo">>, 42),
+    ?assertEqual(<<16#ff, 16#ff, 16#ff, 42, BigBin/binary,
+                   16#ff, 16#ff, 16#ff, 43, BigBin/binary,
+                   3,     0,     0,     44, "foo">>, list_to_binary(Data)).
 
 parse_ok_test() ->
     Body = <<0, 5, 1, 2, 0, 0, 0, "Foo">>,
