@@ -1091,7 +1091,7 @@ hash_password(Password, Salt) ->
     %% ----
     %% Make sure the salt is exactly 20 bytes.
     %%
-    %% The auth data is obviously nul-terminated. For the "native" auth
+    %% The auth data is obviously null-terminated. For the "native" auth
     %% method, it should be a 20 byte salt, so let's trim it in this case.
     PasswordBin = case erlang:is_binary(Password) of
         true -> Password;
