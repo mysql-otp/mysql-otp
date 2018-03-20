@@ -1012,24 +1012,19 @@ parse_packet_header(<<PacketLength:24/little-integer, SeqNum:8/integer>>) ->
     {PacketLength, SeqNum, PacketLength == 16#ffffff}.
 
 %% @doc Splits a packet body into chunks and wraps them in headers. The
-%% resulting list is ready to sent to the socket.
--spec add_packet_headers(PacketBody :: iodata(), SeqNum :: integer()) ->
-    {PacketWithHeaders :: iodata(), NextSeqNum :: integer()}.
-add_packet_headers(PacketBody, SeqNum) ->
-    Bin = iolist_to_binary(PacketBody),
-    Size = size(Bin),
-    add_packet_headers(Bin, Size, <<>>, SeqNum).
-
-%% @doc Manages all sizes of datas to send even with sizes greater than 0xffffff (16#ffffff).
--spec add_packet_headers(PacketBody :: iodata(), Size :: integer(), Acc :: iodata(), SeqNum :: integer()) ->
-    {PacketWithHeaders :: iodata(), NextSeqNum :: integer()}.
-add_packet_headers(Bin, Size, Acc, SeqNum) when Size > 16#ffffff ->
+%% resulting list is ready to be sent to the socket. The result is built as a
+%% list to avoid copying large binaries.
+-spec add_packet_headers(Data :: binary(), SeqNum :: integer()) ->
+    {PacketsWithHeaders :: iodata(), NextSeqNum :: integer()}.
+add_packet_headers(<<Payload:16#ffffff/binary, Rest/binary>>, SeqNum) ->
+    SeqNum1 = (SeqNum + 1) band 16#ff,
+    {Packets, NextSeqNum} = add_packet_headers(Rest, SeqNum1),
+    Header = <<16#ffffff:24/little, SeqNum:8>>,
+    {[Header, Payload | Packets], NextSeqNum};
+add_packet_headers(Bin, SeqNum) when byte_size(Bin) < 16#ffffff ->
     NextSeqNum = (SeqNum + 1) band 16#ff,
-    << Payload:16#ffffff/binary, Rest/binary >> = Bin,
-    add_packet_headers(Rest, Size - 16#ffffff, << Acc/binary, 16#ff, 16#ff, 16#ff, SeqNum:8, Payload/binary >>, NextSeqNum);
-add_packet_headers(Bin, Size, Acc, SeqNum) ->
-    NextSeqNum = (SeqNum + 1) band 16#ff,
-    { [Acc, <<Size:24/little, SeqNum:8>>, Bin], NextSeqNum}.
+    Header = <<(byte_size(Bin)):24/little, SeqNum:8>>,
+    {[Header, Bin], NextSeqNum}.
 
 -spec parse_ok_packet(binary()) -> #ok{}.
 parse_ok_packet(<<?OK:8, Rest/binary>>) ->
@@ -1267,21 +1262,25 @@ add_packet_headers_test() ->
     ?assertEqual(<<3, 0, 0, 42, "foo">>, list_to_binary(Data)).
 
 add_packet_headers_equal_to_0xffffff_test() ->
-	BigBin = erlang:list_to_binary([16#01 || I <- lists:seq(1, 16#ffffff)]),
-    {Data, 43} = add_packet_headers(BigBin, 42),
-    ?assertEqual(<<16#ff, 16#ff, 16#ff, 42, BigBin/binary>>, list_to_binary(Data)).
+    BigBin = binary:copy(<<1>>, 16#ffffff),
+    {Data, 44} = add_packet_headers(BigBin, 42),
+    ?assertEqual(<<16#ff, 16#ff, 16#ff, 42, BigBin/binary,
+                   0,     0,     0,     43>>,
+                 list_to_binary(Data)).
 
 add_packet_headers_greater_than_0xffffff_test() ->
-	BigBin = erlang:list_to_binary([16#01 || I <- lists:seq(1, 16#ffffff)]),
+    BigBin = binary:copy(<<1>>, 16#ffffff),
     {Data, 44} = add_packet_headers(<<BigBin/binary, "foo">>, 42),
-    ?assertEqual(<<16#ff, 16#ff, 16#ff, 42, BigBin/binary, 3, 0, 0, 43, "foo">>, list_to_binary(Data)).
+    ?assertEqual(<<16#ff, 16#ff, 16#ff, 42, BigBin/binary, 3, 0, 0, 43, "foo">>,
+                 list_to_binary(Data)).
 
 add_packet_headers_2_times_greater_than_0xffffff_test() ->
-	BigBin = erlang:list_to_binary([16#01 || I <- lists:seq(1, 16#ffffff)]),
+    BigBin = binary:copy(<<1>>, 16#ffffff),
     {Data, 45} = add_packet_headers(<<BigBin/binary, BigBin/binary, "foo">>, 42),
     ?assertEqual(<<16#ff, 16#ff, 16#ff, 42, BigBin/binary,
                    16#ff, 16#ff, 16#ff, 43, BigBin/binary,
-                   3,     0,     0,     44, "foo">>, list_to_binary(Data)).
+                   3,     0,     0,     44, "foo">>,
+                 list_to_binary(Data)).
 
 parse_ok_test() ->
     Body = <<0, 5, 1, 2, 0, 0, 0, "Foo">>,
