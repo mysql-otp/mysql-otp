@@ -5,7 +5,7 @@
 <title>cover/mysql_protocol.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl by COVER 2018-01-05 at 07:29:00
+File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl by COVER 2018-03-20 at 02:45:44
 
 ****************************************************************************
 
@@ -1023,17 +1023,19 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
   2077..|      {PacketLength, SeqNum, PacketLength == 16#ffffff}.
         |  
         |  %% @doc Splits a packet body into chunks and wraps them in headers. The
-        |  %% resulting list is ready to sent to the socket.
-        |  -spec add_packet_headers(PacketBody :: iodata(), SeqNum :: integer()) -&gt;
-        |      {PacketWithHeaders :: iodata(), NextSeqNum :: integer()}.
-        |  add_packet_headers(PacketBody, SeqNum) -&gt;
-   864..|      Bin = iolist_to_binary(PacketBody),
-   864..|      Size = size(Bin),
-   864..|      SeqNum1 = (SeqNum + 1) band 16#ff,
-        |      %% Todo: implement the case when Size &gt;= 16#ffffff.
-   864..|      if Size &lt; 16#ffffff -&gt;
-   864..|          {[&lt;&lt;Size:24/little, SeqNum:8&gt;&gt;, Bin], SeqNum1}
-        |      end.
+        |  %% resulting list is ready to be sent to the socket. The result is built as a
+        |  %% list to avoid copying large binaries.
+        |  -spec add_packet_headers(Data :: binary(), SeqNum :: integer()) -&gt;
+        |      {PacketsWithHeaders :: iodata(), NextSeqNum :: integer()}.
+        |  add_packet_headers(&lt;&lt;Payload:16#ffffff/binary, Rest/binary&gt;&gt;, SeqNum) -&gt;
+     4..|      SeqNum1 = (SeqNum + 1) band 16#ff,
+     4..|      {Packets, NextSeqNum} = add_packet_headers(Rest, SeqNum1),
+     4..|      Header = &lt;&lt;16#ffffff:24/little, SeqNum:8&gt;&gt;,
+     4..|      {[Header, Payload | Packets], NextSeqNum};
+        |  add_packet_headers(Bin, SeqNum) when byte_size(Bin) &lt; 16#ffffff -&gt;
+   867..|      NextSeqNum = (SeqNum + 1) band 16#ff,
+   867..|      Header = &lt;&lt;(byte_size(Bin)):24/little, SeqNum:8&gt;&gt;,
+   867..|      {[Header, Bin], NextSeqNum}.
         |  
         |  -spec parse_ok_packet(binary()) -&gt; #ok{}.
         |  parse_ok_packet(&lt;&lt;?OK:8, Rest/binary&gt;&gt;) -&gt;
@@ -1269,6 +1271,27 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  add_packet_headers_test() -&gt;
      1..|      {Data, 43} = add_packet_headers(&lt;&lt;"foo"&gt;&gt;, 42),
      1..|      ?assertEqual(&lt;&lt;3, 0, 0, 42, "foo"&gt;&gt;, list_to_binary(Data)).
+        |  
+        |  add_packet_headers_equal_to_0xffffff_test() -&gt;
+     1..|      BigBin = binary:copy(&lt;&lt;1&gt;&gt;, 16#ffffff),
+     1..|      {Data, 44} = add_packet_headers(BigBin, 42),
+     1..|      ?assertEqual(&lt;&lt;16#ff, 16#ff, 16#ff, 42, BigBin/binary,
+        |                     0,     0,     0,     43&gt;&gt;,
+     1..|                   list_to_binary(Data)).
+        |  
+        |  add_packet_headers_greater_than_0xffffff_test() -&gt;
+     1..|      BigBin = binary:copy(&lt;&lt;1&gt;&gt;, 16#ffffff),
+     1..|      {Data, 44} = add_packet_headers(&lt;&lt;BigBin/binary, "foo"&gt;&gt;, 42),
+     1..|      ?assertEqual(&lt;&lt;16#ff, 16#ff, 16#ff, 42, BigBin/binary, 3, 0, 0, 43, "foo"&gt;&gt;,
+     1..|                   list_to_binary(Data)).
+        |  
+        |  add_packet_headers_2_times_greater_than_0xffffff_test() -&gt;
+     1..|      BigBin = binary:copy(&lt;&lt;1&gt;&gt;, 16#ffffff),
+     1..|      {Data, 45} = add_packet_headers(&lt;&lt;BigBin/binary, BigBin/binary, "foo"&gt;&gt;, 42),
+     1..|      ?assertEqual(&lt;&lt;16#ff, 16#ff, 16#ff, 42, BigBin/binary,
+        |                     16#ff, 16#ff, 16#ff, 43, BigBin/binary,
+        |                     3,     0,     0,     44, "foo"&gt;&gt;,
+     1..|                   list_to_binary(Data)).
         |  
         |  parse_ok_test() -&gt;
      1..|      Body = &lt;&lt;0, 5, 1, 2, 0, 0, 0, "Foo"&gt;&gt;,
