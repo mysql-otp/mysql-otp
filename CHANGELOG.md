@@ -2,6 +2,12 @@ Change log
 ==========
 
 
+1.3.2
+-----
+* Rewrite add_packet_headers and update version [2018-03-20 02:42:43 +0100]
+* Sending packets with size greater than 16#ffffff (#77) [2018-03-20 00:16:48 +0100]
+* Update CHANGELOG.md [2018-01-05 07:28:11 +0100]
+
 1.3.1
 -----
 * Update .app.src file and README for version 1.3.1 [2018-01-05 07:26:58 +0100]
