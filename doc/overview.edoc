@@ -111,7 +111,7 @@ Notes:
     can be represented without precision loss and as `binary()' for high
     precision DECIMAL values. This is similar to how the `odbc' OTP application
     treats DECIMALs.</li>
-  <li id="vn3">For `DATETIME', `TIMESTAMP' and `TIME' values with franctions of
+  <li id="vn3">For `DATETIME', `TIMESTAMP' and `TIME' values with fractions of
     seconds, we use a float for the seconds part. (These are unusual and were
     added to MySQL in version 5.6.4.)</li>
   <li id="vn4">Since `TIME' can be outside the `calendar:time()' interval, we use
