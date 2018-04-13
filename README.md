@@ -10,30 +10,30 @@ protocol in Erlang.
 Some of the features:
 
 * Mnesia style transactions:
-  * Nested transactions are implemented using savepoints.
+  * Nested transactions are implemented using SQL savepoints.
   * Transactions are automatically retried when deadlocks are detected.
-* Uses the binary protocol for prepared statements.
 * Each connection is a gen_server, which makes it compatible with Poolboy (for
   connection pooling) and ordinary OTP supervisors.
 * No records in the public API.
 * SSL.
+* Parametrized queries using cached prepared statements
+  ([What?](https://github.com/mysql-otp/mysql-otp/wiki/Parametrized-queries-using-cached-prepared-statements))
 * Slow queries are interrupted without killing the connection (MySQL version
-  ≥ 5.0.0).
+  ≥ 5.0.0)
+* Implements both protocols: the binary protocol for prepared statements and
+  the text protocol for plain queries.
 
 See also:
 
 * [API documenation](//mysql-otp.github.io/mysql-otp/index.html) (Edoc)
 * [Test coverage](//mysql-otp.github.io/mysql-otp/eunit.html) (EUnit)
-* [Why another MySQL driver?](https://github.com/mysql-otp/mysql-otp/wiki#why-another-mysql-driver) in the wiki
-* [MySQL/OTP + Poolboy](https://github.com/mysql-otp/mysql-otp-poolboy):
-  A simple application that combines MySQL/OTP with Poolboy for connection
-  pooling.
+* [Wiki pages](https://github.com/mysql-otp/mysql-otp/wiki) Connection pooling, related projects and more.
 
 Synopsis
 --------
 
 ```Erlang
-%% Connect (ssl option is not mandatory)
+%% Connect (ssl is optional)
 {ok, Pid} = mysql:start_link([{host, "localhost"}, {user, "foo"},
                               {password, "hello"}, {database, "test"},
                               {ssl, [{cacertfile, "/path/to/ca.pem"}]}]),
