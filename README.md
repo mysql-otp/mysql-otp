@@ -1,7 +1,7 @@
 MySQL/OTP
 =========
 
-[![Build Status](https://travis-ci.org/mysql-otp/mysql-otp.svg)](https://travis-ci.org/mysql-otp/mysql-otp)
+[![Build Status](https://travis-ci.org/mysql-otp/mysql-otp.svg?branch=master)](https://travis-ci.org/mysql-otp/mysql-otp)
 
 MySQL/OTP is a driver for connecting Erlang/OTP applications to MySQL
 databases (version 4.1 and upward). It is a native implementation of the MySQL
