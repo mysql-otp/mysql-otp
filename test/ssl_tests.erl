@@ -24,10 +24,16 @@
 -define(ssl_user,     "otptestssl").
 -define(ssl_password, "otptestssl").
 -define(cacertfile,   "test/ssl/ca.pem").
+-define(certfile,     "test/ssl/server-cert.pem").
+-define(keyfile,      "test/ssl/server-key.pem").
 
 successful_ssl_connect_test() ->
     [ application:start(App) || App <- [crypto, asn1, public_key, ssl] ],
-    common_basic_check([{ssl, [{cacertfile, ?cacertfile}]},
+    common_basic_check([{ssl, [
+                        {server_name_indication, disable}, 
+                        {cacertfile, ?cacertfile}]},
+                        {certfile, ?certfile},
+                        {keyfile, ?keyfile},
                         {user, ?ssl_user}, {password, ?ssl_password}]),
     common_conn_close(),
     ok.
