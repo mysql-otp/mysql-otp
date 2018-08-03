@@ -24,6 +24,9 @@
        AccumulatedErrors :: [{error|warning_msg|info_msg, string()} |
                              {error_report|warning_report|info_report, term()}].
 capture(Fun) when is_function(Fun, 0) ->
+
+    start_error_logger(),
+
     OldHandlers = gen_event:which_handlers(error_logger),
     error_logger:add_report_handler(?MODULE),
     lists:foreach(fun error_logger:delete_report_handler/1, OldHandlers),
@@ -70,6 +73,16 @@ terminate(_Arg, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+%% error logger is no longer started since erlang 21, start it explicitly
+-ifdef(OTP_RELEASE).
+start_error_logger() ->
+    error_logger:start(),
+    logger:add_handler(error_logger,error_logger,#{level=>info,filter_default=>log}).
+-else.
+start_error_logger() ->
+    ok.
+-endif.
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
