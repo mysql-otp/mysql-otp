@@ -285,14 +285,11 @@ lock_wait_timeout1({Conn1, Conn2}) ->
 
     %% Wait for the locking worker to take the lock.
     receive go -> ok end,
-    {aborted, Reason} = mysql:transaction(Conn2, fun () ->
-        ok = mysql:query(Conn2, "UPDATE foo SET v = 42 WHERE k = 1")
+    {atomic, ok} = mysql:transaction(Conn2, fun () ->
+        ?assertMatch({error, {1205, _, <<"Lock wait timeout", _/binary>>}},
+                     mysql:query(Conn2, "UPDATE foo SET v = 42 WHERE k = 1")),
+        ok
     end),
-    ?assertMatch(
-        {{badmatch,
-          {error, {1205, _, <<"Lock wait timeout", _/binary>>}}},
-         _Trace},
-        Reason),
 
     %% Wake the sleeping worker.
     LockingWorker ! release,
