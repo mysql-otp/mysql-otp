@@ -396,7 +396,7 @@ execute_transaction(Conn, Fun, Args, Retries) ->
             execute_transaction(Conn, Fun, Args, infinity);
         throw:{implicit_rollback, 1, _} when Retries > 0 ->
             execute_transaction(Conn, Fun, Args, Retries - 1);
-        throw:{implicit_rollback, N, Reason} ->
+        throw:{implicit_rollback, N, Reason} when N > 1 ->
             erlang:raise(throw, {implicit_rollback, N - 1, Reason},
                          erlang:get_stacktrace());
         error:{implicit_commit, _Query} = E ->
