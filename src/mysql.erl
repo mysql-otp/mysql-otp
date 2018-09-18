@@ -49,7 +49,6 @@
 -define(cmd_timeout, 3000). %% Timeout used for various commands to the server
 
 %% Errors that cause "implicit rollback"
--define(ERROR_LOCK_WAIT_TIMEOUT, 1205).
 -define(ERROR_DEADLOCK, 1213).
 
 %% A connection is a ServerRef as in gen_server:call/2,3.
@@ -383,37 +382,23 @@ transaction(Conn, Fun, Args, Retries) when is_list(Args),
     %% The guard makes sure that we can apply Fun to Args. Any error we catch
     %% in the try-catch are actual errors that occurred in Fun.
     ok = gen_server:call(Conn, start_transaction),
+    execute_transaction(Conn, Fun, Args, Retries).
+
+execute_transaction(Conn, Fun, Args, Retries) ->
     try apply(Fun, Args) of
         ResultOfFun ->
-            %% We must be able to rollback. Otherwise let's crash.
             ok = gen_server:call(Conn, commit),
             {atomic, ResultOfFun}
     catch
-        throw:{implicit_rollback, N, Reason} when N >= 1 ->
-            %% Jump out of N nested transactions to restart the outer-most one.
-            %% The server has already rollbacked so we shouldn't do that here.
-            case N of
-                1 ->
-                    case Reason of
-                        {?ERROR_DEADLOCK, _, _} when Retries == infinity ->
-                            transaction(Conn, Fun, Args, infinity);
-                        {?ERROR_DEADLOCK, _, _} when Retries > 0 ->
-                            transaction(Conn, Fun, Args, Retries - 1);
-                        _OtherImplicitRollbackError ->
-                            %% This includes the case ?ERROR_LOCK_WAIT_TIMEOUT
-                            %% which we don't restart automatically.
-                            %% We issue a rollback here since MySQL doesn't
-                            %% seem to have fully rollbacked and an extra
-                            %% rollback doesn't hurt.
-                            ok = query(Conn, <<"ROLLBACK">>),
-                            {aborted, {Reason, erlang:get_stacktrace()}}
-                    end;
-                _ ->
-                    %% Re-throw with the same trace. We'll use that in the
-                    %% final {aborted, {Reason, Trace}} in the outer level.
-                    erlang:raise(throw, {implicit_rollback, N - 1, Reason},
-                                 erlang:get_stacktrace())
-            end;
+        %% We are at the top level, try to restart the transaction if there are
+        %% retries left
+        throw:{implicit_rollback, 1, _} when Retries =:= infinity ->
+            execute_transaction(Conn, Fun, Args, infinity);
+        throw:{implicit_rollback, 1, _} when Retries > 0 ->
+            execute_transaction(Conn, Fun, Args, Retries - 1);
+        throw:{implicit_rollback, N, Reason} when N > 1 ->
+            erlang:raise(throw, {implicit_rollback, N - 1, Reason},
+                         erlang:get_stacktrace());
         error:{implicit_commit, _Query} = E ->
             %% The called did something like ALTER TABLE which resulted in an
             %% implicit commit. The server has already committed. We need to
@@ -883,12 +868,11 @@ handle_query_call_reply([Rec|Recs], Query, State, ResultSetsAcc) ->
             ResultSetsAcc1 = [{Names, Rows} | ResultSetsAcc],
             handle_query_call_reply(Recs, Query, State, ResultSetsAcc1);
         #error{code = Code} when State#state.transaction_level > 0,
-                                 (Code == ?ERROR_DEADLOCK orelse
-                                  Code == ?ERROR_LOCK_WAIT_TIMEOUT) ->
+                                 Code == ?ERROR_DEADLOCK ->
             %% These errors result in an implicit rollback.
             Reply = {implicit_rollback, State#state.transaction_level,
                      error_to_reason(Rec)},
-            State2 = clear_transaction_status(State),
+            State2 = State#state{transaction_level = 1},
             {reply, Reply, State2};
         #error{} ->
             {reply, {error, error_to_reason(Rec)}, State}
@@ -900,13 +884,6 @@ schedule_ping(State = #state{ping_timeout = infinity}) ->
 schedule_ping(State = #state{ping_timeout = Timeout, ping_ref = Ref}) ->
     is_reference(Ref) andalso erlang:cancel_timer(Ref),
     State#state{ping_ref = erlang:send_after(Timeout, self(), ping)}.
-
-%% @doc Since errors don't return a status but some errors cause an implicit
-%% rollback, we use this function to clear fix the transaction bit in the
-%% status.
-clear_transaction_status(State = #state{status = Status}) ->
-    State#state{status = Status band bnot ?SERVER_STATUS_IN_TRANS,
-                transaction_level = 0}.
 
 %% @doc Fetches and logs warnings. Query is the query that gave the warnings.
 log_warnings(#state{socket = Socket, sockmod = SockMod} = State, Query) ->
