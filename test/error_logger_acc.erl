@@ -4,6 +4,8 @@
 %% returned along with the return value of the fun.
 -module(error_logger_acc).
 
+-include("exception.hrl").
+
 %% Public API
 -export([capture/1]).
 
@@ -30,11 +32,10 @@ capture(Fun) when is_function(Fun, 0) ->
             lists:foreach(fun error_logger:add_report_handler/1, OldHandlers),
             {ok, Result, error_logger:delete_report_handler(?MODULE)}
     catch
-        Class:Error ->
-            Trace = erlang:get_stacktrace(),
+        ?EXCEPTION(Class, Error, Stacktrace) ->
             lists:foreach(fun error_logger:add_report_handler/1, OldHandlers),
             AccumulatedErrors = error_logger:delete_report_handler(?MODULE),
-            {Class, Error, Trace, AccumulatedErrors}
+            {Class, Error, ?GET_STACK(Stacktrace), AccumulatedErrors}
     end.
 
 %% --- gen_event callbacks ---
