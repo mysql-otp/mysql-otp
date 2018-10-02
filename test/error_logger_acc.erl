@@ -4,6 +4,8 @@
 %% returned along with the return value of the fun.
 -module(error_logger_acc).
 
+-include("exception.hrl").
+
 %% Public API
 -export([capture/1]).
 
@@ -22,6 +24,9 @@
        AccumulatedErrors :: [{error|warning_msg|info_msg, string()} |
                              {error_report|warning_report|info_report, term()}].
 capture(Fun) when is_function(Fun, 0) ->
+
+    start_error_logger(),
+
     OldHandlers = gen_event:which_handlers(error_logger),
     error_logger:add_report_handler(?MODULE),
     lists:foreach(fun error_logger:delete_report_handler/1, OldHandlers),
@@ -30,11 +35,10 @@ capture(Fun) when is_function(Fun, 0) ->
             lists:foreach(fun error_logger:add_report_handler/1, OldHandlers),
             {ok, Result, error_logger:delete_report_handler(?MODULE)}
     catch
-        Class:Error ->
-            Trace = erlang:get_stacktrace(),
+        ?EXCEPTION(Class, Error, Stacktrace) ->
             lists:foreach(fun error_logger:add_report_handler/1, OldHandlers),
             AccumulatedErrors = error_logger:delete_report_handler(?MODULE),
-            {Class, Error, Trace, AccumulatedErrors}
+            {Class, Error, ?GET_STACK(Stacktrace), AccumulatedErrors}
     end.
 
 %% --- gen_event callbacks ---
@@ -69,6 +73,16 @@ terminate(_Arg, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+%% error logger is no longer started since erlang 21, start it explicitly
+-ifdef(OTP_RELEASE).
+start_error_logger() ->
+    error_logger:start(),
+    logger:add_handler(error_logger,error_logger,#{level=>info,filter_default=>log}).
+-else.
+start_error_logger() ->
+    ok.
+-endif.
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

@@ -25,6 +25,8 @@
 %% gen_server is locally registered.
 -module(mysql).
 
+-include("exception.hrl").
+
 -export([start_link/1, query/2, query/3, query/4, execute/3, execute/4,
          prepare/2, prepare/3, unprepare/2,
          warning_count/1, affected_rows/1, autocommit/1, insert_id/1,
@@ -392,28 +394,28 @@ execute_transaction(Conn, Fun, Args, Retries) ->
     catch
         %% We are at the top level, try to restart the transaction if there are
         %% retries left
-        throw:{implicit_rollback, 1, _} when Retries =:= infinity ->
+        ?EXCEPTION(throw, {implicit_rollback, 1, _}, _Stacktrace) when Retries =:= infinity ->
             execute_transaction(Conn, Fun, Args, infinity);
-        throw:{implicit_rollback, 1, _} when Retries > 0 ->
+        ?EXCEPTION(throw, {implicit_rollback, 1, _}, _Stacktrace) when Retries > 0 ->
             execute_transaction(Conn, Fun, Args, Retries - 1);
-        throw:{implicit_rollback, N, Reason} when N > 1 ->
+        ?EXCEPTION(throw, {implicit_rollback, N, Reason}, Stacktrace, N) ->
             erlang:raise(throw, {implicit_rollback, N - 1, Reason},
-                         erlang:get_stacktrace());
-        error:{implicit_commit, _Query} = E ->
+                         ?GET_STACK(Stacktrace));
+        ?EXCEPTION(error, {implicit_commit, _Query} = E, Stacktrace) ->
             %% The called did something like ALTER TABLE which resulted in an
             %% implicit commit. The server has already committed. We need to
             %% jump out of N levels of transactions.
             %%
             %% Returning 'atomic' or 'aborted' would both be wrong. Raise an
             %% exception is the best we can do.
-            erlang:raise(error, E, erlang:get_stacktrace());
-        Class:Reason ->
+            erlang:raise(error, E, ?GET_STACK(Stacktrace));
+        ?EXCEPTION(Class, Reason, Stacktrace) ->
             %% We must be able to rollback. Otherwise let's crash.
             ok = gen_server:call(Conn, rollback),
             %% These forms for throw, error and exit mirror Mnesia's behaviour.
             Aborted = case Class of
                 throw -> {throw, Reason};
-                error -> {Reason, erlang:get_stacktrace()};
+                error -> {Reason, ?GET_STACK(Stacktrace)};
                 exit  -> Reason
             end,
             {aborted, Aborted}

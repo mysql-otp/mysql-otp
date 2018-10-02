@@ -14,6 +14,7 @@ before_script:
   - mysql -uroot -e "grant all privileges on otptestssl.* to otptestssl@localhost identified by 'otptestssl' require ssl"
 script: 'make tests'
 otp_release:
+  - 21.1
   - 20.0
   - 19.0
   - 18.3
