@@ -394,12 +394,12 @@ execute_transaction(Conn, Fun, Args, Retries) ->
     catch
         %% We are at the top level, try to restart the transaction if there are
         %% retries left
-        ?EXCEPTION(throw, {implicit_rollback, 1, _}, _Stacktrace) when Retries =:= infinity ->
+        ?EXCEPTION(error, {implicit_rollback, 1, _}, _Stacktrace) when Retries =:= infinity ->
             execute_transaction(Conn, Fun, Args, infinity);
-        ?EXCEPTION(throw, {implicit_rollback, 1, _}, _Stacktrace) when Retries > 0 ->
+        ?EXCEPTION(error, {implicit_rollback, 1, _}, _Stacktrace) when Retries > 0 ->
             execute_transaction(Conn, Fun, Args, Retries - 1);
-        ?EXCEPTION(throw, {implicit_rollback, N, Reason}, Stacktrace, N) ->
-            erlang:raise(throw, {implicit_rollback, N - 1, Reason},
+        ?EXCEPTION(error, {implicit_rollback, N, Reason}, Stacktrace, N) ->
+            erlang:raise(error, {implicit_rollback, N - 1, Reason},
                          ?GET_STACK(Stacktrace));
         ?EXCEPTION(error, {implicit_commit, _Query} = E, Stacktrace) ->
             %% The called did something like ALTER TABLE which resulted in an
@@ -795,7 +795,7 @@ query_call(Conn, CallReq) ->
         {implicit_commit, _NestingLevel, Query} ->
             error({implicit_commit, Query});
         {implicit_rollback, _NestingLevel, _ServerReason} = ImplicitRollback ->
-            throw(ImplicitRollback);
+            error(ImplicitRollback);
         Result ->
             Result
     end.
