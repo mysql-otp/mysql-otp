@@ -398,6 +398,11 @@ execute_transaction(Conn, Fun, Args, Retries) ->
             execute_transaction(Conn, Fun, Args, infinity);
         ?EXCEPTION(throw, {implicit_rollback, 1, _}, _Stacktrace) when Retries > 0 ->
             execute_transaction(Conn, Fun, Args, Retries - 1);
+        %% The transaction has failed because it was rolled back and we are out
+        %% of retires.
+        ?EXCEPTION(throw, {implicit_rollback, 1, RollbackReason}, Stacktrace) ->
+            Reason = {transaction_failed, RollbackReason},
+            abort_transaction(Conn, error, Reason, Stacktrace);
         ?EXCEPTION(throw, {implicit_rollback, N, Reason}, Stacktrace, N) ->
             erlang:raise(throw, {implicit_rollback, N - 1, Reason},
                          ?GET_STACK(Stacktrace));
@@ -410,16 +415,19 @@ execute_transaction(Conn, Fun, Args, Retries) ->
             %% exception is the best we can do.
             erlang:raise(error, E, ?GET_STACK(Stacktrace));
         ?EXCEPTION(Class, Reason, Stacktrace) ->
-            %% We must be able to rollback. Otherwise let's crash.
-            ok = gen_server:call(Conn, rollback, infinity),
-            %% These forms for throw, error and exit mirror Mnesia's behaviour.
-            Aborted = case Class of
-                throw -> {throw, Reason};
-                error -> {Reason, ?GET_STACK(Stacktrace)};
-                exit  -> Reason
-            end,
-            {aborted, Aborted}
+            abort_transaction(Conn, Class, Reason, Stacktrace)
     end.
+
+abort_transaction(Conn, Class, Reason, Stacktrace) ->
+    %% We must be able to rollback. Otherwise let's crash.
+    ok = gen_server:call(Conn, rollback, infinity),
+    %% These forms for throw, error and exit mirror Mnesia's behaviour.
+    Aborted = case Class of
+        throw -> {throw, Reason};
+        error -> {Reason, ?GET_STACK(Stacktrace)};
+        exit  -> Reason
+    end,
+    {aborted, Aborted}.
 
 %% @doc Encodes a term as a MySQL literal so that it can be used to inside a
 %% query. If backslash escapes are enabled, backslashes and single quotes in
