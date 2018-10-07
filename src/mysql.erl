@@ -1,5 +1,5 @@
 %% MySQL/OTP – MySQL client library for Erlang/OTP
-%% Copyright (C) 2014-2015 Viktor Söderqvist,
+%% Copyright (C) 2014-2015, 2018 Viktor Söderqvist,
 %%               2016 Johan Lövdahl
 %%               2017 Piotr Nosek, Michal Slaski
 %%
@@ -24,8 +24,6 @@
 %% documentation for `gen_server:call/2,3', e.g. the pid or the name if the
 %% gen_server is locally registered.
 -module(mysql).
-
--include("exception.hrl").
 
 -export([start_link/1, query/2, query/3, query/4, execute/3, execute/4,
          prepare/2, prepare/3, unprepare/2,
@@ -71,6 +69,8 @@
                       | {ok, column_names(), rows()}
                       | {ok, [{column_names(), rows()}, ...]}
                       | {error, server_reason()}.
+
+-include("exception.hrl").
 
 %% @doc Starts a connection gen_server process and connects to a database. To
 %% disconnect just do `exit(Pid, normal)'.
@@ -314,8 +314,7 @@ insert_id(Conn) ->
 
 %% @doc Returns true if the connection is in a transaction and false otherwise.
 %% This works regardless of whether the transaction has been started using
-%% transaction/2,3 or using a plain `mysql:query(Connection, "START
-%% TRANSACTION")'.
+%% transaction/2,3 or using a plain `mysql:query(Connection, "BEGIN")'.
 %% @see transaction/2
 %% @see transaction/4
 -spec in_transaction(connection()) -> boolean().
@@ -352,10 +351,14 @@ transaction(Conn, Fun, Retries) ->
 %%
 %% Note that an error response from a query does not cause a transaction to be
 %% rollbacked. To force a rollback on a MySQL error you can trigger a `badmatch'
-%% using e.g. `ok = mysql:query(Pid, "SELECT some_non_existent_value")'.
-%% Exceptions to this are error 1213 "Deadlock" (after the specified number
-%% retries all have failed) and error 1205 "Lock wait timeout" which causes an
-%% *implicit rollback*.
+%% using e.g. `ok = mysql:query(Pid, "SELECT some_non_existent_value")'. An
+%% exception to this is the error 1213 "Deadlock", after the specified number
+%% of retries, all failed. In this case, the transaction is aborted and the
+%% error is retured as the reason for the aborted transaction, along with a
+%% stacktrace pointing to where the last deadlock was detected. (In earlier
+%% versions, up to and including 1.3.2, transactions where automatically
+%% restarted also for the error 1205 "Lock wait timeout". This is no longer the
+%% case.)
 %%
 %% Some queries such as ALTER TABLE cause an *implicit commit* on the server.
 %% If such a query is executed within a transaction, an error on the form
@@ -386,6 +389,23 @@ transaction(Conn, Fun, Args, Retries) when is_list(Args),
     ok = gen_server:call(Conn, start_transaction, infinity),
     execute_transaction(Conn, Fun, Args, Retries).
 
+%% @private
+%% @doc This is a helper for transaction/2,3,4. It performs everything except
+%% executing the BEGIN statement. It is called recursively when a transaction
+%% is retried.
+%%
+%% "When a transaction rollback occurs due to a deadlock or lock wait timeout,
+%% it cancels the effect of the statements within the transaction. But if the
+%% start-transaction statement was START TRANSACTION or BEGIN statement,
+%% rollback does not cancel that statement."
+%% (https://dev.mysql.com/doc/refman/5.6/en/innodb-error-handling.html)
+%%
+%% Lock Wait Timeout:
+%% "InnoDB rolls back only the last statement on a transaction timeout by
+%% default. If --innodb_rollback_on_timeout is specified, a transaction timeout
+%% causes InnoDB to abort and roll back the entire transaction (the same
+%% behavior as in MySQL 4.1)."
+%% (https://dev.mysql.com/doc/refman/5.6/en/innodb-parameters.html)
 execute_transaction(Conn, Fun, Args, Retries) ->
     try apply(Fun, Args) of
         ResultOfFun ->
@@ -394,11 +414,22 @@ execute_transaction(Conn, Fun, Args, Retries) ->
     catch
         %% We are at the top level, try to restart the transaction if there are
         %% retries left
-        ?EXCEPTION(throw, {implicit_rollback, 1, _}, _Stacktrace) when Retries =:= infinity ->
+        ?EXCEPTION(throw, {implicit_rollback, 1, _}, _Stacktrace)
+          when Retries == infinity ->
             execute_transaction(Conn, Fun, Args, infinity);
-        ?EXCEPTION(throw, {implicit_rollback, 1, _}, _Stacktrace) when Retries > 0 ->
+        ?EXCEPTION(throw, {implicit_rollback, 1, _}, _Stacktrace)
+          when Retries > 0 ->
             execute_transaction(Conn, Fun, Args, Retries - 1);
-        ?EXCEPTION(throw, {implicit_rollback, N, Reason}, Stacktrace, N) ->
+        ?EXCEPTION(throw, {implicit_rollback, 1, Reason}, Stacktrace)
+          when Retries == 0 ->
+            %% No more retries. Return 'aborted' along with the deadlock error
+            %% and a the trace to the line where the deadlock occured.
+            Trace = ?GET_STACK(Stacktrace),
+            ok = gen_server:call(Conn, rollback, infinity),
+            {aborted, {Reason, Trace}};
+        ?EXCEPTION(throw, {implicit_rollback, N, Reason}, Stacktrace)
+          when N > 1 ->
+            %% Nested transaction. Bubble out to the outermost level.
             erlang:raise(throw, {implicit_rollback, N - 1, Reason},
                          ?GET_STACK(Stacktrace));
         ?EXCEPTION(error, {implicit_commit, _Query} = E, Stacktrace) ->
@@ -542,13 +573,9 @@ init(Opts) ->
 %%       able to handle this in the caller's process, we also return the
 %%       nesting level.</dd>
 %%   <dt>`{implicit_rollback, NestingLevel, ServerReason}'</dt>
-%%   <dd>These errors result in an implicit rollback:
-%%       <ul>
-%%         <li>`{1205, <<"HY000">>, <<"Lock wait timeout exceeded;
-%%                                     try restarting transaction">>}'</li>
-%%         <li>`{1213, <<"40001">>, <<"Deadlock found when trying to get lock;
-%%                                     try restarting transaction">>}'</li>
-%%       </ul>
+%%   <dd>This errors results in an implicit rollback: `{1213, <<"40001">>,
+%%       <<"Deadlock found when trying to get lock; try restarting "
+%%         "transaction">>}'.
 %%
 %%       If the caller is in a (nested) transaction, it must be aborted. To be
 %%       able to handle this in the caller's process, we also return the
@@ -591,10 +618,9 @@ handle_call({param_query, Query, Params, Timeout}, _From, State) ->
         not_found ->
             %% Prepare
             SockMod:setopts(Socket, [{active, false}]),
-	    SockMod = State#state.sockmod,
+            SockMod = State#state.sockmod,
             Rec = mysql_protocol:prepare(Query, SockMod, Socket),
             SockMod:setopts(Socket, [{active, once}]),
-            %State1 = update_state(Rec, State),
             case Rec of
                 #error{} = E ->
                     {{error, error_to_reason(E)}, Cache};
@@ -773,9 +799,7 @@ terminate(Reason, #state{socket = Socket, sockmod = SockMod})
   when Reason == normal; Reason == shutdown ->
       %% Send the goodbye message for politeness.
       SockMod:setopts(Socket, [{active, false}]),
-      R = mysql_protocol:quit(SockMod, Socket),
-      SockMod:setopts(Socket, [{active, once}]),
-      R;
+      mysql_protocol:quit(SockMod, Socket);
 terminate(_Reason, _State) ->
     ok.
 
@@ -869,13 +893,13 @@ handle_query_call_reply([Rec|Recs], Query, State, ResultSetsAcc) ->
             Names = [Def#col.name || Def <- ColDefs],
             ResultSetsAcc1 = [{Names, Rows} | ResultSetsAcc],
             handle_query_call_reply(Recs, Query, State, ResultSetsAcc1);
-        #error{code = Code} when State#state.transaction_level > 0,
-                                 Code == ?ERROR_DEADLOCK ->
+        #error{code = ?ERROR_DEADLOCK} when State#state.transaction_level > 0 ->
             %% These errors result in an implicit rollback.
             Reply = {implicit_rollback, State#state.transaction_level,
                      error_to_reason(Rec)},
-            State2 = State#state{transaction_level = 1},
-            {reply, Reply, State2};
+            %% Everything in the transaction is rolled back, except the BEGIN
+            %% statement itself. Thus, we are in transaction level 1.
+            {reply, Reply, State#state{transaction_level = 1}};
         #error{} ->
             {reply, {error, error_to_reason(Rec)}, State}
     end.

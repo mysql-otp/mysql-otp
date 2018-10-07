@@ -275,6 +275,8 @@ maybe_do_ssl_upgrade(SockModule0, Socket0, SeqNum1, Handshake, SSLOpts,
             exit({failed_to_upgrade_socket, Reason})
     end.
 
+%% @doc This function is used when upgrading to encrypted socket. In other,
+%% cases, build_handshake_response/5 is used.
 -spec build_handshake_response(#handshake{}, iodata() | undefined, boolean()) ->
     binary().
 build_handshake_response(Handshake, Database, SetFoundRows) ->

@@ -141,6 +141,7 @@ deadlock_test_() ->
      fun (Conns) ->
          [{"Plain queries", fun () -> deadlock_plain_queries(Conns) end},
           {"Prep stmts", fun () -> deadlock_prepared_statements(Conns) end},
+          {"No retry", fun () -> deadlock_no_retry(Conns) end},
           {"Lock wait timeout", fun () -> lock_wait_timeout(Conns) end}]
      end}.
 
@@ -156,18 +157,14 @@ deadlock_plain_queries({Conn1, Conn2}) ->
     Worker2 = spawn_link(fun () ->
         {atomic, ok} = mysql:transaction(Conn2, fun () ->
             MainPid ! start,
-            %?debugMsg("Worker 2: Starting. First get a lock on row 2."),
             ok = mysql:query(Conn2, "UPDATE foo SET v = 2 WHERE k = 2"),
-            %?debugMsg("Worker 2: Got lock on foo. Now wait for signal from 1."),
             %% Sync. Send 'go' to worker 1 multiple times in case it restarts.
             MainPid ! go, MainPid ! go, MainPid ! go,
             receive go -> ok after 10000 -> throw(too_long) end,
-            %?debugMsg("Worker 2: Got signal from 1. Now get a lock on row 1."),
             {atomic, ok} = mysql:transaction(Conn2, fun () ->
                 %% Nested transaction, just to make sure we can handle nested.
                 ok = mysql:query(Conn2, "UPDATE foo SET v = 2 WHERE k = 1")
             end),
-            %?debugMsg("Worker 2: Got both locks and is done."),
             ok
         end),
         MainPid ! done
@@ -176,18 +173,14 @@ deadlock_plain_queries({Conn1, Conn2}) ->
     %% Do worker 1's job and lock the rows in the opposite order.
     {atomic, ok} = mysql:transaction(Conn1, fun () ->
         MainPid ! start,
-        %?debugMsg("Worker 1: Starting. First get a lock on row 1."),
         ok = mysql:query(Conn1, "UPDATE foo SET v = 1 WHERE k = 1"),
-        %?debugMsg("Worker 1: Got lock on bar. Now wait for signal from 2."),
         %% Sync. Send 'go' to worker 2 multiple times in case it restarts.
         Worker2 ! go, Worker2 ! go, Worker2 ! go,
         receive go -> ok after 10000 -> throw(too_long) end,
-        %?debugMsg("Worker 1: Got signal from 2. Now get lock on row 2."),
         {atomic, ok} = mysql:transaction(Conn1, fun () ->
             %% Nested transaction, just to make sure we can handle nested.
             ok = mysql:query(Conn1, "UPDATE foo SET v = 1 WHERE k = 2")
         end),
-        %?debugMsg("Worker 1: Got both locks and is done."),
         ok
     end),
 
@@ -254,6 +247,62 @@ deadlock_prepared_statements({Conn1, Conn2}) ->
     ?assertEqual(ok, receive start -> ok after 0 -> no_worker_ever_started end),
     ?assertEqual(ok, receive start -> ok after 0 -> only_one_worker_started end),
     ?assertEqual(ok, receive start -> ok after 0 -> there_was_no_deadlock end),
+    flush_inbox().
+
+deadlock_no_retry({Conn1, Conn2}) ->
+    {ok, _, [[2]]} = mysql:query(Conn1, "SELECT COUNT(*) FROM foo"),
+    MainPid = self(),
+    %?debugMsg("\nExtra output from the deadlock test:"),
+
+    %% Spawn worker 2 to lock rows; first in table foo, then in bar.
+    Worker2 = spawn_link(fun () ->
+        Result = mysql:transaction(Conn2, fun () ->
+            MainPid ! start,
+            ok = mysql:query(Conn2, "UPDATE foo SET v = 2 WHERE k = 2"),
+            %% Sync. Send 'go' to worker 1 multiple times in case it restarts.
+            MainPid ! go, MainPid ! go, MainPid ! go,
+            receive go -> ok after 10000 -> throw(too_long) end,
+            {atomic, ok} = mysql:transaction(Conn2, fun () ->
+                %% Nested transaction, just to make sure we can handle nested.
+                ok = mysql:query(Conn2, "UPDATE foo SET v = 2 WHERE k = 1")
+            end),
+            ok
+        end, 0),
+        MainPid ! {done, Result}
+    end),
+
+    %% Do worker 1's job and lock the rows in the opposite order.
+    Result1 = mysql:transaction(Conn1, fun () ->
+        MainPid ! start,
+        ok = mysql:query(Conn1, "UPDATE foo SET v = 1 WHERE k = 1"),
+        %% Sync. Send 'go' to worker 2 multiple times in case it restarts.
+        Worker2 ! go, Worker2 ! go, Worker2 ! go,
+        receive go -> ok after 10000 -> throw(too_long) end,
+        {atomic, ok} = mysql:transaction(Conn1, fun () ->
+            %% Nested transaction, just to make sure we can handle nested.
+            ok = mysql:query(Conn1, "UPDATE foo SET v = 1 WHERE k = 2")
+        end),
+        ok
+    end, 0),
+
+    %% Wait for a reply from worker 2 to make sure it is done.
+    Result2 = receive {done, Result} -> Result end,
+
+    %% Check that one of them was ok, the other one was aborted.
+    [ResultAborted, ResultAtomic] = lists:sort([Result1, Result2]),
+    ?assertEqual({atomic, ok}, ResultAtomic),
+    ?assertMatch({aborted,
+                  {{1213, <<"40001">>, <<"Deadlock", _/binary>>}, _Trace}},
+                 ResultAborted),
+
+    %% None of the connections should be in a transaction at this point
+    ?assertNot(mysql:in_transaction(Conn1)),
+    ?assertNot(mysql:in_transaction(Conn2)),
+
+    %% Make sure we got exactly 2 start messages, i.e. there was no restart.
+    ?assertEqual(ok, receive start -> ok after 0 -> no_worker_ever_started end),
+    ?assertEqual(ok, receive start -> ok after 0 -> only_one_worker_started end),
+    ?assertEqual(ok, receive start -> there_was_a_restart after 0 -> ok end),
     flush_inbox().
 
 lock_wait_timeout({_Conn1, Conn2} = Conns) ->
