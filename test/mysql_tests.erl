@@ -89,6 +89,21 @@ common_conn_close() ->
     end,
     process_flag(trap_exit, false).
 
+exit_normal_test() ->
+    Options = [{user, ?user}, {password, ?password}],
+    {ok, Pid} = mysql:start_link(Options),
+    {ok, ok, LoggedErrors} = error_logger_acc:capture(fun () ->
+        %% Stop the connection without noise, errors or messages
+        exit(Pid, normal),
+        receive
+            UnexpectedExitMessage -> UnexpectedExitMessage
+        after 50 ->
+            ok
+        end
+    end),
+    %% Check that we got nothing in the error log.
+    ?assertEqual([], LoggedErrors).
+
 server_disconnect_test() ->
     process_flag(trap_exit, true),
     Options = [{user, ?user}, {password, ?password}],

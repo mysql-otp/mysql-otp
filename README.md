@@ -2,10 +2,12 @@ MySQL/OTP
 =========
 
 [![Build Status](https://travis-ci.org/mysql-otp/mysql-otp.svg?branch=master)](https://travis-ci.org/mysql-otp/mysql-otp)
+ :link: [Test coverage (EUnit)](//mysql-otp.github.io/mysql-otp/eunit.html)
+ :link: [API documentation (EDoc)](//mysql-otp.github.io/mysql-otp/index.html)
 
-MySQL/OTP is a driver for connecting Erlang/OTP applications to MySQL
-databases (version 4.1 and upward). It is a native implementation of the MySQL
-protocol in Erlang.
+MySQL/OTP is a driver for connecting Erlang/OTP applications to MySQL and
+MariaDB databases. It is a native implementation of the MySQL protocol in
+Erlang.
 
 Some of the features:
 
@@ -23,11 +25,12 @@ Some of the features:
 * Implements both protocols: the binary protocol for prepared statements and
   the text protocol for plain queries.
 
-See also:
+Requirements:
 
-* [API documenation](//mysql-otp.github.io/mysql-otp/index.html) (Edoc)
-* [Test coverage](//mysql-otp.github.io/mysql-otp/eunit.html) (EUnit)
-* [Wiki pages](https://github.com/mysql-otp/mysql-otp/wiki) Connection pooling, related projects and more.
+* Erlang/OTP version R16B or later, excluding 21.0 which has a bug in binary
+  pattern matching. This was fixed in OTP 21.1.
+* MySQL database version 4.1 or later or MariaDB
+* No other dependencies
 
 Synopsis
 --------
@@ -70,6 +73,9 @@ end
 %% Graceful timeout handling: SLEEP() returns 1 when interrupted
 {ok, [<<"SLEEP(5)">>], [[1]]} =
     mysql:query(Pid, <<"SELECT SLEEP(5)">>, 1000),
+
+%% Close the connection; make it exit normally
+exit(Pid, normal).
 ```
 
 Usage as a dependency
@@ -78,13 +84,13 @@ Usage as a dependency
 Using *erlang.mk*:
 
     DEPS = mysql
-    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.3.2
+    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.3.3
 
 Using *rebar*:
 
     {deps, [
         {mysql, ".*", {git, "https://github.com/mysql-otp/mysql-otp",
-                       {tag, "1.3.2"}}}
+                       {tag, "1.3.3"}}}
     ]}.
 
 Tests

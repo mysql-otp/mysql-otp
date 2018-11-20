@@ -1,6 +1,18 @@
 Change log
 ==========
 
+* Mention exit(Pid, normal) in README and a test [2018-11-21 00:51:58 +0100]
+* Return an error on deadlock if all retries fail in a transaction [2018-10-07 20:35:39 +0200]
+* Set gen_server-timeouts for transaction statements to infinity (#91) [2018-10-06 21:39:14 +0200]
+
+1.3.3
+-----
+* Compatibility with OTP 21.1 (#84) [2018-10-02 18:23:43 +0200]
+* Don't restart transaction on lock wait timeout (#89) [2018-09-18 11:10:57 +0200]
+* Make the Travis CI status show the master branch [2018-07-01 00:33:10 +0200]
+* Update README.md [2018-04-13 04:33:52 +0200]
+* Fixed a Typo in the doc [2018-03-21 11:13:26 +0100]
+* Update CHANGELOG.md [2018-03-20 02:44:37 +0100]
 
 1.3.2
 -----
