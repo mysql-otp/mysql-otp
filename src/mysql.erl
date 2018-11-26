@@ -482,6 +482,7 @@ encode(Conn, Term) ->
                 query_timeout, query_cache_time,
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
                 transaction_level = 0, ping_ref = undefined,
+                monitors = maps:new(),
                 stmts = dict:new(), query_cache = empty, cap_found_rows = false}).
 
 %% @private
@@ -714,11 +715,14 @@ handle_call(backslash_escapes_enabled, _From, State = #state{status = S}) ->
     {reply, S band ?SERVER_STATUS_NO_BACKSLASH_ESCAPES == 0, State};
 handle_call(in_transaction, _From, State) ->
     {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};
-handle_call(start_transaction, _From,
+handle_call(start_transaction, {FromPid, _},
             State = #state{socket = Socket, sockmod = SockMod,
-                           transaction_level = L, status = Status})
+                           transaction_level = L, status = Status, monitors = Monitors})
   when Status band ?SERVER_STATUS_IN_TRANS == 0, L == 0;
        Status band ?SERVER_STATUS_IN_TRANS /= 0, L > 0 ->
+
+    MRef = erlang:monitor(process, FromPid),
+
     Query = case L of
         0 -> <<"BEGIN">>;
         _ -> <<"SAVEPOINT s", (integer_to_binary(L))/binary>>
@@ -729,10 +733,18 @@ handle_call(start_transaction, _From,
                                                ?cmd_timeout),
     SockMod:setopts(Socket, [{active, once}]),
     State1 = update_state(Res, State),
-    {reply, ok, State1#state{transaction_level = L + 1}};
-handle_call(rollback, _From, State = #state{socket = Socket, sockmod = SockMod,
-                                            status = Status, transaction_level = L})
+    {reply, ok, State1#state{transaction_level = L + 1, monitors = maps:put(FromPid, MRef, Monitors)}};
+handle_call(rollback, {FromPid, _}, State = #state{socket = Socket, sockmod = SockMod,
+                                            status = Status, transaction_level = L, monitors = Monitors})
   when Status band ?SERVER_STATUS_IN_TRANS /= 0, L >= 1 ->
+    NewMonitors = case maps:take(FromPid, Monitors) of
+        {MRef, M} ->
+            erlang:demonitor(MRef),
+            M;
+        error ->
+            Monitors
+    end,
+
     Query = case L of
         1 -> <<"ROLLBACK">>;
         _ -> <<"ROLLBACK TO s", (integer_to_binary(L - 1))/binary>>
@@ -743,10 +755,18 @@ handle_call(rollback, _From, State = #state{socket = Socket, sockmod = SockMod,
                                                ?cmd_timeout),
     SockMod:setopts(Socket, [{active, once}]),
     State1 = update_state(Res, State),
-    {reply, ok, State1#state{transaction_level = L - 1}};
-handle_call(commit, _From, State = #state{socket = Socket, sockmod = SockMod,
-                                          status = Status, transaction_level = L})
+    {reply, ok, State1#state{transaction_level = L - 1, monitors = NewMonitors}};
+handle_call(commit, {FromPid, _}, State = #state{socket = Socket, sockmod = SockMod,
+                                          status = Status, transaction_level = L, monitors = Monitors})
   when Status band ?SERVER_STATUS_IN_TRANS /= 0, L >= 1 ->
+    NewMonitors = case maps:take(FromPid, Monitors) of
+        {MRef, M} ->
+            erlang:demonitor(MRef),
+            M;
+        error ->
+            Monitors
+    end,
+
     Query = case L of
         1 -> <<"COMMIT">>;
         _ -> <<"RELEASE SAVEPOINT s", (integer_to_binary(L - 1))/binary>>
@@ -757,7 +777,7 @@ handle_call(commit, _From, State = #state{socket = Socket, sockmod = SockMod,
                                                ?cmd_timeout),
     SockMod:setopts(Socket, [{active, once}]),
     State1 = update_state(Res, State),
-    {reply, ok, State1#state{transaction_level = L - 1}}.
+    {reply, ok, State1#state{transaction_level = L - 1, monitors = NewMonitors}}.
 
 %% @private
 handle_cast(_Msg, State) ->
@@ -781,6 +801,8 @@ handle_info(query_cache, #state{query_cache = Cache,
     mysql_cache:size(Cache1) > 0 andalso
         erlang:send_after(CacheTime, self(), query_cache),
     {noreply, State#state{query_cache = Cache1}};
+handle_info({'DOWN', _MRef, _, Pid, _Info}, State) ->
+    stop_server({application_process_died, Pid}, State);
 handle_info(ping, #state{socket = Socket, sockmod = SockMod} = State) ->
     SockMod:setopts(Socket, [{active, false}]),
     SockMod = State#state.sockmod,
