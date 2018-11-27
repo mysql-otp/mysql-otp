@@ -735,8 +735,8 @@ handle_call(start_transaction, {FromPid, _},
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_level = L + 1, monitors = [{FromPid, MRef} | Monitors]}};
 handle_call(rollback, {FromPid, _}, State = #state{socket = Socket, sockmod = SockMod,
-                                            status = Status, transaction_level = L,
-                                            monitors = [{FromPid, MRef}|NewMonitors]})
+                                                   status = Status, transaction_level = L,
+                                                   monitors = [{FromPid, MRef}|NewMonitors]})
   when Status band ?SERVER_STATUS_IN_TRANS /= 0, L >= 1 ->
     erlang:demonitor(MRef),
 
@@ -752,8 +752,8 @@ handle_call(rollback, {FromPid, _}, State = #state{socket = Socket, sockmod = So
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_level = L - 1, monitors = NewMonitors}};
 handle_call(commit, {FromPid, _}, State = #state{socket = Socket, sockmod = SockMod,
-                                          status = Status, transaction_level = L,
-                                          monitors = [{FromPid, MRef}|NewMonitors]})
+                                                 status = Status, transaction_level = L,
+                                                 monitors = [{FromPid, MRef}|NewMonitors]})
   when Status band ?SERVER_STATUS_IN_TRANS /= 0, L >= 1 ->
     erlang:demonitor(MRef),
 
