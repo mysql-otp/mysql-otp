@@ -13,6 +13,7 @@
 
 PROJECT = mysql
 EDOC_OPTS = {stylesheet_file,"priv/edoc-style.css"},{todo,true}
+EUNIT_OPTS = {verbose,true}
 PLT_APPS = crypto ssl inets public_key
 SHELL_PATH = -pa ebin
 
@@ -51,7 +52,7 @@ gh-pages: docs tests-report
 # Build eunit.html containing the coverage report and the test output in the
 # doc directory.
 tests-report: test_command=$(MAKE) --no-print-directory tests COVER=1 \
-              COVER_REPORT_DIR= EUNIT_OPTS={verbose,true}
+              COVER_REPORT_DIR=
 tests-report:
 	@rm -f cover/*.html
 	@$(test_command) | tee tests.output
