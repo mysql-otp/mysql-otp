@@ -129,7 +129,8 @@
 %% </dl>
 -spec start_link(Options) -> {ok, pid()} | ignore | {error, term()}
     when Options :: [Option],
-         Option :: {name, ServerName} | {host, iodata()} | {port, integer()} |
+         Option :: {name, ServerName} |
+                   {host, inet:socket_address() | inet:hostname()} | {port, integer()} |
                    {user, iodata()} | {password, iodata()} |
                    {database, iodata()} |
                    {connect_timeout, timeout()} |
