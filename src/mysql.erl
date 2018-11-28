@@ -891,14 +891,15 @@ handle_query_call_reply([], _Query, State, ResultSetsAcc) ->
         [_|_]                 -> {ok, lists:reverse(ResultSetsAcc)}
     end,
     {reply, Reply, State};
-handle_query_call_reply([Rec|Recs], Query, State, ResultSetsAcc) ->
+handle_query_call_reply([Rec|Recs], Query, #state{monitors = Monitors} = State, ResultSetsAcc) ->
     case Rec of
         #ok{status = Status} when Status band ?SERVER_STATUS_IN_TRANS == 0,
                                   State#state.transaction_level > 0 ->
             %% DDL statements (e.g. CREATE TABLE, ALTER TABLE, etc.) result in
             %% an implicit commit.
             Reply = {implicit_commit, State#state.transaction_level, Query},
-            {reply, Reply, State#state{transaction_level = 0}};
+            NewMonitors = demonitor_processes(Monitors, length(Monitors)),
+            {reply, Reply, State#state{transaction_level = 0, monitors = NewMonitors}};
         #ok{} ->
             handle_query_call_reply(Recs, Query, State, ResultSetsAcc);
         #resultset{cols = ColDefs, rows = Rows} ->
@@ -911,7 +912,8 @@ handle_query_call_reply([Rec|Recs], Query, State, ResultSetsAcc) ->
                      error_to_reason(Rec)},
             %% Everything in the transaction is rolled back, except the BEGIN
             %% statement itself. Thus, we are in transaction level 1.
-            {reply, Reply, State#state{transaction_level = 1}};
+            NewMonitors = demonitor_processes(Monitors, length(Monitors) -1),
+            {reply, Reply, State#state{transaction_level = 1, monitors = NewMonitors}};
         #error{} ->
             {reply, {error, error_to_reason(Rec)}, State}
     end.
@@ -965,3 +967,10 @@ stop_server(Reason,
                          [ConnId, Reason]),
   ok = gen_tcp:close(Socket),
   {stop, Reason, State#state{socket = undefined, connection_id = undefined}}.
+
+demonitor_processes(List, 0) ->
+    List;
+demonitor_processes([{_FromPid, MRef}|T], Count) ->
+    erlang:demonitor(MRef),
+    demonitor_processes(T, Count -1).
+
