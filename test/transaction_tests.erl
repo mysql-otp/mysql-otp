@@ -48,6 +48,58 @@ single_connection_test_() ->
           {"Implicit commit",      fun () -> implicit_commit(Pid) end}]
      end}.
 
+application_process_kill_test() ->
+    {ok, Pid} = mysql:start_link([
+        {user, ?user},
+        {password, ?password},
+        {query_cache_time, 50},
+        {log_warnings, false}
+    ]),
+
+    unlink(Pid),
+    Mref = erlang:monitor(process, Pid),
+
+    ok = mysql:query(Pid, <<"DROP DATABASE IF EXISTS otptest">>),
+    ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
+    ok = mysql:query(Pid, <<"USE otptest">>),
+    ok = mysql:query(Pid, <<"CREATE TABLE foo (bar INT) engine=InnoDB">>),
+
+    ?assertNot(mysql:in_transaction(Pid)),
+    ?assert(is_process_alive(Pid)),
+
+    Self = self(),
+
+    AppPid = spawn(fun() ->
+        mysql:transaction(Pid, fun () ->
+            ok = mysql:query(Pid, "INSERT INTO foo (bar) VALUES (42)"),
+            Self! killme,
+            receive after 10000 -> throw(too_long) end,
+            ok
+        end)
+    end),
+
+    receive killme -> exit(AppPid, kill) end,
+
+    receive
+        {'DOWN', Mref, process, Pid, {application_process_died, AppPid}}->
+            ok
+        after 10000 ->
+            throw(too_long)
+    end,
+
+    ?assertNot(is_process_alive(Pid)),
+
+    {ok, Pid2} = mysql:start_link([
+        {user, ?user},
+        {password, ?password},
+        {query_cache_time, 50},
+        {log_warnings, false}
+    ]),
+    ok = mysql:query(Pid2, <<"USE otptest">>),
+    ?assertMatch({ok, _, []}, mysql:query(Pid2, <<"SELECT * from foo where bar = 42">>)),
+    ok = mysql:query(Pid2, <<"DROP DATABASE otptest">>),
+    exit(Pid2, normal).
+
 simple_atomic(Pid) ->
     ?assertNot(mysql:in_transaction(Pid)),
     Result = mysql:transaction(Pid, fun () ->
