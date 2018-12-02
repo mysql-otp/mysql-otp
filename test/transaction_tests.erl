@@ -48,7 +48,16 @@ single_connection_test_() ->
           {"Implicit commit",      fun () -> implicit_commit(Pid) end}]
      end}.
 
-application_process_kill_test() ->
+application_process_kill_test_() ->
+    {timeout, 30, fun application_process_kill/0}.
+
+application_process_kill() ->
+    %% This test case simulates a setup where the connection is owned by
+    %% another process, e.g. a connection pool. An application process (e.g.
+    %% a cowboy worker) is killed when it using a connection in a transaction.
+    %% In this case, the connection should not go back in the pool as it would
+    %% be in a bad state. Therefore, the connection is monitoring the process
+    %% starting a transaction and kills itself if the caller dies.
     {ok, Pid} = mysql:start_link([
         {user, ?user},
         {password, ?password},
@@ -78,17 +87,27 @@ application_process_kill_test() ->
         end)
     end),
 
-    receive killme -> exit(AppPid, kill) end,
+    %% Wait for the AppPid to be ready to be killed when in a transaction
+    receive killme -> ok end,
 
-    receive
-        {'DOWN', Mref, process, Pid, {application_process_died, AppPid}}->
-            ok
+    %% Kill AppPid, the process using the connection, capturing the noise
+    {ok, ok, LoggedErrors} = error_logger_acc:capture(fun () ->
+        exit(AppPid, kill),
+        receive
+            {'DOWN', Mref, process, Pid, {application_process_died, AppPid}} ->
+                ok
         after 10000 ->
             throw(too_long)
-    end,
+        end
+    end),
+    %% Check that we got the expected error log noise
+    ?assertMatch([{error, "Connection Id" ++ _},     %% from mysql_conn
+                  {error, "** Generic server" ++ _}, %% from gen_server
+                  {error_report, _}], LoggedErrors),
 
     ?assertNot(is_process_alive(Pid)),
 
+    %% Check that the transaction was not commited
     {ok, Pid2} = mysql:start_link([
         {user, ?user},
         {password, ?password},
@@ -96,7 +115,8 @@ application_process_kill_test() ->
         {log_warnings, false}
     ]),
     ok = mysql:query(Pid2, <<"USE otptest">>),
-    ?assertMatch({ok, _, []}, mysql:query(Pid2, <<"SELECT * from foo where bar = 42">>)),
+    ?assertMatch({ok, _, []},
+                 mysql:query(Pid2, <<"SELECT * from foo where bar = 42">>)),
     ok = mysql:query(Pid2, <<"DROP DATABASE otptest">>),
     exit(Pid2, normal).
 
