@@ -31,6 +31,10 @@ Requirements:
   pattern matching. This was fixed in OTP 21.1.
 * MySQL database version 4.1 or later or MariaDB
 * No other dependencies
+* Authentication method `caching_sha2_password` is not supported. This is the
+  default in MySQL 8.0.4 and later, so you need to add
+  `default_authentication_plugin=mysql_native_password` under `[mysqld]` in e.g.
+  `/etc/mysql/my.cnf`.
 
 Synopsis
 --------
@@ -39,7 +43,8 @@ Synopsis
 %% Connect (ssl is optional)
 {ok, Pid} = mysql:start_link([{host, "localhost"}, {user, "foo"},
                               {password, "hello"}, {database, "test"},
-                              {ssl, [{cacertfile, "/path/to/ca.pem"}]}]),
+                              {ssl, [{server_name_indication, disable},
+                                     {cacertfile, "/path/to/ca.pem"}]}]),
 
 %% Select
 {ok, ColumnNames, Rows} =
@@ -110,8 +115,11 @@ start MySQL on localhost and give privileges to the user `otptest` and (for
 `ssl_tests`) to the user `otptestssl`:
 
 ```SQL
-grant all privileges on otptest.* to otptest@localhost identified by 'otptest';
-grant all privileges on otptest.* to otptestssl@localhost identified by 'otptestssl' require ssl;
+CREATE USER otptest@localhost IDENTIFIED BY 'otptest';
+GRANT ALL PRIVILEGES ON otptest.* TO otptest@localhost;
+
+CREATE USER otptestssl@localhost IDENTIFIED BY 'otptestssl';
+GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost REQUIRE SSL;
 ```
 
 Before running the test suite `ssl_tests` you'll also need to generate SSL files
