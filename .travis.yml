@@ -12,8 +12,8 @@ before_script:
   - sleep 5
   - mysql -uroot -e "CREATE USER otptest@localhost IDENTIFIED BY 'otptest';"
   - mysql -uroot -e "GRANT ALL PRIVILEGES ON otptest.* TO otptest@localhost;"
-  - mysql -uroot -e "CREATE USER otptestssl@localhost IDENTIFIED BY 'otptestssl' REQUIRE SSL;"
-  - mysql -uroot -e "GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost;"
+  - mysql -uroot -e "CREATE USER otptestssl@localhost IDENTIFIED BY 'otptestssl';"
+  - mysql -uroot -e "GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost REQUIRE SSL;"
 script: 'make tests'
 otp_release:
   - 21.1

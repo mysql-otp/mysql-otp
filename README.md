@@ -118,8 +118,8 @@ start MySQL on localhost and give privileges to the user `otptest` and (for
 CREATE USER otptest@localhost IDENTIFIED BY 'otptest';
 GRANT ALL PRIVILEGES ON otptest.* TO otptest@localhost;
 
-CREATE USER otptestssl@localhost IDENTIFIED BY 'otptestssl' REQUIRE SSL;
-GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost;
+CREATE USER otptestssl@localhost IDENTIFIED BY 'otptestssl';
+GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost REQUIRE SSL;
 ```
 
 Before running the test suite `ssl_tests` you'll also need to generate SSL files
