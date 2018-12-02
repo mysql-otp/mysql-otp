@@ -56,6 +56,42 @@ failing_connect_test() ->
     end,
     process_flag(trap_exit, false).
 
+too_many_connections_test_() ->
+    {timeout, 30, fun too_many_connections/0}.
+
+too_many_connections() ->
+    process_flag(trap_exit, true),
+    try
+        Pids = too_many_connections(200),
+        %?debugFmt("Max connections seems to be ~p~n", [length(Pids)]),
+        %% Collect all the trapped exits.
+        receive {'EXIT', _, Reason} ->
+            ?assertMatch({1040, <<"08004">>, <<"Too many connections">>},
+                         Reason)
+        after 50 -> ok
+        end,
+        lists:foreach(fun (Pid) ->
+                              exit(Pid, normal),
+                              receive {'EXIT', _, normal} -> ok
+                              after 50 -> ok
+                              end
+                      end,
+                      Pids)
+    after
+        process_flag(trap_exit, false),
+        timer:sleep(1000)
+    end.
+
+too_many_connections(Max) when Max > 0 ->
+    Options = [{user, ?user}, {password, ?password}, {connect_timeout, 10000}],
+    case mysql:start_link(Options) of
+        {ok, Pid} ->
+            [Pid | too_many_connections(Max - 1)];
+        {error, E} ->
+            ?assertMatch({1040, <<"08004">>, <<"Too many connections">>}, E),
+            []
+    end.
+
 successful_connect_test() ->
     %% A connection with a registered name and execute initial queries and
     %% create prepared statements.

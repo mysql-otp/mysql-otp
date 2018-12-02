@@ -57,15 +57,19 @@ handshake(Username, Password, Database, SockModule0, SSLOpts, Socket0,
           SetFoundRows) ->
     SeqNum0 = 0,
     {ok, HandshakePacket, SeqNum1} = recv_packet(SockModule0, Socket0, SeqNum0),
-    Handshake = parse_handshake(HandshakePacket),
-    {ok, SockModule, Socket, SeqNum2}
-    = maybe_do_ssl_upgrade(SockModule0, Socket0, SeqNum1, Handshake,
-                           SSLOpts, Database, SetFoundRows),
-    Response = build_handshake_response(Handshake, Username, Password,
-                                        Database, SetFoundRows),
-    {ok, SeqNum3} = send_packet(SockModule, Socket, Response, SeqNum2),
-    handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket,
-                                    SeqNum3).
+    case parse_handshake(HandshakePacket) of
+        #handshake{} = Handshake ->
+            {ok, SockModule, Socket, SeqNum2} =
+                maybe_do_ssl_upgrade(SockModule0, Socket0, SeqNum1, Handshake,
+                                     SSLOpts, Database, SetFoundRows),
+            Response = build_handshake_response(Handshake, Username, Password,
+                                                Database, SetFoundRows),
+            {ok, SeqNum3} = send_packet(SockModule, Socket, Response, SeqNum2),
+            handshake_finish_or_switch_auth(Handshake, Password, SockModule,
+                                            Socket, SeqNum3);
+        #error{} = Error ->
+            Error
+    end.
 
 handshake_finish_or_switch_auth(Handshake = #handshake{status = Status}, Password,
                                 SockModule, Socket, SeqNum0) ->
@@ -204,7 +208,7 @@ fetch_execute_response(SockModule, Socket, Timeout) ->
 %% @doc Parses a handshake. This is the first thing that comes from the server
 %% when connecting. If an unsupported version or variant of the protocol is used
 %% an error is raised.
--spec parse_handshake(binary()) -> #handshake{}.
+-spec parse_handshake(binary()) -> #handshake{} | #error{}.
 parse_handshake(<<10, Rest/binary>>) ->
     %% Protocol version 10.
     {ServerVersion, Rest1} = nulterm_str(Rest),
@@ -241,6 +245,9 @@ parse_handshake(<<10, Rest/binary>>) ->
                status = StatusFlags,
                auth_plugin_data = AuthPluginData,
                auth_plugin_name = AuthPluginName1};
+parse_handshake(Packet = ?error_pattern) ->
+    %% 'Too many connections' in MariaDB 10.1.21
+    parse_error_packet(Packet);
 parse_handshake(<<Protocol:8, _/binary>>) when Protocol /= 10 ->
     error(unknown_protocol).
 
