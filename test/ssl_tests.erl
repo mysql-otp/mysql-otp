@@ -1,5 +1,6 @@
 %% MySQL/OTP – MySQL client library for Erlang/OTP
-%% Copyright (C) 2017 Piotr Nosek, Viktor Söderqvist
+%% Copyright (C) 2017 Piotr Nosek
+%% Copyright (C) 2017-2018 Viktor Söderqvist
 %%
 %% This file is part of MySQL/OTP.
 %%
@@ -24,16 +25,11 @@
 -define(ssl_user,     "otptestssl").
 -define(ssl_password, "otptestssl").
 -define(cacertfile,   "test/ssl/ca.pem").
--define(certfile,     "test/ssl/server-cert.pem").
--define(keyfile,      "test/ssl/server-key.pem").
 
 successful_ssl_connect_test() ->
     [ application:start(App) || App <- [crypto, asn1, public_key, ssl] ],
-    common_basic_check([{ssl, [
-                        {server_name_indication, disable}, 
-                        {cacertfile, ?cacertfile}]},
-                        {certfile, ?certfile},
-                        {keyfile, ?keyfile},
+    common_basic_check([{ssl, [{server_name_indication, disable},
+                               {cacertfile, ?cacertfile}]},
                         {user, ?ssl_user}, {password, ?ssl_password}]),
     common_conn_close(),
     ok.

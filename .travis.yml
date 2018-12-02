@@ -10,8 +10,10 @@ before_script:
   - cat test/ssl/my-ssl.cnf | sudo tee -a /etc/mysql/conf.d/my-ssl.cnf
   - sudo service mysql start
   - sleep 5
-  - mysql -uroot -e "grant all privileges on otptest.* to otptest@localhost identified by 'otptest'"
-  - mysql -uroot -e "grant all privileges on otptestssl.* to otptestssl@localhost identified by 'otptestssl' require ssl"
+  - mysql -uroot -e "CREATE USER otptest@localhost IDENTIFIED BY 'otptest';"
+  - mysql -uroot -e "GRANT ALL PRIVILEGES ON otptest.* TO otptest@localhost;"
+  - mysql -uroot -e "CREATE USER otptestssl@localhost IDENTIFIED BY 'otptestssl';"
+  - mysql -uroot -e "GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost REQUIRE SSL;"
 script: 'make tests'
 otp_release:
   - 21.1

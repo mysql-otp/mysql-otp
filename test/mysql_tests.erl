@@ -29,7 +29,7 @@
 
 %% We need to set a the SQL mode so it is consistent across MySQL versions
 %% and distributions.
--define(SQL_MODE, <<"NO_ENGINE_SUBSTITUTION,NO_AUTO_CREATE_USER">>).
+-define(SQL_MODE, <<"NO_ENGINE_SUBSTITUTION">>).
 
 -define(create_table_t, <<"CREATE TABLE t ("
                           "  id INT NOT NULL PRIMARY KEY AUTO_INCREMENT,"
