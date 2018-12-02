@@ -5,7 +5,7 @@
 <title>cover/mysql_sock_tcp.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_sock_tcp.erl by COVER 2018-03-20 at 02:45:44
+File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_sock_tcp.erl by COVER 2018-12-02 at 22:43:59
 
 ****************************************************************************
 
@@ -35,22 +35,22 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_sock_tcp.erl b
         |  -export([setopts/2]).
         |  
         |  connect(Host, Port, SockOpts) -&gt;
-    18..|      gen_tcp:connect(Host, Port, SockOpts).
+    21..|      gen_tcp:connect(Host, Port, SockOpts).
         |  
         |  close(Socket) -&gt;
 <font color=red>     0..|      gen_tcp:close(Socket).</font>
         |  
         |  send(Socket, Packet) -&gt;
-   853..|      gen_tcp:send(Socket, Packet).
+   877..|      gen_tcp:send(Socket, Packet).
         |  
         |  recv(Socket, Length) -&gt;
-  2026..|      gen_tcp:recv(Socket, Length).
+  2058..|      gen_tcp:recv(Socket, Length).
         |  
         |  recv(Socket, Length, Timeout) -&gt;
-  2042..|      gen_tcp:recv(Socket, Length, Timeout).
+  2076..|      gen_tcp:recv(Socket, Length, Timeout).
         |  
         |  setopts(Socket, SockOpts) -&gt;
-  1668..|      inet:setopts(Socket, SockOpts).
+  1701..|      inet:setopts(Socket, SockOpts).
 </pre>
 </body>
 </html>

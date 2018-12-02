@@ -1,0 +1,546 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<title>cover/mysql_conn.COVER.html</title>
+</head><body style='background-color: white; color: black'>
+<pre>
+File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by COVER 2018-12-02 at 22:43:59
+
+****************************************************************************
+
+        |  %% MySQL/OTP – MySQL client library for Erlang/OTP
+        |  %% Copyright (C) 2014-2018 Viktor Söderqvist
+        |  %%
+        |  %% This file is part of MySQL/OTP.
+        |  %%
+        |  %% MySQL/OTP is free software: you can redistribute it and/or modify it under
+        |  %% the terms of the GNU Lesser General Public License as published by the Free
+        |  %% Software Foundation, either version 3 of the License, or (at your option)
+        |  %% any later version.
+        |  %%
+        |  %% This program is distributed in the hope that it will be useful, but WITHOUT
+        |  %% ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+        |  %% FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+        |  %% more details.
+        |  %%
+        |  %% You should have received a copy of the GNU Lesser General Public License
+        |  %% along with this program. If not, see &lt;https://www.gnu.org/licenses/&gt;.
+        |  
+        |  %% @doc This module implements parts of the MySQL client/server protocol.
+        |  %%
+        |  %% The protocol is described in the document "MySQL Internals" which can be
+        |  %% found under "MySQL Documentation: Expert Guides" on http://dev.mysql.com/.
+        |  %%
+        |  %% TCP communication is not handled in this module. Most of the public functions
+        |  %% take funs for data communitaction as parameters.
+        |  %% @private
+        |  -module(mysql_conn).
+        |  
+        |  -behaviour(gen_server).
+        |  -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
+        |           code_change/3]).
+        |  
+        |  -define(default_host, "localhost").
+        |  -define(default_port, 3306).
+        |  -define(default_user, &lt;&lt;&gt;&gt;).
+        |  -define(default_password, &lt;&lt;&gt;&gt;).
+        |  -define(default_query_timeout, infinity).
+        |  -define(default_query_cache_time, 60000). %% for query/3.
+        |  -define(default_ping_timeout, 60000).
+        |  
+        |  -define(cmd_timeout, 3000). %% Timeout used for various commands to the server
+        |  
+        |  %% Errors that cause "implicit rollback"
+        |  -define(ERROR_DEADLOCK, 1213).
+        |  
+        |  %% --- Gen_server callbacks ---
+        |  
+        |  -include("records.hrl").
+        |  -include("server_status.hrl").
+        |  
+        |  %% Gen_server state
+        |  -record(state, {server_version, connection_id, socket, sockmod, ssl_opts,
+        |                  host, port, user, password, log_warnings,
+        |                  ping_timeout,
+        |                  query_timeout, query_cache_time,
+        |                  affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
+        |                  transaction_levels = [], ping_ref = undefined,
+        |                  stmts = dict:new(), query_cache = empty, cap_found_rows = false}).
+        |  
+        |  %% @private
+        |  init(Opts) -&gt;
+        |      %% Connect
+    18..|      Host           = proplists:get_value(host, Opts, ?default_host),
+    18..|      Port           = proplists:get_value(port, Opts, ?default_port),
+    18..|      User           = proplists:get_value(user, Opts, ?default_user),
+    18..|      Password       = proplists:get_value(password, Opts, ?default_password),
+    18..|      Database       = proplists:get_value(database, Opts, undefined),
+    18..|      LogWarn        = proplists:get_value(log_warnings, Opts, true),
+    18..|      KeepAlive      = proplists:get_value(keep_alive, Opts, false),
+    18..|      Timeout        = proplists:get_value(query_timeout, Opts,
+        |                                           ?default_query_timeout),
+    18..|      QueryCacheTime = proplists:get_value(query_cache_time, Opts,
+        |                                           ?default_query_cache_time),
+    18..|      TcpOpts        = proplists:get_value(tcp_options, Opts, []),
+    18..|      SetFoundRows   = proplists:get_value(found_rows, Opts, false),
+    18..|      SSLOpts        = proplists:get_value(ssl, Opts, undefined),
+    18..|      SockMod0       = mysql_sock_tcp,
+        |  
+    18..|      PingTimeout = case KeepAlive of
+     2..|          true         -&gt; ?default_ping_timeout;
+    15..|          false        -&gt; infinity;
+     1..|          N when N &gt; 0 -&gt; N
+        |      end,
+        |  
+        |      %% Connect socket
+    18..|      SockOpts = [binary, {packet, raw}, {active, false} | TcpOpts],
+    18..|      {ok, Socket0} = SockMod0:connect(Host, Port, SockOpts),
+        |  
+        |      %% Exchange handshake communication.
+    18..|      Result = mysql_protocol:handshake(User, Password, Database, SockMod0, SSLOpts,
+        |                                        Socket0, SetFoundRows),
+    18..|      case Result of
+        |          {ok, Handshake, SockMod, Socket} -&gt;
+    17..|              SockMod:setopts(Socket, [{active, once}]),
+        |              #handshake{server_version = Version, connection_id = ConnId,
+    17..|                         status = Status} = Handshake,
+    17..|              State = #state{server_version = Version, connection_id = ConnId,
+        |                             sockmod = SockMod,
+        |                             socket = Socket,
+        |                             ssl_opts = SSLOpts,
+        |                             host = Host, port = Port, user = User,
+        |                             password = Password, status = Status,
+        |                             log_warnings = LogWarn,
+        |                             ping_timeout = PingTimeout,
+        |                             query_timeout = Timeout,
+        |                             query_cache_time = QueryCacheTime,
+        |                             cap_found_rows = (SetFoundRows =:= true)},
+        |              %% Trap exit so that we can properly disconnect when we die.
+    17..|              process_flag(trap_exit, true),
+    17..|              State1 = schedule_ping(State),
+    17..|              {ok, State1};
+        |          #error{} = E -&gt;
+     1..|              {stop, error_to_reason(E)}
+        |      end.
+        |  
+        |  %% @private
+        |  %% @doc
+        |  %%
+        |  %% Query and execute calls:
+        |  %%
+        |  %% &lt;ul&gt;
+        |  %%   &lt;li&gt;{query, Query}&lt;/li&gt;
+        |  %%   &lt;li&gt;{query, Query, Timeout}&lt;/li&gt;
+        |  %%   &lt;li&gt;{param_query, Query, Params}&lt;/li&gt;
+        |  %%   &lt;li&gt;{param_query, Query, Params, Timeout}&lt;/li&gt;
+        |  %%   &lt;li&gt;{execute, Stmt, Args}&lt;/li&gt;
+        |  %%   &lt;li&gt;{execute, Stmt, Args, Timeout}&lt;/li&gt;
+        |  %% &lt;/ul&gt;
+        |  %%
+        |  %% For the calls listed above, we return these values:
+        |  %%
+        |  %% &lt;dl&gt;
+        |  %%   &lt;dt&gt;`ok'&lt;/dt&gt;
+        |  %%   &lt;dd&gt;Success without returning any table data (UPDATE, etc.)&lt;/dd&gt;
+        |  %%   &lt;dt&gt;`{ok, ColumnNames, Rows}'&lt;/dt&gt;
+        |  %%   &lt;dd&gt;Queries returning one result set of table data&lt;/dd&gt;
+        |  %%   &lt;dt&gt;`{ok, [{ColumnNames, Rows}, ...]}'&lt;/dt&gt;
+        |  %%   &lt;dd&gt;Queries returning more than one result set of table data&lt;/dd&gt;
+        |  %%   &lt;dt&gt;`{error, ServerReason}'&lt;/dt&gt;
+        |  %%   &lt;dd&gt;MySQL server error&lt;/dd&gt;
+        |  %%   &lt;dt&gt;`{implicit_commit, NestingLevel, Query}'&lt;/dt&gt;
+        |  %%   &lt;dd&gt;A DDL statement (e.g. CREATE TABLE, ALTER TABLE, etc.) results in
+        |  %%       an implicit commit.
+        |  %%
+        |  %%       If the caller is in a (nested) transaction, it must be aborted. To be
+        |  %%       able to handle this in the caller's process, we also return the
+        |  %%       nesting level.&lt;/dd&gt;
+        |  %%   &lt;dt&gt;`{implicit_rollback, NestingLevel, ServerReason}'&lt;/dt&gt;
+        |  %%   &lt;dd&gt;This errors results in an implicit rollback: `{1213, &lt;&lt;"40001"&gt;&gt;,
+        |  %%       &lt;&lt;"Deadlock found when trying to get lock; try restarting "
+        |  %%         "transaction"&gt;&gt;}'.
+        |  %%
+        |  %%       If the caller is in a (nested) transaction, it must be aborted. To be
+        |  %%       able to handle this in the caller's process, we also return the
+        |  %%       nesting level.&lt;/dd&gt;
+        |  %% &lt;/dl&gt;
+        |  handle_call({query, Query}, From, State) -&gt;
+   395..|      handle_call({query, Query, State#state.query_timeout}, From, State);
+        |  handle_call({query, Query, Timeout}, _From, State) -&gt;
+   397..|      SockMod = State#state.sockmod,
+   397..|      Socket = State#state.socket,
+   397..|      SockMod:setopts(Socket, [{active, false}]),
+   397..|      {ok, Recs} = case mysql_protocol:query(Query, SockMod, Socket, Timeout) of
+        |          {error, timeout} when State#state.server_version &gt;= [5, 0, 0] -&gt;
+     1..|              kill_query(State),
+     1..|              mysql_protocol:fetch_query_response(SockMod, Socket, ?cmd_timeout);
+        |          {error, timeout} -&gt;
+        |              %% For MySQL 4.x.x there is no way to recover from timeout except
+        |              %% killing the connection itself.
+<font color=red>     0..|              exit(timeout);</font>
+        |          QueryResult -&gt;
+   396..|              QueryResult
+        |      end,
+   397..|      SockMod:setopts(Socket, [{active, once}]),
+   397..|      State1 = lists:foldl(fun update_state/2, State, Recs),
+   397..|      State1#state.warning_count &gt; 0 andalso State1#state.log_warnings
+     1..|          andalso log_warnings(State1, Query),
+   397..|      handle_query_call_reply(Recs, Query, State1, []);
+        |  handle_call({param_query, Query, Params}, From, State) -&gt;
+     9..|      handle_call({param_query, Query, Params, State#state.query_timeout}, From,
+        |                  State);
+        |  handle_call({param_query, Query, Params, Timeout}, _From, State) -&gt;
+        |      %% Parametrized query: Prepared statement cached with the query as the key
+    10..|      QueryBin = iolist_to_binary(Query),
+    10..|      #state{socket = Socket, sockmod = SockMod} = State,
+    10..|      Cache = State#state.query_cache,
+    10..|      {StmtResult, Cache1} = case mysql_cache:lookup(QueryBin, Cache) of
+        |          {found, FoundStmt, NewCache} -&gt;
+        |              %% Found
+     1..|              {{ok, FoundStmt}, NewCache};
+        |          not_found -&gt;
+        |              %% Prepare
+     9..|              SockMod:setopts(Socket, [{active, false}]),
+     9..|              SockMod = State#state.sockmod,
+     9..|              Rec = mysql_protocol:prepare(Query, SockMod, Socket),
+     9..|              SockMod:setopts(Socket, [{active, once}]),
+     9..|              case Rec of
+        |                  #error{} = E -&gt;
+     1..|                      {{error, error_to_reason(E)}, Cache};
+        |                  #prepared{} = Stmt -&gt;
+        |                      %% If the first entry in the cache, start the timer.
+     8..|                      Cache == empty andalso begin
+     5..|                          When = State#state.query_cache_time * 2,
+     5..|                          erlang:send_after(When, self(), query_cache)
+        |                      end,
+     8..|                      {{ok, Stmt}, mysql_cache:store(QueryBin, Stmt, Cache)}
+        |              end
+        |      end,
+    10..|      case StmtResult of
+        |          {ok, StmtRec} -&gt;
+     9..|              State1 = State#state{query_cache = Cache1},
+     9..|              execute_stmt(StmtRec, Params, Timeout, State1);
+        |          PrepareError -&gt;
+     1..|              {reply, PrepareError, State}
+        |      end;
+        |  handle_call({execute, Stmt, Args}, From, State) -&gt;
+   183..|      handle_call({execute, Stmt, Args, State#state.query_timeout}, From, State);
+        |  handle_call({execute, Stmt, Args, Timeout}, _From, State) -&gt;
+   184..|      case dict:find(Stmt, State#state.stmts) of
+        |          {ok, StmtRec} -&gt;
+   183..|              execute_stmt(StmtRec, Args, Timeout, State);
+        |          error -&gt;
+     1..|              {reply, {error, not_prepared}, State}
+        |      end;
+        |  handle_call({prepare, Query}, _From, State) -&gt;
+    91..|      #state{socket = Socket, sockmod = SockMod} = State,
+    91..|      SockMod:setopts(Socket, [{active, false}]),
+    91..|      SockMod = State#state.sockmod,
+    91..|      Rec = mysql_protocol:prepare(Query, SockMod, Socket),
+    91..|      SockMod:setopts(Socket, [{active, once}]),
+    91..|      State1 = update_state(Rec, State),
+    91..|      case Rec of
+        |          #error{} = E -&gt;
+     1..|              {reply, {error, error_to_reason(E)}, State1};
+        |          #prepared{statement_id = Id} = Stmt -&gt;
+    90..|              Stmts1 = dict:store(Id, Stmt, State1#state.stmts),
+    90..|              State2 = State#state{stmts = Stmts1},
+    90..|              {reply, {ok, Id}, State2}
+        |      end;
+        |  handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) -&gt;
+     9..|      #state{socket = Socket, sockmod = SockMod} = State,
+        |      %% First unprepare if there is an old statement with this name.
+     9..|      SockMod:setopts(Socket, [{active, false}]),
+     9..|      SockMod = State#state.sockmod,
+     9..|      State1 = case dict:find(Name, State#state.stmts) of
+        |          {ok, OldStmt} -&gt;
+     1..|              mysql_protocol:unprepare(OldStmt, SockMod, Socket),
+     1..|              State#state{stmts = dict:erase(Name, State#state.stmts)};
+        |          error -&gt;
+     8..|              State
+        |      end,
+     9..|      Rec = mysql_protocol:prepare(Query, SockMod, Socket),
+     9..|      SockMod:setopts(Socket, [{active, once}]),
+     9..|      State2 = update_state(Rec, State1),
+     9..|      case Rec of
+        |          #error{} = E -&gt;
+     1..|              {reply, {error, error_to_reason(E)}, State2};
+        |          #prepared{} = Stmt -&gt;
+     8..|              Stmts1 = dict:store(Name, Stmt, State2#state.stmts),
+     8..|              State3 = State2#state{stmts = Stmts1},
+     8..|              {reply, {ok, Name}, State3}
+        |      end;
+        |  handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);
+        |                                                    is_integer(Stmt) -&gt;
+    90..|      case dict:find(Stmt, State#state.stmts) of
+        |          {ok, StmtRec} -&gt;
+    88..|              #state{socket = Socket, sockmod = SockMod} = State,
+    88..|              SockMod:setopts(Socket, [{active, false}]),
+    88..|              SockMod = State#state.sockmod,
+    88..|              mysql_protocol:unprepare(StmtRec, SockMod, Socket),
+    88..|              SockMod:setopts(Socket, [{active, once}]),
+    88..|              State1 = State#state{stmts = dict:erase(Stmt, State#state.stmts)},
+    88..|              State2 = schedule_ping(State1),
+    88..|              {reply, ok, State2};
+        |          error -&gt;
+     2..|              {reply, {error, not_prepared}, State}
+        |      end;
+        |  handle_call(warning_count, _From, State) -&gt;
+     2..|      {reply, State#state.warning_count, State};
+        |  handle_call(insert_id, _From, State) -&gt;
+     1..|      {reply, State#state.insert_id, State};
+        |  handle_call(affected_rows, _From, State) -&gt;
+     3..|      {reply, State#state.affected_rows, State};
+        |  handle_call(autocommit, _From, State) -&gt;
+     3..|      {reply, State#state.status band ?SERVER_STATUS_AUTOCOMMIT /= 0, State};
+        |  handle_call(backslash_escapes_enabled, _From, State = #state{status = S}) -&gt;
+     2..|      {reply, S band ?SERVER_STATUS_NO_BACKSLASH_ESCAPES == 0, State};
+        |  handle_call(in_transaction, _From, State) -&gt;
+    11..|      {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};
+        |  handle_call(start_transaction, {FromPid, _},
+        |              State = #state{socket = Socket, sockmod = SockMod,
+        |                             transaction_levels = L, status = Status})
+        |    when Status band ?SERVER_STATUS_IN_TRANS == 0, L == [];
+        |         Status band ?SERVER_STATUS_IN_TRANS /= 0, L /= [] -&gt;
+    27..|      MRef = erlang:monitor(process, FromPid),
+    27..|      Query = case L of
+    16..|          [] -&gt; &lt;&lt;"BEGIN"&gt;&gt;;
+    11..|          _  -&gt; &lt;&lt;"SAVEPOINT s", (integer_to_binary(length(L)))/binary&gt;&gt;
+        |      end,
+    27..|      SockMod:setopts(Socket, [{active, false}]),
+    27..|      SockMod = State#state.sockmod,
+    27..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
+        |                                                 ?cmd_timeout),
+    27..|      SockMod:setopts(Socket, [{active, once}]),
+    27..|      State1 = update_state(Res, State),
+    27..|      {reply, ok, State1#state{transaction_levels = [{FromPid, MRef} | L]}};
+        |  handle_call(rollback, {FromPid, _},
+        |              State = #state{socket = Socket, sockmod = SockMod, status = Status,
+        |                             transaction_levels = [{FromPid, MRef} | L]})
+        |    when Status band ?SERVER_STATUS_IN_TRANS /= 0 -&gt;
+     5..|      erlang:demonitor(MRef),
+     5..|      Query = case L of
+     4..|          [] -&gt; &lt;&lt;"ROLLBACK"&gt;&gt;;
+     1..|          _  -&gt; &lt;&lt;"ROLLBACK TO s", (integer_to_binary(length(L)))/binary&gt;&gt;
+        |      end,
+     5..|      SockMod:setopts(Socket, [{active, false}]),
+     5..|      SockMod = State#state.sockmod,
+     5..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
+        |                                                 ?cmd_timeout),
+     5..|      SockMod:setopts(Socket, [{active, once}]),
+     5..|      State1 = update_state(Res, State),
+     5..|      {reply, ok, State1#state{transaction_levels = L}};
+        |  handle_call(commit, {FromPid, _},
+        |              State = #state{socket = Socket, sockmod = SockMod, status = Status,
+        |                             transaction_levels = [{FromPid, MRef} | L]})
+        |    when Status band ?SERVER_STATUS_IN_TRANS /= 0 -&gt;
+    16..|      erlang:demonitor(MRef),
+    16..|      Query = case L of
+    10..|          [] -&gt; &lt;&lt;"COMMIT"&gt;&gt;;
+     6..|          _  -&gt; &lt;&lt;"RELEASE SAVEPOINT s", (integer_to_binary(length(L)))/binary&gt;&gt;
+        |      end,
+    16..|      SockMod:setopts(Socket, [{active, false}]),
+    16..|      SockMod = State#state.sockmod,
+    16..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
+        |                                                 ?cmd_timeout),
+    16..|      SockMod:setopts(Socket, [{active, once}]),
+    16..|      State1 = update_state(Res, State),
+    16..|      {reply, ok, State1#state{transaction_levels = L}}.
+        |  
+        |  %% @private
+        |  handle_cast(_Msg, State) -&gt;
+     1..|      {noreply, State}.
+        |  
+        |  %% @private
+        |  handle_info(query_cache, #state{query_cache = Cache,
+        |                                  query_cache_time = CacheTime} = State) -&gt;
+        |      %% Evict expired queries/statements in the cache used by query/3.
+     1..|      {Evicted, Cache1} = mysql_cache:evict_older_than(Cache, CacheTime),
+        |      %% Unprepare the evicted statements
+     1..|      #state{socket = Socket, sockmod = SockMod} = State,
+     1..|      SockMod:setopts(Socket, [{active, false}]),
+     1..|      SockMod = State#state.sockmod,
+     1..|      lists:foreach(fun ({_Query, Stmt}) -&gt;
+     1..|                        mysql_protocol:unprepare(Stmt, SockMod, Socket)
+        |                    end,
+        |                    Evicted),
+     1..|      SockMod:setopts(Socket, [{active, once}]),
+        |      %% If nonempty, schedule eviction again.
+     1..|      mysql_cache:size(Cache1) &gt; 0 andalso
+<font color=red>     0..|          erlang:send_after(CacheTime, self(), query_cache),</font>
+     1..|      {noreply, State#state{query_cache = Cache1}};
+        |  handle_info({'DOWN', _MRef, _, Pid, _Info}, State) -&gt;
+     1..|      stop_server({application_process_died, Pid}, State);
+        |  handle_info(ping, #state{socket = Socket, sockmod = SockMod} = State) -&gt;
+     4..|      SockMod:setopts(Socket, [{active, false}]),
+     4..|      SockMod = State#state.sockmod,
+     4..|      Ok = mysql_protocol:ping(SockMod, Socket),
+     3..|      SockMod:setopts(Socket, [{active, once}]),
+     3..|      {noreply, update_state(Ok, State)};
+        |  handle_info({tcp_closed, _Socket}, State) -&gt;
+     1..|      stop_server(tcp_closed, State);
+        |  handle_info({tcp_error, _Socket, Reason}, State) -&gt;
+     1..|      stop_server({tcp_error, Reason}, State);
+        |  handle_info(_Info, State) -&gt;
+     2..|      {noreply, State}.
+        |  
+        |  %% @private
+        |  terminate(Reason, #state{socket = Socket, sockmod = SockMod})
+        |    when Reason == normal; Reason == shutdown -&gt;
+        |        %% Send the goodbye message for politeness.
+    13..|        SockMod:setopts(Socket, [{active, false}]),
+    13..|        mysql_protocol:quit(SockMod, Socket);
+        |  terminate(_Reason, _State) -&gt;
+     5..|      ok.
+        |  
+        |  %% @private
+        |  code_change(_OldVsn, State = #state{}, _Extra) -&gt;
+     1..|      {ok, State};
+        |  code_change(_OldVsn, _State, _Extra) -&gt;
+     1..|      {error, incompatible_state}.
+        |  
+        |  %% --- Helpers ---
+        |  
+        |  %% @doc Executes a prepared statement and returns {Reply, NextState}.
+        |  execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket, sockmod = SockMod}) -&gt;
+   192..|      SockMod:setopts(Socket, [{active, false}]),
+   192..|      SockMod = State#state.sockmod,
+   192..|      {ok, Recs} = case mysql_protocol:execute(Stmt, Args, SockMod, Socket,
+        |                                               Timeout) of
+        |          {error, timeout} when State#state.server_version &gt;= [5, 0, 0] -&gt;
+     2..|              kill_query(State),
+     2..|              mysql_protocol:fetch_execute_response(SockMod, Socket,
+        |                                                    ?cmd_timeout);
+        |          {error, timeout} -&gt;
+        |              %% For MySQL 4.x.x there is no way to recover from timeout except
+        |              %% killing the connection itself.
+<font color=red>     0..|              exit(timeout);</font>
+        |          QueryResult -&gt;
+   190..|              QueryResult
+        |      end,
+   192..|      SockMod:setopts(Socket, [{active, once}]),
+   192..|      State1 = lists:foldl(fun update_state/2, State, Recs),
+   192..|      State1#state.warning_count &gt; 0 andalso State1#state.log_warnings
+     2..|          andalso log_warnings(State1, Stmt#prepared.orig_query),
+   192..|      handle_query_call_reply(Recs, Stmt#prepared.orig_query, State1, []).
+        |  
+        |  %% @doc Produces a tuple to return as an error reason.
+        |  -spec error_to_reason(#error{}) -&gt; mysql:server_reason().
+        |  error_to_reason(#error{code = Code, state = State, msg = Msg}) -&gt;
+     9..|      {Code, State, Msg}.
+        |  
+        |  %% @doc Updates a state with information from a response. Also re-schedules
+        |  %% ping.
+        |  -spec update_state(#ok{} | #eof{} | any(), #state{}) -&gt; #state{}.
+        |  update_state(Rec, State) -&gt;
+   748..|      State1 = case Rec of
+        |          #ok{status = S, affected_rows = R, insert_id = Id, warning_count = W} -&gt;
+   393..|              State#state{status = S, affected_rows = R, insert_id = Id,
+        |                          warning_count = W};
+        |          #resultset{status = S, warning_count = W} -&gt;
+   250..|              State#state{status = S, warning_count = W};
+        |          #prepared{warning_count = W} -&gt;
+    98..|              State#state{warning_count = W};
+        |          _Other -&gt;
+        |              %% This includes errors.
+        |              %% Reset some things. (Note: We don't reset status and insert_id.)
+     7..|              State#state{warning_count = 0, affected_rows = 0}
+        |      end,
+   748..|      schedule_ping(State1).
+        |  
+        |  %% @doc Produces a reply for handle_call/3 for queries and prepared statements.
+        |  handle_query_call_reply([], _Query, State, ResultSetsAcc) -&gt;
+   583..|      Reply = case ResultSetsAcc of
+   337..|          []                    -&gt; ok;
+   242..|          [{ColumnNames, Rows}] -&gt; {ok, ColumnNames, Rows};
+     4..|          [_|_]                 -&gt; {ok, lists:reverse(ResultSetsAcc)}
+        |      end,
+   583..|      {reply, Reply, State};
+        |  handle_query_call_reply([Rec|Recs], Query,
+        |                          #state{transaction_levels = L} = State,
+        |                          ResultSetsAcc) -&gt;
+   597..|      case Rec of
+        |          #ok{status = Status} when Status band ?SERVER_STATUS_IN_TRANS == 0,
+        |                                    L /= [] -&gt;
+        |              %% DDL statements (e.g. CREATE TABLE, ALTER TABLE, etc.) result in
+        |              %% an implicit commit.
+     1..|              Length = length(L),
+     1..|              Reply = {implicit_commit, Length, Query},
+     1..|              [] = demonitor_processes(L, Length),
+     1..|              {reply, Reply, State#state{transaction_levels = []}};
+        |          #ok{} -&gt;
+   341..|              handle_query_call_reply(Recs, Query, State, ResultSetsAcc);
+        |          #resultset{cols = ColDefs, rows = Rows} -&gt;
+   250..|              Names = [Def#col.name || Def &lt;- ColDefs],
+   250..|              ResultSetsAcc1 = [{Names, Rows} | ResultSetsAcc],
+   250..|              handle_query_call_reply(Recs, Query, State, ResultSetsAcc1);
+        |          #error{code = ?ERROR_DEADLOCK} when L /= [] -&gt;
+        |              %% These errors result in an implicit rollback.
+     3..|              Reply = {implicit_rollback, length(L), error_to_reason(Rec)},
+        |              %% Everything in the transaction is rolled back, except the BEGIN
+        |              %% statement itself. Thus, we are in transaction level 1.
+     3..|              NewMonitors = demonitor_processes(L, length(L) - 1),
+     3..|              {reply, Reply, State#state{transaction_levels = NewMonitors}};
+        |          #error{} -&gt;
+     2..|              {reply, {error, error_to_reason(Rec)}, State}
+        |      end.
+        |  
+        |  %% @doc Schedules (or re-schedules) ping.
+        |  schedule_ping(State = #state{ping_timeout = infinity}) -&gt;
+   166..|      State;
+        |  schedule_ping(State = #state{ping_timeout = Timeout, ping_ref = Ref}) -&gt;
+   687..|      is_reference(Ref) andalso erlang:cancel_timer(Ref),
+   687..|      State#state{ping_ref = erlang:send_after(Timeout, self(), ping)}.
+        |  
+        |  %% @doc Fetches and logs warnings. Query is the query that gave the warnings.
+        |  log_warnings(#state{socket = Socket, sockmod = SockMod} = State, Query) -&gt;
+     3..|      SockMod:setopts(Socket, [{active, false}]),
+     3..|      SockMod = State#state.sockmod,
+     3..|      {ok, [#resultset{rows = Rows}]} = mysql_protocol:query(&lt;&lt;"SHOW WARNINGS"&gt;&gt;,
+        |                                                             SockMod, Socket,
+        |                                                             ?cmd_timeout),
+     3..|      SockMod:setopts(Socket, [{active, once}]),
+     3..|      Lines = [[Level, " ", integer_to_binary(Code), ": ", Message, "\n"]
+     3..|               || [Level, Code, Message] &lt;- Rows],
+     3..|      error_logger:warning_msg("~s in ~s~n", [Lines, Query]).
+        |  
+        |  %% @doc Makes a separate connection and execute KILL QUERY. We do this to get
+        |  %% our main connection back to normal. KILL QUERY appeared in MySQL 5.0.0.
+        |  kill_query(#state{connection_id = ConnId, host = Host, port = Port,
+        |                    user = User, password = Password, ssl_opts = SSLOpts,
+        |                    cap_found_rows = SetFoundRows}) -&gt;
+        |      %% Connect socket
+     3..|      SockOpts = [{active, false}, binary, {packet, raw}],
+     3..|      {ok, Socket0} = mysql_sock_tcp:connect(Host, Port, SockOpts),
+        |  
+        |      %% Exchange handshake communication.
+     3..|      Result = mysql_protocol:handshake(User, Password, undefined, mysql_sock_tcp,
+        |                                        SSLOpts, Socket0, SetFoundRows),
+     3..|      case Result of
+        |          {ok, #handshake{}, SockMod, Socket} -&gt;
+        |              %% Kill and disconnect
+     3..|              IdBin = integer_to_binary(ConnId),
+     3..|              {ok, [#ok{}]} = mysql_protocol:query(&lt;&lt;"KILL QUERY ", IdBin/binary&gt;&gt;,
+        |                                                   SockMod, Socket, ?cmd_timeout),
+     3..|              mysql_protocol:quit(SockMod, Socket);
+        |          #error{} = E -&gt;
+<font color=red>     0..|              error_logger:error_msg("Failed to connect to kill query: ~p",</font>
+        |                                     [error_to_reason(E)])
+        |      end.
+        |  
+        |  stop_server(Reason,
+        |              #state{socket = Socket, connection_id = ConnId} = State) -&gt;
+     3..|    error_logger:error_msg("Connection Id ~p closing with reason: ~p~n",
+        |                           [ConnId, Reason]),
+     3..|    ok = gen_tcp:close(Socket),
+     3..|    {stop, Reason, State#state{socket = undefined, connection_id = undefined}}.
+        |  
+        |  demonitor_processes(List, 0) -&gt;
+     4..|      List;
+        |  demonitor_processes([{_FromPid, MRef}|T], Count) -&gt;
+     5..|      erlang:demonitor(MRef),
+     5..|      demonitor_processes(T, Count - 1).
+</pre>
+</body>
+</html>
