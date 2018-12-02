@@ -99,8 +99,8 @@ successful_connect_test() ->
 
     %% Test some gen_server callbacks not tested elsewhere
     State = get_state(Pid),
-    ?assertMatch({ok, State}, mysql:code_change("0.1.0", State, [])),
-    ?assertMatch({error, _}, mysql:code_change("2.0.0", unknown_state, [])),
+    ?assertMatch({ok, State}, mysql_conn:code_change("0.1.0", State, [])),
+    ?assertMatch({error, _}, mysql_conn:code_change("2.0.0", unknown_state, [])),
     common_conn_close().
 
 common_basic_check(ExtraOpts) ->
@@ -794,9 +794,9 @@ parameterized_query(Conn) ->
 %% --- simple gen_server callbacks ---
 
 gen_server_coverage_test() ->
-    {noreply, state} = mysql:handle_cast(foo, state),
-    {noreply, state} = mysql:handle_info(foo, state),
-    ok = mysql:terminate(kill, state).
+    {noreply, state} = mysql_conn:handle_cast(foo, state),
+    {noreply, state} = mysql_conn:handle_info(foo, state),
+    ok = mysql_conn:terminate(kill, state).
 
 %% --- Utility functions
 db_version_string(Pid) ->

@@ -245,9 +245,10 @@ parse_handshake(<<10, Rest/binary>>) ->
                status = StatusFlags,
                auth_plugin_data = AuthPluginData,
                auth_plugin_name = AuthPluginName1};
-parse_handshake(Packet = ?error_pattern) ->
+parse_handshake(<<?ERROR, ErrNo:16/little, Msg/binary>>) ->
     %% 'Too many connections' in MariaDB 10.1.21
-    parse_error_packet(Packet);
+    %% (Error packet in pre-4.1 protocol)
+    #error{code = ErrNo, msg = Msg};
 parse_handshake(<<Protocol:8, _/binary>>) when Protocol /= 10 ->
     error(unknown_protocol).
 
