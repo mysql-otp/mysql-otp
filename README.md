@@ -115,12 +115,10 @@ start MySQL on localhost and give privileges to the user `otptest` and (for
 `ssl_tests`) to the user `otptestssl`:
 
 ```SQL
-CREATE USER otptest@localhost
-  IDENTIFIED WITH 'mysql_native_password' BY 'otptest';
+CREATE USER otptest@localhost IDENTIFIED BY 'otptest';
 GRANT ALL PRIVILEGES ON otptest.* TO otptest@localhost;
 
-CREATE USER otptestssl@localhost
-  IDENTIFIED WITH 'mysql_native_password' BY 'otptestssl' REQUIRE SSL;
+CREATE USER otptestssl@localhost IDENTIFIED BY 'otptestssl' REQUIRE SSL;
 GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost;
 ```
 
