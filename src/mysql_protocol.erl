@@ -43,9 +43,9 @@
 -define(error_pattern, <<?ERROR, _/binary>>).
 -define(eof_pattern, <<?EOF, _:4/binary>>).
 
-%% @doc Performs a handshake using the supplied functions for communication.
-%% Returns an ok or an error record. Raises errors when various unimplemented
-%% features are requested.
+%% @doc Performs a handshake using the supplied socket and socket module for
+%% communication. Returns an ok or an error record. Raises errors when various
+%% unimplemented features are requested.
 -spec handshake(Username :: iodata(), Password :: iodata(),
                 Database :: iodata() | undefined,
                 SockModule :: module(), SSLOpts :: list() | undefined,
@@ -272,16 +272,32 @@ server_version_to_list(ServerVersion) ->
 maybe_do_ssl_upgrade(SockModule0, Socket0, SeqNum1, _Handshake, undefined,
                      _Database, _SetFoundRows) ->
     {ok, SockModule0, Socket0, SeqNum1};
-maybe_do_ssl_upgrade(SockModule0, Socket0, SeqNum1, Handshake, SSLOpts,
+maybe_do_ssl_upgrade(gen_tcp, Socket0, SeqNum1, Handshake, SSLOpts,
                      Database, SetFoundRows) ->
     Response = build_handshake_response(Handshake, Database, SetFoundRows),
-    {ok, SeqNum2} = send_packet(SockModule0, Socket0, Response, SeqNum1),
-    case mysql_sock_ssl:connect(Socket0, SSLOpts, 5000) of
+    {ok, SeqNum2} = send_packet(gen_tcp, Socket0, Response, SeqNum1),
+    case ssl_connect(Socket0, SSLOpts, 5000) of
         {ok, SSLSocket} ->
             {ok, ssl, SSLSocket, SeqNum2};
         {error, Reason} ->
             exit({failed_to_upgrade_socket, Reason})
     end.
+
+ssl_connect(Port, ConfigSSLOpts, Timeout) ->
+    DefaultSSLOpts = [{versions, [tlsv1]}, {verify, verify_peer}],
+    MandatorySSLOpts = [{active, false}],
+    MergedSSLOpts = merge_ssl_options(DefaultSSLOpts, MandatorySSLOpts, ConfigSSLOpts),
+    ssl:connect(Port, MergedSSLOpts, Timeout).
+
+-spec merge_ssl_options(list(), list(), list()) -> list().
+merge_ssl_options(DefaultSSLOpts, MandatorySSLOpts, ConfigSSLOpts) ->
+    SSLOpts1 =
+    lists:foldl(fun({Key, _} = Opt, OptsAcc) ->
+                        lists:keystore(Key, 1, OptsAcc, Opt)
+                end, DefaultSSLOpts, ConfigSSLOpts),
+    lists:foldl(fun({Key, _} = Opt, OptsAcc) ->
+                        lists:keystore(Key, 1, OptsAcc, Opt)
+                end, SSLOpts1, MandatorySSLOpts).
 
 %% @doc This function is used when upgrading to encrypted socket. In other,
 %% cases, build_handshake_response/5 is used.
