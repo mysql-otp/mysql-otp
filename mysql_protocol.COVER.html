@@ -5,7 +5,7 @@
 <title>cover/mysql_protocol.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl by COVER 2018-12-02 at 22:43:59
+File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl by COVER 2018-12-03 at 01:09:15
 
 ****************************************************************************
 
@@ -54,9 +54,9 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  -define(error_pattern, &lt;&lt;?ERROR, _/binary&gt;&gt;).
         |  -define(eof_pattern, &lt;&lt;?EOF, _:4/binary&gt;&gt;).
         |  
-        |  %% @doc Performs a handshake using the supplied functions for communication.
-        |  %% Returns an ok or an error record. Raises errors when various unimplemented
-        |  %% features are requested.
+        |  %% @doc Performs a handshake using the supplied socket and socket module for
+        |  %% communication. Returns an ok or an error record. Raises errors when various
+        |  %% unimplemented features are requested.
         |  -spec handshake(Username :: iodata(), Password :: iodata(),
         |                  Database :: iodata() | undefined,
         |                  SockModule :: module(), SSLOpts :: list() | undefined,
@@ -283,16 +283,32 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_protocol.erl b
         |  maybe_do_ssl_upgrade(SockModule0, Socket0, SeqNum1, _Handshake, undefined,
         |                       _Database, _SetFoundRows) -&gt;
     20..|      {ok, SockModule0, Socket0, SeqNum1};
-        |  maybe_do_ssl_upgrade(SockModule0, Socket0, SeqNum1, Handshake, SSLOpts,
+        |  maybe_do_ssl_upgrade(gen_tcp, Socket0, SeqNum1, Handshake, SSLOpts,
         |                       Database, SetFoundRows) -&gt;
      1..|      Response = build_handshake_response(Handshake, Database, SetFoundRows),
-     1..|      {ok, SeqNum2} = send_packet(SockModule0, Socket0, Response, SeqNum1),
-     1..|      case mysql_sock_ssl:connect(Socket0, SSLOpts, 5000) of
+     1..|      {ok, SeqNum2} = send_packet(gen_tcp, Socket0, Response, SeqNum1),
+     1..|      case ssl_connect(Socket0, SSLOpts, 5000) of
         |          {ok, SSLSocket} -&gt;
      1..|              {ok, ssl, SSLSocket, SeqNum2};
         |          {error, Reason} -&gt;
 <font color=red>     0..|              exit({failed_to_upgrade_socket, Reason})</font>
         |      end.
+        |  
+        |  ssl_connect(Port, ConfigSSLOpts, Timeout) -&gt;
+     1..|      DefaultSSLOpts = [{versions, [tlsv1]}, {verify, verify_peer}],
+     1..|      MandatorySSLOpts = [{active, false}],
+     1..|      MergedSSLOpts = merge_ssl_options(DefaultSSLOpts, MandatorySSLOpts, ConfigSSLOpts),
+     1..|      ssl:connect(Port, MergedSSLOpts, Timeout).
+        |  
+        |  -spec merge_ssl_options(list(), list(), list()) -&gt; list().
+        |  merge_ssl_options(DefaultSSLOpts, MandatorySSLOpts, ConfigSSLOpts) -&gt;
+     1..|      SSLOpts1 =
+        |      lists:foldl(fun({Key, _} = Opt, OptsAcc) -&gt;
+     2..|                          lists:keystore(Key, 1, OptsAcc, Opt)
+        |                  end, DefaultSSLOpts, ConfigSSLOpts),
+     1..|      lists:foldl(fun({Key, _} = Opt, OptsAcc) -&gt;
+     1..|                          lists:keystore(Key, 1, OptsAcc, Opt)
+        |                  end, SSLOpts1, MandatorySSLOpts).
         |  
         |  %% @doc This function is used when upgrading to encrypted socket. In other,
         |  %% cases, build_handshake_response/5 is used.

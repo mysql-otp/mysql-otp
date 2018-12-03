@@ -5,7 +5,7 @@
 <title>cover/mysql_conn.COVER.html</title>
 </head><body style='background-color: white; color: black'>
 <pre>
-File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by COVER 2018-12-02 at 22:43:59
+File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by COVER 2018-12-03 at 01:09:15
 
 ****************************************************************************
 
@@ -85,7 +85,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
     18..|      TcpOpts        = proplists:get_value(tcp_options, Opts, []),
     18..|      SetFoundRows   = proplists:get_value(found_rows, Opts, false),
     18..|      SSLOpts        = proplists:get_value(ssl, Opts, undefined),
-    18..|      SockMod0       = mysql_sock_tcp,
+    18..|      SockMod0       = gen_tcp,
         |  
     18..|      PingTimeout = case KeepAlive of
      2..|          true         -&gt; ?default_ping_timeout;
@@ -102,7 +102,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
         |                                        Socket0, SetFoundRows),
     18..|      case Result of
         |          {ok, Handshake, SockMod, Socket} -&gt;
-    17..|              SockMod:setopts(Socket, [{active, once}]),
+    17..|              setopts(SockMod, Socket, [{active, once}]),
         |              #handshake{server_version = Version, connection_id = ConnId,
     17..|                         status = Status} = Handshake,
     17..|              State = #state{server_version = Version, connection_id = ConnId,
@@ -167,10 +167,9 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
         |  %% &lt;/dl&gt;
         |  handle_call({query, Query}, From, State) -&gt;
    395..|      handle_call({query, Query, State#state.query_timeout}, From, State);
-        |  handle_call({query, Query, Timeout}, _From, State) -&gt;
-   397..|      SockMod = State#state.sockmod,
-   397..|      Socket = State#state.socket,
-   397..|      SockMod:setopts(Socket, [{active, false}]),
+        |  handle_call({query, Query, Timeout}, _From,
+        |              #state{sockmod = SockMod, socket = Socket} = State) -&gt;
+   397..|      setopts(SockMod, Socket, [{active, false}]),
    397..|      {ok, Recs} = case mysql_protocol:query(Query, SockMod, Socket, Timeout) of
         |          {error, timeout} when State#state.server_version &gt;= [5, 0, 0] -&gt;
      1..|              kill_query(State),
@@ -182,7 +181,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
         |          QueryResult -&gt;
    396..|              QueryResult
         |      end,
-   397..|      SockMod:setopts(Socket, [{active, once}]),
+   397..|      setopts(SockMod, Socket, [{active, once}]),
    397..|      State1 = lists:foldl(fun update_state/2, State, Recs),
    397..|      State1#state.warning_count &gt; 0 andalso State1#state.log_warnings
      1..|          andalso log_warnings(State1, Query),
@@ -190,10 +189,10 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
         |  handle_call({param_query, Query, Params}, From, State) -&gt;
      9..|      handle_call({param_query, Query, Params, State#state.query_timeout}, From,
         |                  State);
-        |  handle_call({param_query, Query, Params, Timeout}, _From, State) -&gt;
+        |  handle_call({param_query, Query, Params, Timeout}, _From,
+        |              #state{socket = Socket, sockmod = SockMod} = State) -&gt;
         |      %% Parametrized query: Prepared statement cached with the query as the key
     10..|      QueryBin = iolist_to_binary(Query),
-    10..|      #state{socket = Socket, sockmod = SockMod} = State,
     10..|      Cache = State#state.query_cache,
     10..|      {StmtResult, Cache1} = case mysql_cache:lookup(QueryBin, Cache) of
         |          {found, FoundStmt, NewCache} -&gt;
@@ -201,10 +200,9 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
      1..|              {{ok, FoundStmt}, NewCache};
         |          not_found -&gt;
         |              %% Prepare
-     9..|              SockMod:setopts(Socket, [{active, false}]),
-     9..|              SockMod = State#state.sockmod,
+     9..|              setopts(SockMod, Socket, [{active, false}]),
      9..|              Rec = mysql_protocol:prepare(Query, SockMod, Socket),
-     9..|              SockMod:setopts(Socket, [{active, once}]),
+     9..|              setopts(SockMod, Socket, [{active, once}]),
      9..|              case Rec of
         |                  #error{} = E -&gt;
      1..|                      {{error, error_to_reason(E)}, Cache};
@@ -235,10 +233,9 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
         |      end;
         |  handle_call({prepare, Query}, _From, State) -&gt;
     91..|      #state{socket = Socket, sockmod = SockMod} = State,
-    91..|      SockMod:setopts(Socket, [{active, false}]),
-    91..|      SockMod = State#state.sockmod,
+    91..|      setopts(SockMod, Socket, [{active, false}]),
     91..|      Rec = mysql_protocol:prepare(Query, SockMod, Socket),
-    91..|      SockMod:setopts(Socket, [{active, once}]),
+    91..|      setopts(SockMod, Socket, [{active, once}]),
     91..|      State1 = update_state(Rec, State),
     91..|      case Rec of
         |          #error{} = E -&gt;
@@ -251,8 +248,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
         |  handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) -&gt;
      9..|      #state{socket = Socket, sockmod = SockMod} = State,
         |      %% First unprepare if there is an old statement with this name.
-     9..|      SockMod:setopts(Socket, [{active, false}]),
-     9..|      SockMod = State#state.sockmod,
+     9..|      setopts(SockMod, Socket, [{active, false}]),
      9..|      State1 = case dict:find(Name, State#state.stmts) of
         |          {ok, OldStmt} -&gt;
      1..|              mysql_protocol:unprepare(OldStmt, SockMod, Socket),
@@ -261,7 +257,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
      8..|              State
         |      end,
      9..|      Rec = mysql_protocol:prepare(Query, SockMod, Socket),
-     9..|      SockMod:setopts(Socket, [{active, once}]),
+     9..|      setopts(SockMod, Socket, [{active, once}]),
      9..|      State2 = update_state(Rec, State1),
      9..|      case Rec of
         |          #error{} = E -&gt;
@@ -276,10 +272,9 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
     90..|      case dict:find(Stmt, State#state.stmts) of
         |          {ok, StmtRec} -&gt;
     88..|              #state{socket = Socket, sockmod = SockMod} = State,
-    88..|              SockMod:setopts(Socket, [{active, false}]),
-    88..|              SockMod = State#state.sockmod,
+    88..|              setopts(SockMod, Socket, [{active, false}]),
     88..|              mysql_protocol:unprepare(StmtRec, SockMod, Socket),
-    88..|              SockMod:setopts(Socket, [{active, once}]),
+    88..|              setopts(SockMod, Socket, [{active, once}]),
     88..|              State1 = State#state{stmts = dict:erase(Stmt, State#state.stmts)},
     88..|              State2 = schedule_ping(State1),
     88..|              {reply, ok, State2};
@@ -308,11 +303,10 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
     16..|          [] -&gt; &lt;&lt;"BEGIN"&gt;&gt;;
     11..|          _  -&gt; &lt;&lt;"SAVEPOINT s", (integer_to_binary(length(L)))/binary&gt;&gt;
         |      end,
-    27..|      SockMod:setopts(Socket, [{active, false}]),
-    27..|      SockMod = State#state.sockmod,
+    27..|      setopts(SockMod, Socket, [{active, false}]),
     27..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
         |                                                 ?cmd_timeout),
-    27..|      SockMod:setopts(Socket, [{active, once}]),
+    27..|      setopts(SockMod, Socket, [{active, once}]),
     27..|      State1 = update_state(Res, State),
     27..|      {reply, ok, State1#state{transaction_levels = [{FromPid, MRef} | L]}};
         |  handle_call(rollback, {FromPid, _},
@@ -324,11 +318,10 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
      4..|          [] -&gt; &lt;&lt;"ROLLBACK"&gt;&gt;;
      1..|          _  -&gt; &lt;&lt;"ROLLBACK TO s", (integer_to_binary(length(L)))/binary&gt;&gt;
         |      end,
-     5..|      SockMod:setopts(Socket, [{active, false}]),
-     5..|      SockMod = State#state.sockmod,
+     5..|      setopts(SockMod, Socket, [{active, false}]),
      5..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
         |                                                 ?cmd_timeout),
-     5..|      SockMod:setopts(Socket, [{active, once}]),
+     5..|      setopts(SockMod, Socket, [{active, once}]),
      5..|      State1 = update_state(Res, State),
      5..|      {reply, ok, State1#state{transaction_levels = L}};
         |  handle_call(commit, {FromPid, _},
@@ -340,11 +333,10 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
     10..|          [] -&gt; &lt;&lt;"COMMIT"&gt;&gt;;
      6..|          _  -&gt; &lt;&lt;"RELEASE SAVEPOINT s", (integer_to_binary(length(L)))/binary&gt;&gt;
         |      end,
-    16..|      SockMod:setopts(Socket, [{active, false}]),
-    16..|      SockMod = State#state.sockmod,
+    16..|      setopts(SockMod, Socket, [{active, false}]),
     16..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
         |                                                 ?cmd_timeout),
-    16..|      SockMod:setopts(Socket, [{active, once}]),
+    16..|      setopts(SockMod, Socket, [{active, once}]),
     16..|      State1 = update_state(Res, State),
     16..|      {reply, ok, State1#state{transaction_levels = L}}.
         |  
@@ -359,13 +351,12 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
      1..|      {Evicted, Cache1} = mysql_cache:evict_older_than(Cache, CacheTime),
         |      %% Unprepare the evicted statements
      1..|      #state{socket = Socket, sockmod = SockMod} = State,
-     1..|      SockMod:setopts(Socket, [{active, false}]),
-     1..|      SockMod = State#state.sockmod,
+     1..|      setopts(SockMod, Socket, [{active, false}]),
      1..|      lists:foreach(fun ({_Query, Stmt}) -&gt;
      1..|                        mysql_protocol:unprepare(Stmt, SockMod, Socket)
         |                    end,
         |                    Evicted),
-     1..|      SockMod:setopts(Socket, [{active, once}]),
+     1..|      setopts(SockMod, Socket, [{active, once}]),
         |      %% If nonempty, schedule eviction again.
      1..|      mysql_cache:size(Cache1) &gt; 0 andalso
 <font color=red>     0..|          erlang:send_after(CacheTime, self(), query_cache),</font>
@@ -373,10 +364,9 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
         |  handle_info({'DOWN', _MRef, _, Pid, _Info}, State) -&gt;
      1..|      stop_server({application_process_died, Pid}, State);
         |  handle_info(ping, #state{socket = Socket, sockmod = SockMod} = State) -&gt;
-     4..|      SockMod:setopts(Socket, [{active, false}]),
-     4..|      SockMod = State#state.sockmod,
+     4..|      setopts(SockMod, Socket, [{active, false}]),
      4..|      Ok = mysql_protocol:ping(SockMod, Socket),
-     3..|      SockMod:setopts(Socket, [{active, once}]),
+     3..|      setopts(SockMod, Socket, [{active, once}]),
      3..|      {noreply, update_state(Ok, State)};
         |  handle_info({tcp_closed, _Socket}, State) -&gt;
      1..|      stop_server(tcp_closed, State);
@@ -389,7 +379,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
         |  terminate(Reason, #state{socket = Socket, sockmod = SockMod})
         |    when Reason == normal; Reason == shutdown -&gt;
         |        %% Send the goodbye message for politeness.
-    13..|        SockMod:setopts(Socket, [{active, false}]),
+    13..|        setopts(SockMod, Socket, [{active, false}]),
     13..|        mysql_protocol:quit(SockMod, Socket);
         |  terminate(_Reason, _State) -&gt;
      5..|      ok.
@@ -404,8 +394,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
         |  
         |  %% @doc Executes a prepared statement and returns {Reply, NextState}.
         |  execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket, sockmod = SockMod}) -&gt;
-   192..|      SockMod:setopts(Socket, [{active, false}]),
-   192..|      SockMod = State#state.sockmod,
+   192..|      setopts(SockMod, Socket, [{active, false}]),
    192..|      {ok, Recs} = case mysql_protocol:execute(Stmt, Args, SockMod, Socket,
         |                                               Timeout) of
         |          {error, timeout} when State#state.server_version &gt;= [5, 0, 0] -&gt;
@@ -419,7 +408,7 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
         |          QueryResult -&gt;
    190..|              QueryResult
         |      end,
-   192..|      SockMod:setopts(Socket, [{active, once}]),
+   192..|      setopts(SockMod, Socket, [{active, once}]),
    192..|      State1 = lists:foldl(fun update_state/2, State, Recs),
    192..|      State1#state.warning_count &gt; 0 andalso State1#state.log_warnings
      2..|          andalso log_warnings(State1, Stmt#prepared.orig_query),
@@ -494,13 +483,12 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
    687..|      State#state{ping_ref = erlang:send_after(Timeout, self(), ping)}.
         |  
         |  %% @doc Fetches and logs warnings. Query is the query that gave the warnings.
-        |  log_warnings(#state{socket = Socket, sockmod = SockMod} = State, Query) -&gt;
-     3..|      SockMod:setopts(Socket, [{active, false}]),
-     3..|      SockMod = State#state.sockmod,
+        |  log_warnings(#state{socket = Socket, sockmod = SockMod}, Query) -&gt;
+     3..|      setopts(SockMod, Socket, [{active, false}]),
      3..|      {ok, [#resultset{rows = Rows}]} = mysql_protocol:query(&lt;&lt;"SHOW WARNINGS"&gt;&gt;,
         |                                                             SockMod, Socket,
         |                                                             ?cmd_timeout),
-     3..|      SockMod:setopts(Socket, [{active, once}]),
+     3..|      setopts(SockMod, Socket, [{active, once}]),
      3..|      Lines = [[Level, " ", integer_to_binary(Code), ": ", Message, "\n"]
      3..|               || [Level, Code, Message] &lt;- Rows],
      3..|      error_logger:warning_msg("~s in ~s~n", [Lines, Query]).
@@ -512,10 +500,10 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
         |                    cap_found_rows = SetFoundRows}) -&gt;
         |      %% Connect socket
      3..|      SockOpts = [{active, false}, binary, {packet, raw}],
-     3..|      {ok, Socket0} = mysql_sock_tcp:connect(Host, Port, SockOpts),
+     3..|      {ok, Socket0} = gen_tcp:connect(Host, Port, SockOpts),
         |  
         |      %% Exchange handshake communication.
-     3..|      Result = mysql_protocol:handshake(User, Password, undefined, mysql_sock_tcp,
+     3..|      Result = mysql_protocol:handshake(User, Password, undefined, gen_tcp,
         |                                        SSLOpts, Socket0, SetFoundRows),
      3..|      case Result of
         |          {ok, #handshake{}, SockMod, Socket} -&gt;
@@ -535,6 +523,11 @@ File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by CO
         |                           [ConnId, Reason]),
      3..|    ok = gen_tcp:close(Socket),
      3..|    {stop, Reason, State#state{socket = undefined, connection_id = undefined}}.
+        |  
+        |  setopts(gen_tcp, Socket, Opts) -&gt;
+  1701..|      inet:setopts(Socket, Opts);
+        |  setopts(SockMod, Socket, Opts) -&gt;
+    12..|      SockMod:setopts(Socket, Opts).
         |  
         |  demonitor_processes(List, 0) -&gt;
      4..|      List;
