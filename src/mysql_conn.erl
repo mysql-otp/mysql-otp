@@ -89,6 +89,7 @@ init(Opts) ->
     %% Exchange handshake communication.
     Result = mysql_protocol:handshake(User, Password, Database, SockMod0, SSLOpts,
                                       Socket0, SetFoundRows),
+    io:format("~w~n", [Result]),
     case Result of
         {ok, Handshake, SockMod, Socket} ->
             setopts(SockMod, Socket, [{active, once}]),

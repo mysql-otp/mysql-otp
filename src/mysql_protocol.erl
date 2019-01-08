@@ -56,6 +56,7 @@
 handshake(Username, Password, Database, SockModule0, SSLOpts, Socket0,
           SetFoundRows) ->
     SeqNum0 = 0,
+    io:format("~w ~w ~w~n", [SockModule0, Socket0, SeqNum0]),
     {ok, HandshakePacket, SeqNum1} = recv_packet(SockModule0, Socket0, SeqNum0),
     case parse_handshake(HandshakePacket) of
         #handshake{} = Handshake ->
@@ -64,20 +65,23 @@ handshake(Username, Password, Database, SockModule0, SSLOpts, Socket0,
                                      SSLOpts, Database, SetFoundRows),
             Response = build_handshake_response(Handshake, Username, Password,
                                                 Database, SetFoundRows),
+            io:format("SeqNum2 = ~p~n", [SeqNum2]),
             {ok, SeqNum3} = send_packet(SockModule, Socket, Response, SeqNum2),
+            io:format("SeqNum3 = ~p~n", [SeqNum3]),
             handshake_finish_or_switch_auth(Handshake, Password, SockModule,
                                             Socket, SeqNum3);
         #error{} = Error ->
             Error
     end.
 
-handshake_finish_or_switch_auth(Handshake = #handshake{status = Status}, Password,
+handshake_finish_or_switch_auth(Handshake = #handshake{status = _Status}, Password,
                                 SockModule, Socket, SeqNum0) ->
     {ok, ConfirmPacket, SeqNum1} = recv_packet(SockModule, Socket, SeqNum0),
+    io:format("confirm ~w~n", [ConfirmPacket]),
     case parse_handshake_confirm(ConfirmPacket) of
-        #ok{status = OkStatus} ->
+        #ok{} ->
             %% check status, ignoring bit 16#4000, SERVER_SESSION_STATE_CHANGED.
-            Status = OkStatus band bnot 16#4000,
+%%            Status = OkStatus band bnot 16#4000,
             {ok, Handshake, SockModule, Socket};
         #auth_method_switch{auth_plugin_name = AuthPluginName,
                             auth_plugin_data = AuthPluginData} ->
@@ -86,6 +90,9 @@ handshake_finish_or_switch_auth(Handshake = #handshake{status = Status}, Passwor
                            hash_password(Password, AuthPluginData);
                        <<"mysql_native_password">> ->
                            hash_password(Password, AuthPluginData);
+                       <<"caching_sha2_password">> ->
+                           io:format("AuthPluginData : ~w~n", [AuthPluginData]),
+                           hash_password(sha256, Password, AuthPluginData);
                        UnknownAuthMethod ->
                            error({auth_method, UnknownAuthMethod})
                    end,
@@ -332,6 +339,8 @@ build_handshake_response(Handshake, Username, Password, Database,
             hash_password(Password, Handshake#handshake.auth_plugin_data);
         <<"mysql_native_password">> ->
             hash_password(Password, Handshake#handshake.auth_plugin_data);
+       <<"caching_sha2_password">> ->
+           hash_password(sha256, Password, Handshake#handshake.auth_plugin_data);
         UnknownAuthMethod ->
             error({auth_method, UnknownAuthMethod})
     end,
@@ -378,9 +387,23 @@ basic_capabilities(ConnectWithDB, SetFoundRows) ->
 -spec add_client_capabilities(Caps :: integer()) -> integer().
 add_client_capabilities(Caps) ->
     Caps bor
-    ?CLIENT_MULTI_STATEMENTS bor
+    ?CLIENT_PROTOCOL_41 bor
+    ?CLIENT_SECURE_CONNECTION bor
+    ?CLIENT_LONG_PASSWORD bor
+    ?CLIENT_TRANSACTIONS bor
+    ?CLIENT_PLUGIN_AUTH bor
+    ?CLIENT_LONG_FLAG bor
     ?CLIENT_MULTI_RESULTS bor
     ?CLIENT_PS_MULTI_RESULTS.
+
+%%    clientProtocol41 |
+%%    clientSecureConn |
+%%    clientLongPassword |
+%%    clientTransactions |
+%%    clientLocalFiles |
+%%    clientPluginAuth |
+%%    clientMultiResults |
+%%    mc.flags&clientLongFlag
 
 %% @doc Handles the second packet from the server, when we have replied to the
 %% initial handshake. Returns an error if the server returns an error. Raises
@@ -389,6 +412,8 @@ add_client_capabilities(Caps) ->
                                            #error{}.
 parse_handshake_confirm(Packet) ->
     case Packet of
+        <<1:8, _/binary>> ->
+            parse_ok_packet(Packet);
         ?ok_pattern ->
             %% Connection complete.
             parse_ok_packet(Packet);
@@ -1042,7 +1067,7 @@ parse_packet_header(<<PacketLength:24/little-integer, SeqNum:8/integer>>) ->
 %% list to avoid copying large binaries.
 -spec add_packet_headers(Data :: binary(), SeqNum :: integer()) ->
     {PacketsWithHeaders :: iodata(), NextSeqNum :: integer()}.
-add_packet_headers(<<Payload:16#ffffff/binary, Rest/binary>>, SeqNum) ->
+add_packet_headers(<<Payload:16#fffffa/binary, Rest/binary>>, SeqNum) ->
     SeqNum1 = (SeqNum + 1) band 16#ff,
     {Packets, NextSeqNum} = add_packet_headers(Rest, SeqNum1),
     Header = <<16#ffffff:24/little, SeqNum:8>>,
@@ -1053,6 +1078,8 @@ add_packet_headers(Bin, SeqNum) when byte_size(Bin) < 16#ffffff ->
     {[Header, Bin], NextSeqNum}.
 
 -spec parse_ok_packet(binary()) -> #ok{}.
+parse_ok_packet(<<1:8, _Num:8>>) ->
+    #ok{};
 parse_ok_packet(<<?OK:8, Rest/binary>>) ->
     {AffectedRows, Rest1} = lenenc_int(Rest),
     {InsertId, Rest2} = lenenc_int(Rest1),
@@ -1130,6 +1157,32 @@ hash_password(Password, Salt) ->
         false -> hash_non_empty_password(Password, Salt)
     end.
 
+
+-spec hash_password(
+    Type :: sha1 | sha256,
+    Password :: iodata(),
+    Salt :: binary()) -> Hash :: binary().
+hash_password(Type, Password, Salt) ->
+    %% From the "MySQL Internals" manual:
+    %% SHA1( password ) XOR SHA1( "20-bytes random data from server" <concat>
+    %%                            SHA1( SHA1( password ) ) )
+    %% ----
+    %% sha256(MySQL8)
+    %% Nonce - 20 byte long random data
+    %% Scramble - XOR(sha25656(password), sha25656(sha25656(sha25656(password)), Nonce))
+    %% Make sure the salt is exactly 20 bytes.
+    %%
+    %% The auth data is obviously nul-terminated. For the "native" auth
+    %% method, it should be a 20 byte salt, so let's trim it in this case.
+    PasswordBin = case erlang:is_binary(Password) of
+                      true -> Password;
+                      false -> erlang:iolist_to_binary(Password)
+                  end,
+    case PasswordBin =:= <<>> of
+        true -> <<>>;
+        false -> hash_non_empty_password(Type, Password, Salt)
+    end.
+
 -spec hash_non_empty_password(Password :: iodata(), Salt :: binary()) ->
     Hash :: binary().
 hash_non_empty_password(Password, Salt) ->
@@ -1137,6 +1190,35 @@ hash_non_empty_password(Password, Salt) ->
         <<SaltNoNul:20/binary-unit:8, 0>> -> SaltNoNul;
         _ when size(Salt) == 20           -> Salt
     end,
+    %% Hash as described above.
+    <<Hash1Num:160>> = Hash1 = crypto:hash(sha, Password),
+    Hash2 = crypto:hash(sha, Hash1),
+    <<Hash3Num:160>> = crypto:hash(sha, <<Salt1/binary, Hash2/binary>>),
+    <<(Hash1Num bxor Hash3Num):160>>.
+
+%% sha256(MySQL8)
+%% Nonce - 20 byte long random data
+%% Scramble - XOR(sha25656(password), sha25656(sha25656(sha25656(password)), Nonce))
+%% Make sure the salt is exactly 20 bytes.
+-spec hash_non_empty_password(
+    Type :: sha1 | sha256,
+    Password :: iodata(),
+    Salt :: binary()) ->
+    Hash :: binary().
+hash_non_empty_password(sha256, Password, Salt) ->
+    Salt1 = case Salt of
+                <<SaltNoNul:20/binary-unit:8, 0>> -> SaltNoNul;
+                _ when size(Salt) == 20           -> Salt
+            end,
+    <<Hash2Num:256>> = Hash1 = crypto:hash(sha256, Password),
+    Hash2 = crypto:hash(sha256, Hash1),
+    <<Hash2Num1:256>> = crypto:hash(sha256, <<Hash2/binary, Salt1/binary>>),
+    <<(Hash2Num bxor Hash2Num1):256>>;
+hash_non_empty_password(_Type ,Password, Salt) ->
+    Salt1 = case Salt of
+                <<SaltNoNul:20/binary-unit:8, 0>> -> SaltNoNul;
+                _ when size(Salt) == 20           -> Salt
+            end,
     %% Hash as described above.
     <<Hash1Num:160>> = Hash1 = crypto:hash(sha, Password),
     Hash2 = crypto:hash(sha, Hash1),

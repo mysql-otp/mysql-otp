@@ -25,9 +25,12 @@
 -define(UTF8, 16#21). %% utf8_general_ci
 
 %% --- Capability flags ---
+-define(CLIENT_LONG_PASSWORD, 16#00000001).
 
 %% Server: sends found rows instead of affected rows in EOF_Packet
 -define(CLIENT_FOUND_ROWS, 16#00000002).
+
+-define(CLIENT_LONG_FLAG, 16#00000004).
 
 %% Server: supports schema-name in Handshake Response Packet
 %% Client: Handshake Response Packet contains a schema-name
