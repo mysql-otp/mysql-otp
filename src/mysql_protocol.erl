@@ -1069,7 +1069,7 @@ parse_packet_header(<<PacketLength:24/little-integer, SeqNum:8/integer>>) ->
 %% list to avoid copying large binaries.
 -spec add_packet_headers(Data :: binary(), SeqNum :: integer()) ->
     {PacketsWithHeaders :: iodata(), NextSeqNum :: integer()}.
-add_packet_headers(<<Payload:16#fffffa/binary, Rest/binary>>, SeqNum) ->
+add_packet_headers(<<Payload:16#ffffff/binary, Rest/binary>>, SeqNum) ->
     SeqNum1 = (SeqNum + 1) band 16#ff,
     {Packets, NextSeqNum} = add_packet_headers(Rest, SeqNum1),
     Header = <<16#ffffff:24/little, SeqNum:8>>,
