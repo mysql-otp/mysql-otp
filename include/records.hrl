@@ -33,7 +33,9 @@
          }).
 
 %% used under caching_sha2_password
--record(auth_read_ok, {}).
+-record(sha2_auth_read, {
+    msg :: integer()
+}).
 
 %% OK packet, commonly used in the protocol.
 -record(ok, {affected_rows :: integer(),

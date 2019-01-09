@@ -43,6 +43,7 @@
 -define(error_pattern, <<?ERROR, _/binary>>).
 -define(eof_pattern, <<?EOF, _:4/binary>>).
 -define(fast_auth_success_pattern, <<1:8, ?SHA2_OK:8>>).
+-define(full_auth_pattern, <<1:8, ?SHA2_FULL_AUTH:8>>).
 
 %% @doc Performs a handshake using the supplied socket and socket module for
 %% communication. Returns an ok or an error record. Raises errors when various
@@ -80,11 +81,19 @@ handshake_finish_or_switch_auth(Handshake = #handshake{status = Status, auth_plu
             %% check status, ignoring bit 16#4000, SERVER_SESSION_STATE_CHANGED.
             Status = OkStatus band bnot 16#4000,
             {ok, Handshake, SockModule, Socket};
-        #auth_read_ok{} ->
+        #sha2_auth_read{msg = Msg} ->
             %% caching_sha2_password
-            %% continue to get OK Status without send anything.
-            handshake_finish_or_switch_auth(Handshake, Password, SockModule,
-                Socket, SeqNum1);
+            case Msg of
+                ?SHA2_OK ->
+                    %% continue to get OK Status without send anything.
+                    handshake_finish_or_switch_auth(Handshake, Password, SockModule,
+                        Socket, SeqNum1);
+                ?SHA2_FULL_AUTH ->
+                    Hash = hash_password(sha256, Password, Handshake#handshake.auth_plugin_data),
+                    {ok, Sha2SeqNum} = send_packet(SockModule, Socket, Hash, SeqNum1),
+                    handshake_finish_or_switch_auth(Handshake, Password, SockModule,
+                        Socket, Sha2SeqNum)
+            end;
         #auth_method_switch{auth_plugin_name = AuthPluginName,
                             auth_plugin_data = AuthPluginData} ->
             Hash = case AuthPluginName of
@@ -412,8 +421,9 @@ add_client_capabilities(Caps) ->
 -spec parse_handshake_confirm(binary(), binary()) -> #ok{} | #auth_method_switch{} |
                                            #error{}.
 parse_handshake_confirm(?fast_auth_success_pattern, <<"caching_sha2_password">>) ->
-    %% fast auth success
     parse_ok_packet(<<?SHA2_OK>>);
+parse_handshake_confirm(?full_auth_pattern, <<"caching_sha2_password">>) ->
+    parse_ok_packet(<<?SHA2_FULL_AUTH>>);
 parse_handshake_confirm(Packet, _PluginName) ->
     case Packet of
         ?ok_pattern ->
@@ -1083,7 +1093,9 @@ add_packet_headers(Bin, SeqNum) when byte_size(Bin) < 16#ffffff ->
 -spec parse_ok_packet(binary()) -> #ok{}.
 parse_ok_packet(<<?SHA2_OK:8>>) ->
     %% continue to read the ok binary
-    #auth_read_ok{};
+    #sha2_auth_read{msg = ?SHA2_OK};
+parse_ok_packet(<<?SHA2_FULL_AUTH:8>>) ->
+    #sha2_auth_read{msg = ?SHA2_FULL_AUTH};
 parse_ok_packet(<<?OK:8, Rest/binary>>) ->
     {AffectedRows, Rest1} = lenenc_int(Rest),
     {InsertId, Rest2} = lenenc_int(Rest1),
