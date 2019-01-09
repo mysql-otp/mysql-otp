@@ -394,8 +394,9 @@ basic_capabilities(ConnectWithDB, SetFoundRows) ->
         _    -> CapabilityFlags1
     end.
 
--spec add_client_capabilities(integer()) -> integer().
-add_client_capabilities(_) ->
+-spec add_client_capabilities(Caps :: integer()) -> integer().
+add_client_capabilities(Caps) ->
+    Caps bor
     ?CLIENT_PROTOCOL_41 bor
     ?CLIENT_SECURE_CONNECTION bor
     ?CLIENT_LONG_PASSWORD bor
