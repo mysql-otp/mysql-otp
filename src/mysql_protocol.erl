@@ -394,15 +394,15 @@ basic_capabilities(ConnectWithDB, SetFoundRows) ->
         _    -> CapabilityFlags1
     end.
 
--spec add_client_capabilities(Caps :: integer()) -> integer().
-add_client_capabilities(Caps) ->
-    Caps bor
+-spec add_client_capabilities(integer()) -> integer().
+add_client_capabilities(_) ->
     ?CLIENT_PROTOCOL_41 bor
     ?CLIENT_SECURE_CONNECTION bor
     ?CLIENT_LONG_PASSWORD bor
     ?CLIENT_TRANSACTIONS bor
     ?CLIENT_PLUGIN_AUTH bor
     ?CLIENT_LONG_FLAG bor
+    ?CLIENT_MULTI_STATEMENTS bor
     ?CLIENT_MULTI_RESULTS bor
     ?CLIENT_PS_MULTI_RESULTS.
 
@@ -418,8 +418,8 @@ add_client_capabilities(Caps) ->
 %% @doc Handles the second packet from the server, when we have replied to the
 %% initial handshake. Returns an error if the server returns an error. Raises
 %% an error if unimplemented features are required.
--spec parse_handshake_confirm(binary(), binary()) -> #ok{} | #auth_method_switch{} |
-                                           #error{}.
+-spec parse_handshake_confirm(binary(), binary()) ->
+    #ok{} | #auth_method_switch{} |#error{} | #sha2_auth_read{}.
 parse_handshake_confirm(?fast_auth_success_pattern, <<"caching_sha2_password">>) ->
     parse_ok_packet(<<?SHA2_OK>>);
 parse_handshake_confirm(?full_auth_pattern, <<"caching_sha2_password">>) ->
@@ -1090,7 +1090,7 @@ add_packet_headers(Bin, SeqNum) when byte_size(Bin) < 16#ffffff ->
     {[Header, Bin], NextSeqNum}.
 
 
--spec parse_ok_packet(binary()) -> #ok{}.
+-spec parse_ok_packet(binary()) -> #ok{} | #sha2_auth_read{}.
 parse_ok_packet(<<?SHA2_OK:8>>) ->
     %% continue to read the ok binary
     #sha2_auth_read{msg = ?SHA2_OK};
@@ -1229,17 +1229,17 @@ hash_non_empty_password(sha256, Password, Salt) ->
     <<Hash2Num:256>> = Hash1 = crypto:hash(sha256, Password),
     Hash2 = crypto:hash(sha256, Hash1),
     <<Hash2Num1:256>> = crypto:hash(sha256, <<Hash2/binary, Salt1/binary>>),
-    <<(Hash2Num bxor Hash2Num1):256>>;
-hash_non_empty_password(_Type ,Password, Salt) ->
-    Salt1 = case Salt of
-                <<SaltNoNul:20/binary-unit:8, 0>> -> SaltNoNul;
-                _ when size(Salt) == 20           -> Salt
-            end,
-    %% Hash as described above.
-    <<Hash1Num:160>> = Hash1 = crypto:hash(sha, Password),
-    Hash2 = crypto:hash(sha, Hash1),
-    <<Hash3Num:160>> = crypto:hash(sha, <<Salt1/binary, Hash2/binary>>),
-    <<(Hash1Num bxor Hash3Num):160>>.
+    <<(Hash2Num bxor Hash2Num1):256>>.
+%%hash_non_empty_password(_Type ,Password, Salt) ->
+%%    Salt1 = case Salt of
+%%                <<SaltNoNul:20/binary-unit:8, 0>> -> SaltNoNul;
+%%                _ when size(Salt) == 20           -> Salt
+%%            end,
+%%    %% Hash as described above.
+%%    <<Hash1Num:160>> = Hash1 = crypto:hash(sha, Password),
+%%    Hash2 = crypto:hash(sha, Hash1),
+%%    <<Hash3Num:160>> = crypto:hash(sha, <<Salt1/binary, Hash2/binary>>),
+%%    <<(Hash1Num bxor Hash3Num):160>>.
 
 %% --- Lowlevel: variable length integers and strings ---
 
