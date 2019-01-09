@@ -20,6 +20,7 @@
 -define(OK, 0).
 -define(EOF, 16#fe).
 -define(ERROR, 16#ff).
+-define(SHA2_OK, 3).
 
 %% Character sets
 -define(UTF8, 16#21). %% utf8_general_ci

@@ -42,6 +42,7 @@
 -define(ok_pattern, <<?OK, _/binary>>).
 -define(error_pattern, <<?ERROR, _/binary>>).
 -define(eof_pattern, <<?EOF, _:4/binary>>).
+-define(fast_auth_success_pattern, <<1:8, ?SHA2_OK:8>>).
 
 %% @doc Performs a handshake using the supplied socket and socket module for
 %% communication. Returns an ok or an error record. Raises errors when various
@@ -56,7 +57,6 @@
 handshake(Username, Password, Database, SockModule0, SSLOpts, Socket0,
           SetFoundRows) ->
     SeqNum0 = 0,
-    io:format("~w ~w ~w~n", [SockModule0, Socket0, SeqNum0]),
     {ok, HandshakePacket, SeqNum1} = recv_packet(SockModule0, Socket0, SeqNum0),
     case parse_handshake(HandshakePacket) of
         #handshake{} = Handshake ->
@@ -65,24 +65,26 @@ handshake(Username, Password, Database, SockModule0, SSLOpts, Socket0,
                                      SSLOpts, Database, SetFoundRows),
             Response = build_handshake_response(Handshake, Username, Password,
                                                 Database, SetFoundRows),
-            io:format("SeqNum2 = ~p~n", [SeqNum2]),
             {ok, SeqNum3} = send_packet(SockModule, Socket, Response, SeqNum2),
-            io:format("SeqNum3 = ~p~n", [SeqNum3]),
             handshake_finish_or_switch_auth(Handshake, Password, SockModule,
                                             Socket, SeqNum3);
         #error{} = Error ->
             Error
     end.
 
-handshake_finish_or_switch_auth(Handshake = #handshake{status = _Status}, Password,
+handshake_finish_or_switch_auth(Handshake = #handshake{status = Status, auth_plugin_name = PluginName}, Password,
                                 SockModule, Socket, SeqNum0) ->
     {ok, ConfirmPacket, SeqNum1} = recv_packet(SockModule, Socket, SeqNum0),
-    io:format("confirm ~w~n", [ConfirmPacket]),
-    case parse_handshake_confirm(ConfirmPacket) of
-        #ok{} ->
+    case parse_handshake_confirm(ConfirmPacket, PluginName) of
+        #ok{status = OkStatus} ->
             %% check status, ignoring bit 16#4000, SERVER_SESSION_STATE_CHANGED.
-%%            Status = OkStatus band bnot 16#4000,
+            Status = OkStatus band bnot 16#4000,
             {ok, Handshake, SockModule, Socket};
+        #auth_read_ok{} ->
+            %% caching_sha2_password
+            %% continue to get OK Status without send anything.
+            handshake_finish_or_switch_auth(Handshake, Password, SockModule,
+                Socket, SeqNum1);
         #auth_method_switch{auth_plugin_name = AuthPluginName,
                             auth_plugin_data = AuthPluginData} ->
             Hash = case AuthPluginName of
@@ -91,7 +93,6 @@ handshake_finish_or_switch_auth(Handshake = #handshake{status = _Status}, Passwo
                        <<"mysql_native_password">> ->
                            hash_password(Password, AuthPluginData);
                        <<"caching_sha2_password">> ->
-                           io:format("AuthPluginData : ~w~n", [AuthPluginData]),
                            hash_password(sha256, Password, AuthPluginData);
                        UnknownAuthMethod ->
                            error({auth_method, UnknownAuthMethod})
@@ -408,12 +409,13 @@ add_client_capabilities(Caps) ->
 %% @doc Handles the second packet from the server, when we have replied to the
 %% initial handshake. Returns an error if the server returns an error. Raises
 %% an error if unimplemented features are required.
--spec parse_handshake_confirm(binary()) -> #ok{} | #auth_method_switch{} |
+-spec parse_handshake_confirm(binary(), binary()) -> #ok{} | #auth_method_switch{} |
                                            #error{}.
-parse_handshake_confirm(Packet) ->
+parse_handshake_confirm(?fast_auth_success_pattern, <<"caching_sha2_password">>) ->
+    %% fast auth success
+    parse_ok_packet(<<?SHA2_OK>>);
+parse_handshake_confirm(Packet, _PluginName) ->
     case Packet of
-        <<1:8, _/binary>> ->
-            parse_ok_packet(Packet);
         ?ok_pattern ->
             %% Connection complete.
             parse_ok_packet(Packet);
@@ -1077,9 +1079,11 @@ add_packet_headers(Bin, SeqNum) when byte_size(Bin) < 16#ffffff ->
     Header = <<(byte_size(Bin)):24/little, SeqNum:8>>,
     {[Header, Bin], NextSeqNum}.
 
+
 -spec parse_ok_packet(binary()) -> #ok{}.
-parse_ok_packet(<<1:8, _Num:8>>) ->
-    #ok{};
+parse_ok_packet(<<?SHA2_OK:8>>) ->
+    %% continue to read the ok binary
+    #auth_read_ok{};
 parse_ok_packet(<<?OK:8, Rest/binary>>) ->
     {AffectedRows, Rest1} = lenenc_int(Rest),
     {InsertId, Rest2} = lenenc_int(Rest1),

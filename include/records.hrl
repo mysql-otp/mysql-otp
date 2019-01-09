@@ -32,6 +32,9 @@
           auth_plugin_data :: binary()
          }).
 
+%% used under caching_sha2_password
+-record(auth_read_ok, {}).
+
 %% OK packet, commonly used in the protocol.
 -record(ok, {affected_rows :: integer(),
              insert_id :: integer(),
