@@ -21,6 +21,7 @@
 -define(EOF, 16#fe).
 -define(ERROR, 16#ff).
 -define(SHA2_OK, 3).
+-define(SHA2_PUBLIC_KEY, 2).
 -define(SHA2_FULL_AUTH, 4).
 
 %% Character sets
