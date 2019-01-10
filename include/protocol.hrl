@@ -44,6 +44,10 @@
 %% Client: expects status flags in EOF_Packet
 -define(CLIENT_TRANSACTIONS, 16#00002000).
 
+
+%% Client: allow load file 
+-define(CLIENT_LOAD_DATA_LOCAL, 16#00000080).
+
 %% Server: supports Authentication::Native41
 %% Client: supports Authentication::Native41
 -define(CLIENT_SECURE_CONNECTION, 16#00008000).
