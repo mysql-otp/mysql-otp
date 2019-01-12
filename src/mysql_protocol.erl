@@ -356,8 +356,8 @@ build_handshake_response(Handshake, Username, Password, Database,
             hash_password(Password, Handshake#handshake.auth_plugin_data);
         <<"mysql_native_password">> ->
             hash_password(Password, Handshake#handshake.auth_plugin_data);
-       <<"caching_sha2_password">> ->
-           hash_sha2_password(Password, Handshake#handshake.auth_plugin_data);
+        <<"caching_sha2_password">> ->
+            hash_sha2_password(Password, Handshake#handshake.auth_plugin_data);
         UnknownAuthMethod ->
             error({auth_method, UnknownAuthMethod})
     end,
