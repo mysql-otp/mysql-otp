@@ -87,12 +87,15 @@ handshake_finish_or_switch_auth(Handshake = #handshake{status = Status}, Passwor
             {ok, Handshake, SockModule, Socket};
         #cache_sha2_auth{msg = Msg} ->
             %% caching_sha2_password
+            %% https://insidemysql.com/preparing-your-community-connector-for-mysql-8-part-2-sha256/
+            %% ok means 3
+            %% full_auth means 4
             case Msg of
                 ok ->
                     %% continue to get OK Status without send anything.
                     handshake_finish_or_switch_auth(Handshake, Password, SockModule,
                         Socket, SeqNum1);
-                auth_full ->
+                full_auth ->
                     Hash = hash_sha2_password(Password, Handshake#handshake.auth_plugin_data),
                     {ok, Sha2SeqNum} = send_packet(SockModule, Socket, Hash, SeqNum1),
                     handshake_finish_or_switch_auth(Handshake, Password, SockModule,
@@ -1120,7 +1123,7 @@ parse_ok_packet(<<?OK:8, Rest/binary>>) ->
 parse_sha2_auth_packet(<<?sha2_auth_read:8, ?SHA2_OK:8>>) ->
     #cache_sha2_auth{msg = ok};
 parse_sha2_auth_packet(<<?sha2_auth_read:8, ?SHA2_FULL_AUTH:8>>) ->
-    #cache_sha2_auth{msg = auth_full};
+    #cache_sha2_auth{msg = full_auth};
 parse_sha2_auth_packet(_) ->
     #cache_sha2_auth{}.
 
@@ -1407,7 +1410,7 @@ parse_sha2_auth_test() ->
     Body1 = <<1, 3>>,
     ?assertEqual(#cache_sha2_auth{msg = ok}, parse_sha2_auth_packet(Body1)),
     Body2 = <<1, 4>>,
-    ?assertEqual(#cache_sha2_auth{msg = auth_full}, parse_sha2_auth_packet(Body2)).
+    ?assertEqual(#cache_sha2_auth{msg = full_auth}, parse_sha2_auth_packet(Body2)).
 
 parse_error_test() ->
     %% Protocol 4.1

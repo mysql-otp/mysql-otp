@@ -34,7 +34,7 @@
 
 %% used under caching_sha2_password
 -record(cache_sha2_auth, {
-    msg :: ok | auth_full
+    msg :: ok | full_auth
 }).
 
 %% OK packet, commonly used in the protocol.
