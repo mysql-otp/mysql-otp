@@ -21,17 +21,21 @@
 -define(EOF, 16#fe).
 -define(ERROR, 16#ff).
 -define(SHA2_OK, 3).
+-define(SHA2_PUBLIC_KEY, 2).
 -define(SHA2_FULL_AUTH, 4).
 
 %% Character sets
 -define(UTF8, 16#21). %% utf8_general_ci
 
 %% --- Capability flags ---
+%% Use the improved version of Old Password Authentication.
+%% Assumed to be set since 4.1.1.
 -define(CLIENT_LONG_PASSWORD, 16#00000001).
 
 %% Server: sends found rows instead of affected rows in EOF_Packet
 -define(CLIENT_FOUND_ROWS, 16#00000002).
 
+%% Longer flags in Protocol::ColumnDefinition320.
 -define(CLIENT_LONG_FLAG, 16#00000004).
 
 %% Server: supports schema-name in Handshake Response Packet

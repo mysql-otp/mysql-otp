@@ -399,22 +399,12 @@ add_client_capabilities(Caps) ->
     Caps bor
     ?CLIENT_PROTOCOL_41 bor
     ?CLIENT_SECURE_CONNECTION bor
-    ?CLIENT_LONG_PASSWORD bor
     ?CLIENT_TRANSACTIONS bor
     ?CLIENT_PLUGIN_AUTH bor
-    ?CLIENT_LONG_FLAG bor
     ?CLIENT_MULTI_STATEMENTS bor
     ?CLIENT_MULTI_RESULTS bor
     ?CLIENT_PS_MULTI_RESULTS.
 
-%%    clientProtocol41 |
-%%    clientSecureConn |
-%%    clientLongPassword |
-%%    clientTransactions |
-%%    clientLocalFiles |
-%%    clientPluginAuth |
-%%    clientMultiResults |
-%%    mc.flags&clientLongFlag
 
 %% @doc Handles the second packet from the server, when we have replied to the
 %% initial handshake. Returns an error if the server returns an error. Raises
@@ -1231,16 +1221,7 @@ hash_non_empty_password(sha256, Password, Salt) ->
     Hash2 = crypto:hash(sha256, Hash1),
     <<Hash2Num1:256>> = crypto:hash(sha256, <<Hash2/binary, Salt1/binary>>),
     <<(Hash2Num bxor Hash2Num1):256>>.
-%%hash_non_empty_password(_Type ,Password, Salt) ->
-%%    Salt1 = case Salt of
-%%                <<SaltNoNul:20/binary-unit:8, 0>> -> SaltNoNul;
-%%                _ when size(Salt) == 20           -> Salt
-%%            end,
-%%    %% Hash as described above.
-%%    <<Hash1Num:160>> = Hash1 = crypto:hash(sha, Password),
-%%    Hash2 = crypto:hash(sha, Hash1),
-%%    <<Hash3Num:160>> = crypto:hash(sha, <<Salt1/binary, Hash2/binary>>),
-%%    <<(Hash1Num bxor Hash3Num):160>>.
+
 
 %% --- Lowlevel: variable length integers and strings ---
 
@@ -1440,3 +1421,9 @@ hash_password_test() ->
     ?assertEqual(<<>>, hash_password(<<>>, <<"abcdefghijklmnopqrst">>)).
 
 -endif.
+
+hash_sha2_password_test() ->
+    ?assertEqual(<<222,207,222,139,41,181,202,13,191,241,
+        234,234,73,127,244,101,205,3,28,251>>,
+        hash_password(<<"foo">>, <<"abcdefghijklmnopqrst">>)),
+    ?assertEqual(<<>>, hash_password(sha2, <<>>, <<"abcdefghijklmnopqrst">>)).
