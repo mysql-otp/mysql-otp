@@ -42,8 +42,13 @@
 -define(ok_pattern, <<?OK, _/binary>>).
 -define(error_pattern, <<?ERROR, _/binary>>).
 -define(eof_pattern, <<?EOF, _:4/binary>>).
--define(fast_auth_success_pattern, <<1:8, ?SHA2_OK:8>>).
--define(full_auth_pattern, <<1:8, ?SHA2_FULL_AUTH:8>>).
+
+-define(sha2_auth_read, 1).
+-define(SHA2_OK, 3).
+-define(SHA2_PUBLIC_KEY, 2).
+-define(SHA2_FULL_AUTH, 4).
+-define(fast_auth_success_pattern, <<?sha2_auth_read:8, ?SHA2_OK:8>>).
+-define(full_auth_pattern, <<?sha2_auth_read:8, ?SHA2_FULL_AUTH:8>>).
 
 %% @doc Performs a handshake using the supplied socket and socket module for
 %% communication. Returns an ok or an error record. Raises errors when various
@@ -73,23 +78,22 @@ handshake(Username, Password, Database, SockModule0, SSLOpts, Socket0,
             Error
     end.
 
-handshake_finish_or_switch_auth(Handshake = #handshake{status = Status, auth_plugin_name = PluginName}, Password,
-                                SockModule, Socket, SeqNum0) ->
+handshake_finish_or_switch_auth(Handshake = #handshake{status = Status}, Password, SockModule, Socket, SeqNum0) ->
     {ok, ConfirmPacket, SeqNum1} = recv_packet(SockModule, Socket, SeqNum0),
-    case parse_handshake_confirm(ConfirmPacket, PluginName) of
+    case parse_handshake_confirm(ConfirmPacket) of
         #ok{status = OkStatus} ->
             %% check status, ignoring bit 16#4000, SERVER_SESSION_STATE_CHANGED.
             Status = OkStatus band bnot 16#4000,
             {ok, Handshake, SockModule, Socket};
-        #sha2_auth_read{msg = Msg} ->
+        #cache_sha2_auth{msg = Msg} ->
             %% caching_sha2_password
             case Msg of
-                ?SHA2_OK ->
+                ok ->
                     %% continue to get OK Status without send anything.
                     handshake_finish_or_switch_auth(Handshake, Password, SockModule,
                         Socket, SeqNum1);
-                ?SHA2_FULL_AUTH ->
-                    Hash = hash_password(sha256, Password, Handshake#handshake.auth_plugin_data),
+                auth_full ->
+                    Hash = hash_sha2_password(Password, Handshake#handshake.auth_plugin_data),
                     {ok, Sha2SeqNum} = send_packet(SockModule, Socket, Hash, SeqNum1),
                     handshake_finish_or_switch_auth(Handshake, Password, SockModule,
                         Socket, Sha2SeqNum)
@@ -102,7 +106,7 @@ handshake_finish_or_switch_auth(Handshake = #handshake{status = Status, auth_plu
                        <<"mysql_native_password">> ->
                            hash_password(Password, AuthPluginData);
                        <<"caching_sha2_password">> ->
-                           hash_password(sha256, Password, AuthPluginData);
+                           hash_sha2_password(Password, AuthPluginData);
                        UnknownAuthMethod ->
                            error({auth_method, UnknownAuthMethod})
                    end,
@@ -350,7 +354,7 @@ build_handshake_response(Handshake, Username, Password, Database,
         <<"mysql_native_password">> ->
             hash_password(Password, Handshake#handshake.auth_plugin_data);
        <<"caching_sha2_password">> ->
-           hash_password(sha256, Password, Handshake#handshake.auth_plugin_data);
+           hash_sha2_password(Password, Handshake#handshake.auth_plugin_data);
         UnknownAuthMethod ->
             error({auth_method, UnknownAuthMethod})
     end,
@@ -409,13 +413,9 @@ add_client_capabilities(Caps) ->
 %% @doc Handles the second packet from the server, when we have replied to the
 %% initial handshake. Returns an error if the server returns an error. Raises
 %% an error if unimplemented features are required.
--spec parse_handshake_confirm(binary(), binary()) ->
-    #ok{} | #auth_method_switch{} |#error{} | #sha2_auth_read{}.
-parse_handshake_confirm(?fast_auth_success_pattern, <<"caching_sha2_password">>) ->
-    parse_ok_packet(<<?SHA2_OK>>);
-parse_handshake_confirm(?full_auth_pattern, <<"caching_sha2_password">>) ->
-    parse_ok_packet(<<?SHA2_FULL_AUTH>>);
-parse_handshake_confirm(Packet, _PluginName) ->
+-spec parse_handshake_confirm(binary()) ->
+    #ok{} | #cache_sha2_auth{} | #auth_method_switch{} | #error{}.
+parse_handshake_confirm(Packet) ->
     case Packet of
         ?ok_pattern ->
             %% Connection complete.
@@ -423,6 +423,13 @@ parse_handshake_confirm(Packet, _PluginName) ->
         ?error_pattern ->
             %% Access denied, insufficient client capabilities, etc.
             parse_error_packet(Packet);
+        ?fast_auth_success_pattern ->
+            %% Fast authentication found
+            parse_sha2_auth_packet(Packet);
+        ?full_auth_pattern ->
+            %% cached entry check not found
+            %% Full authentication start
+            parse_sha2_auth_packet(Packet);
         <<?EOF>> ->
             %% "Old Authentication Method Switch Request Packet consisting of a
             %% single 0xfe byte. It is sent by server to request client to
@@ -1081,12 +1088,7 @@ add_packet_headers(Bin, SeqNum) when byte_size(Bin) < 16#ffffff ->
     {[Header, Bin], NextSeqNum}.
 
 
--spec parse_ok_packet(binary()) -> #ok{} | #sha2_auth_read{}.
-parse_ok_packet(<<?SHA2_OK:8>>) ->
-    %% continue to read the ok binary
-    #sha2_auth_read{msg = ?SHA2_OK};
-parse_ok_packet(<<?SHA2_FULL_AUTH:8>>) ->
-    #sha2_auth_read{msg = ?SHA2_FULL_AUTH};
+-spec parse_ok_packet(binary()) -> #ok{}.
 parse_ok_packet(<<?OK:8, Rest/binary>>) ->
     {AffectedRows, Rest1} = lenenc_int(Rest),
     {InsertId, Rest2} = lenenc_int(Rest1),
@@ -1113,6 +1115,14 @@ parse_ok_packet(<<?OK:8, Rest/binary>>) ->
         status = StatusFlags,
         warning_count = WarningCount,
         msg = Msg}.
+
+-spec parse_sha2_auth_packet(binary()) -> #cache_sha2_auth{}.
+parse_sha2_auth_packet(<<?sha2_auth_read:8, ?SHA2_OK:8>>) ->
+    #cache_sha2_auth{msg = ok};
+parse_sha2_auth_packet(<<?sha2_auth_read:8, ?SHA2_FULL_AUTH:8>>) ->
+    #cache_sha2_auth{msg = auth_full};
+parse_sha2_auth_packet(_) ->
+    #cache_sha2_auth{}.
 
 -spec parse_error_packet(binary()) -> #error{}.
 parse_error_packet(<<?ERROR:8, ErrNo:16/little, "#", SQLState:5/binary-unit:8,
@@ -1161,22 +1171,18 @@ hash_password(Password, Salt) ->
     end,
     case PasswordBin =:= <<>> of
         true -> <<>>;
-        false -> hash_non_empty_password(Password, Salt)
+        false -> hash_native_auth_password(Password, Salt)
     end.
 
 
--spec hash_password(
-    Type :: sha1 | sha256,
+-spec hash_sha2_password(
     Password :: iodata(),
     Salt :: binary()) -> Hash :: binary().
-hash_password(Type, Password, Salt) ->
+hash_sha2_password(Password, Salt) ->
     %% From the "MySQL Internals" manual:
-    %% SHA1( password ) XOR SHA1( "20-bytes random data from server" <concat>
-    %%                            SHA1( SHA1( password ) ) )
-    %% ----
-    %% sha256(MySQL8)
     %% Nonce - 20 byte long random data
-    %% Scramble - XOR(sha25656(password), sha25656(sha25656(sha25656(password)), Nonce))
+    %% XOR(SHA256(password), SHA256(SHA256(SHA256(password)), Nonce))
+    %% ----
     %% Make sure the salt is exactly 20 bytes.
     %%
     %% The auth data is obviously nul-terminated. For the "native" auth
@@ -1187,12 +1193,13 @@ hash_password(Type, Password, Salt) ->
                   end,
     case PasswordBin =:= <<>> of
         true -> <<>>;
-        false -> hash_non_empty_password(Type, Password, Salt)
+        false -> hash_caching_sha2_password(Password, Salt)
     end.
 
--spec hash_non_empty_password(Password :: iodata(), Salt :: binary()) ->
+
+-spec hash_native_auth_password(Password :: iodata(), Salt :: binary()) ->
     Hash :: binary().
-hash_non_empty_password(Password, Salt) ->
+hash_native_auth_password(Password, Salt) ->
     Salt1 = case Salt of
         <<SaltNoNul:20/binary-unit:8, 0>> -> SaltNoNul;
         _ when size(Salt) == 20           -> Salt
@@ -1205,14 +1212,13 @@ hash_non_empty_password(Password, Salt) ->
 
 %% sha256(MySQL8)
 %% Nonce - 20 byte long random data
-%% Scramble - XOR(sha25656(password), sha25656(sha25656(sha25656(password)), Nonce))
+%% Scramble - XOR(SHA256(password), SHA256(SHA256(SHA256(password)), Nonce))
 %% Make sure the salt is exactly 20 bytes.
--spec hash_non_empty_password(
-    Type :: sha1 | sha256,
+-spec hash_caching_sha2_password(
     Password :: iodata(),
     Salt :: binary()) ->
     Hash :: binary().
-hash_non_empty_password(sha256, Password, Salt) ->
+hash_caching_sha2_password(Password, Salt) ->
     Salt1 = case Salt of
                 <<SaltNoNul:20/binary-unit:8, 0>> -> SaltNoNul;
                 _ when size(Salt) == 20           -> Salt
@@ -1397,6 +1403,12 @@ parse_ok_test() ->
                      msg = <<"Foo">>},
                  parse_ok_packet(Body)).
 
+parse_sha2_auth_test() ->
+    Body1 = <<1, 3>>,
+    ?assertEqual(#cache_sha2_auth{msg = ok}, parse_sha2_auth_packet(Body1)),
+    Body2 = <<1, 4>>,
+    ?assertEqual(#cache_sha2_auth{msg = auth_full}, parse_sha2_auth_packet(Body2)).
+
 parse_error_test() ->
     %% Protocol 4.1
     Body = <<255, 42, 0, "#", "XYZxx", "Foo">>,
@@ -1420,10 +1432,14 @@ hash_password_test() ->
                  hash_password(<<"foo">>, <<"abcdefghijklmnopqrst">>)),
     ?assertEqual(<<>>, hash_password(<<>>, <<"abcdefghijklmnopqrst">>)).
 
+hash_sha2_password_test() ->
+    ?assertEqual(<<125,155,142,2,20,139,6,254,
+        65,126, 239,146,107,77,17,8,
+        120,55,247,33, 87,16,76,63,
+        128,131,60,188,58,81,171,242>>,
+        hash_sha2_password(<<"foo">>, <<"abcdefghijklmnopqrst">>)),
+    ?assertEqual(<<>>, hash_sha2_password(<<>>, <<"abcdefghijklmnopqrst">>)).
+
 -endif.
 
-hash_sha2_password_test() ->
-    ?assertEqual(<<222,207,222,139,41,181,202,13,191,241,
-        234,234,73,127,244,101,205,3,28,251>>,
-        hash_password(<<"foo">>, <<"abcdefghijklmnopqrst">>)),
-    ?assertEqual(<<>>, hash_password(sha2, <<>>, <<"abcdefghijklmnopqrst">>)).
+
