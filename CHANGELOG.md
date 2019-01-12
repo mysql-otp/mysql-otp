@@ -1,7 +1,16 @@
 Change log
 ==========
 
-* Mention exit(Pid, normal) in README and a test [2018-11-21 00:51:58 +0100]
+* Get rid of socket wrapper modules [2018-12-03 01:07:39 +0100]
+* Remove redundant transaction level info in state [2018-12-02 22:39:36 +0100]
+* Remove superfluos 'Too many connections' test [2018-12-02 20:53:07 +0100]
+* Move gen_server to separate module [2018-12-02 20:46:33 +0100]
+* Handle error packet as the initial packet from the server [2018-12-02 18:35:45 +0100]
+* Clarifications for usage with MySQL 8 [2018-12-02 15:31:25 +0100]
+* Monitor calling process during transaction [2018-11-29 18:22:30 +0100]
+* Run tests with verbose output by default [2018-11-27 20:58:15 +0100]
+* fix spec for host option [2018-11-27 18:25:44 +0100]
+* Mention exit(Pid, normal) in README and a test [2018-11-21 00:59:25 +0100]
 * Return an error on deadlock if all retries fail in a transaction [2018-10-07 20:35:39 +0200]
 * Set gen_server-timeouts for transaction statements to infinity (#91) [2018-10-06 21:39:14 +0200]
 
