@@ -43,12 +43,13 @@
 -define(error_pattern, <<?ERROR, _/binary>>).
 -define(eof_pattern, <<?EOF, _:4/binary>>).
 
--define(sha2_auth_read, 1).
--define(SHA2_OK, 3).
--define(SHA2_PUBLIC_KEY, 2).
--define(SHA2_FULL_AUTH, 4).
--define(fast_auth_success_pattern, <<?sha2_auth_read:8, ?SHA2_OK:8>>).
--define(full_auth_pattern, <<?sha2_auth_read:8, ?SHA2_FULL_AUTH:8>>).
+-define(MORE_DATA, 0x01).
+-define(SHA2_OK, 0x03).
+-define(SHA2_PUBLIC_KEY, 0x02).
+-define(SHA2_FULL_AUTH, 0x04).
+-define(more_data_pattern, <<?MORE_DATA:8, _/binary>>).
+-define(fast_auth_success_pattern, <<?MORE_DATA:8, ?SHA2_OK:8>>).
+-define(full_auth_pattern, <<?MORE_DATA:8, ?SHA2_FULL_AUTH:8>>).
 
 %% @doc Performs a handshake using the supplied socket and socket module for
 %% communication. Returns an ok or an error record. Raises errors when various
@@ -404,9 +405,6 @@ basic_capabilities(ConnectWithDB, SetFoundRows) ->
 -spec add_client_capabilities(Caps :: integer()) -> integer().
 add_client_capabilities(Caps) ->
     Caps bor
-    ?CLIENT_PROTOCOL_41 bor
-    ?CLIENT_SECURE_CONNECTION bor
-    ?CLIENT_TRANSACTIONS bor
     ?CLIENT_PLUGIN_AUTH bor
     ?CLIENT_MULTI_STATEMENTS bor
     ?CLIENT_MULTI_RESULTS bor
@@ -426,13 +424,9 @@ parse_handshake_confirm(Packet) ->
         ?error_pattern ->
             %% Access denied, insufficient client capabilities, etc.
             parse_error_packet(Packet);
-        ?fast_auth_success_pattern ->
-            %% Fast authentication found
-            parse_sha2_auth_packet(Packet);
-        ?full_auth_pattern ->
-            %% cached entry check not found
-            %% Full authentication start
-            parse_sha2_auth_packet(Packet);
+        ?more_data_pattern ->
+            %% Server sends a “More data” packet (first byte == 0x01)
+            parse_more_data_packet(Packet);
         <<?EOF>> ->
             %% "Old Authentication Method Switch Request Packet consisting of a
             %% single 0xfe byte. It is sent by server to request client to
@@ -1119,12 +1113,12 @@ parse_ok_packet(<<?OK:8, Rest/binary>>) ->
         warning_count = WarningCount,
         msg = Msg}.
 
--spec parse_sha2_auth_packet(binary()) -> #cache_sha2_auth{}.
-parse_sha2_auth_packet(<<?sha2_auth_read:8, ?SHA2_OK:8>>) ->
+-spec parse_more_data_packet(binary()) -> #cache_sha2_auth{}.
+parse_more_data_packet(?fast_auth_success_pattern) ->
     #cache_sha2_auth{msg = ok};
-parse_sha2_auth_packet(<<?sha2_auth_read:8, ?SHA2_FULL_AUTH:8>>) ->
+parse_more_data_packet(?full_auth_pattern) ->
     #cache_sha2_auth{msg = full_auth};
-parse_sha2_auth_packet(_) ->
+parse_more_data_packet(_) ->
     #cache_sha2_auth{}.
 
 -spec parse_error_packet(binary()) -> #error{}.
@@ -1408,9 +1402,9 @@ parse_ok_test() ->
 
 parse_sha2_auth_test() ->
     Body1 = <<1, 3>>,
-    ?assertEqual(#cache_sha2_auth{msg = ok}, parse_sha2_auth_packet(Body1)),
+    ?assertEqual(#cache_sha2_auth{msg = ok}, parse_more_data_packet(Body1)),
     Body2 = <<1, 4>>,
-    ?assertEqual(#cache_sha2_auth{msg = full_auth}, parse_sha2_auth_packet(Body2)).
+    ?assertEqual(#cache_sha2_auth{msg = full_auth}, parse_more_data_packet(Body2)).
 
 parse_error_test() ->
     %% Protocol 4.1
