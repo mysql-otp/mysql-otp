@@ -43,10 +43,10 @@
 -define(error_pattern, <<?ERROR, _/binary>>).
 -define(eof_pattern, <<?EOF, _:4/binary>>).
 
--define(MORE_DATA, 0x01).
--define(SHA2_OK, 0x03).
--define(SHA2_PUBLIC_KEY, 0x02).
--define(SHA2_FULL_AUTH, 0x04).
+-define(MORE_DATA, 16#01).
+-define(SHA2_OK, 16#03).
+-define(SHA2_PUBLIC_KEY, 16#02).
+-define(SHA2_FULL_AUTH, 16#04).
 -define(more_data_pattern, <<?MORE_DATA:8, _/binary>>).
 -define(fast_auth_success_pattern, <<?MORE_DATA:8, ?SHA2_OK:8>>).
 -define(full_auth_pattern, <<?MORE_DATA:8, ?SHA2_FULL_AUTH:8>>).
