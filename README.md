@@ -111,8 +111,10 @@ The encode and protocol test suites does not require a
 running MySQL server on localhost.
 
 For the suites `mysql_tests`, `ssl_tests` and `transaction_tests` you need to
-start MySQL on localhost and give privileges to the user `otptest` and (for
-`ssl_tests`) to the user `otptestssl`:
+start MySQL on localhost and give privileges to the user `otptest`. 
+Additionally for `mysql_tests` the mysql server (my.cnf) needs to be configured 
+to allow file loading by adding the following the mysql configuration `local_infile=1`. 
+And (for `ssl_tests`) to the user `otptestssl`:
 
 ```SQL
 CREATE USER otptest@localhost IDENTIFIED BY 'otptest';

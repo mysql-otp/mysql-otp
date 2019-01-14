@@ -115,13 +115,29 @@ ping(SockModule, Socket) ->
 query(Query, SockModule, Socket, Timeout) ->
     Req = <<?COM_QUERY, (iolist_to_binary(Query))/binary>>,
     SeqNum0 = 0,
-    {ok, _SeqNum1} = send_packet(SockModule, Socket, Req, SeqNum0),
-    fetch_query_response(SockModule, Socket, Timeout).
+    {ok, SeqNum1} = send_packet(SockModule, Socket, Req, SeqNum0),
+    Resp = fetch_query_response(SockModule, Socket, Timeout),
+    case Resp of
+        {ok, [#load_local_file{filename = FileName}]} ->
+            send_load_local_file(FileName, SockModule, Socket, Timeout, SeqNum1 + 1);
+        Resp ->
+            Resp
+    end.
 
 %% @doc This is used by query/4. If query/4 returns {error, timeout}, this
 %% function can be called to retry to fetch the results of the query.
 fetch_query_response(SockModule, Socket, Timeout) ->
     fetch_response(SockModule, Socket, Timeout, text, []).
+
+
+-spec send_load_local_file(FileName :: iodata(), atom(), term(), timeout(), integer()) ->
+    {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
+send_load_local_file(FileName, SockModule, Socket, Timeout, Seq) ->
+    {ok, FileBin} = file:read_file(FileName),
+    {ok, SeqNum2} = send_packet(SockModule, Socket, FileBin, Seq),
+    {ok, _SeqNum3} = send_packet(SockModule, Socket, <<"">>, SeqNum2),
+    fetch_query_response(SockModule, Socket, Timeout).
+
 
 %% @doc Prepares a statement.
 -spec prepare(iodata(), atom(), term()) -> #error{} | #prepared{}.
@@ -365,7 +381,8 @@ verify_server_capabilities(Handshake, CapabilityFlags) ->
 basic_capabilities(ConnectWithDB, SetFoundRows) ->
     CapabilityFlags0 = ?CLIENT_PROTOCOL_41 bor
                        ?CLIENT_TRANSACTIONS bor
-                       ?CLIENT_SECURE_CONNECTION,
+                       ?CLIENT_SECURE_CONNECTION bor
+                       ?CLIENT_LOAD_DATA_LOCAL,
     CapabilityFlags1 = case ConnectWithDB of
                            true -> CapabilityFlags0 bor ?CLIENT_CONNECT_WITH_DB;
                            _ -> CapabilityFlags0
@@ -423,6 +440,8 @@ fetch_response(SockModule, Socket, Timeout, Proto, Acc) ->
                     parse_ok_packet(Packet);
                 ?error_pattern ->
                     parse_error_packet(Packet);
+                << ?LOAD_LOCAL_FILE_REQ, FileName/binary >> ->
+                    #load_local_file{filename = FileName};                         
                 ResultPacket ->
                     %% The first packet in a resultset is only the column count.
                     {ColCount, <<>>} = lenenc_int(ResultPacket),
@@ -482,7 +501,9 @@ more_results_exists(#ok{status = S}) ->
 more_results_exists(#error{}) ->
     false; %% No status bits for error
 more_results_exists(#resultset{status = S}) ->
-    S band ?SERVER_MORE_RESULTS_EXISTS /= 0.
+    S band ?SERVER_MORE_RESULTS_EXISTS /= 0;
+more_results_exists(#load_local_file{}) ->
+    false.
 
 %% @doc Receives NumLeft column definition packets. They are not parsed.
 %% @see parse_column_definition/1

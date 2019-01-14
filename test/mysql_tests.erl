@@ -212,7 +212,9 @@ query_test_() ->
           {"TIME",                 fun () -> time(Pid) end},
           {"DATETIME",             fun () -> datetime(Pid) end},
           {"JSON",                 fun () -> json(Pid) end},
-          {"Microseconds",         fun () -> microseconds(Pid) end}]
+          {"Microseconds",         fun () -> microseconds(Pid) end},
+          {"LOAD DATA FILE",       fun () -> load_data_file_infile(Pid) end}
+         ]
      end}.
 
 connect_with_db(_Pid) ->
@@ -355,6 +357,36 @@ text_protocol(Pid) ->
                  Rows),
 
     ok = mysql:query(Pid, <<"DROP TABLE t">>).
+
+
+load_data_file_infile(Pid) ->
+    ok = mysql:query(Pid, <<"CREATE TABLE `otptest`.`loadFile` (
+                            `col1` BIGINT(20) NOT NULL,
+                            `col2` VARCHAR(30) NULL,
+                            PRIMARY KEY (`col1`));">>),
+
+    FileName = "loadFile",
+    {ok, Path} = file:get_cwd(), 
+    FilePath = iolist_to_binary([Path, "/", FileName]), 
+    file:write_file(FilePath, 
+                    iolist_to_binary( [<<" 1,ba)Year15">>, <<10>>, 
+                                       <<" 2,$hinyPlay19">>, <<10>>,
+                                       <<" 3,sm@llFeet38">>]
+                                    )
+                   ),
+
+    Query = io_lib:format("LOAD DATA LOCAL INFILE '~s' INTO TABLE otptest.loadFile
+                          (@var1)
+                          SET
+                          col1 = SUBSTR(@var1, 1, 2), 
+                          col2 = SUBSTR(@var1, 4, 11);",
+                          [FilePath]),
+    Res = mysql:query(Pid, iolist_to_binary(Query)),
+
+    ?assertEqual({ok,[<<"col2">>],[[<<"$hinyPlay19">>]]},
+                 mysql:query(Pid, <<"SELECT `loadFile`.`col2` FROM `otptest`.`loadFile` WHERE col1 = 2;">>)),
+    file:delete(FilePath),
+    ok = mysql:query(Pid, <<"DROP TABLE loadFile">>).
 
 binary_protocol(Pid) ->
     ok = mysql:query(Pid, ?create_table_t),

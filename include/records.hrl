@@ -61,3 +61,8 @@
                    orig_query :: iodata(),
                    param_count :: integer(),
                    warning_count :: integer()}).
+
+
+%% LOAD LOCAL FILE
+-record(load_local_file, {filename}).
+

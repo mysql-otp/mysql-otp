@@ -22,3 +22,7 @@ test/ssl/server*
 test/ssl/my-ssl.cnf
 test/ssl/my-ssl.cnf-e
 mysql.d
+.settings
+.project
+_build
+rebar.lock
