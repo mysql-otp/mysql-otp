@@ -41,7 +41,6 @@
 %% Macros for pattern matching on packets.
 -define(ok_pattern, <<?OK, _/binary>>).
 -define(error_pattern, <<?ERROR, _/binary>>).
--define(local_local_data_file, << ?LOAD_LOCAL_FILE_REQ, _/binary >>).
 -define(eof_pattern, <<?EOF, _:4/binary>>).
 
 %% @doc Performs a handshake using the supplied socket and socket module for
@@ -441,8 +440,7 @@ fetch_response(SockModule, Socket, Timeout, Proto, Acc) ->
                     parse_ok_packet(Packet);
                 ?error_pattern ->
                     parse_error_packet(Packet);
-                ?local_local_data_file ->
-                    <<_, FileName/binary>> = Packet, 
+                << ?LOAD_LOCAL_FILE_REQ, FileName/binary >> ->
                     #load_local_file{filename = FileName};                         
                 ResultPacket ->
                     %% The first packet in a resultset is only the column count.
