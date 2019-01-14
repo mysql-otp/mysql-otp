@@ -111,8 +111,10 @@ The encode and protocol test suites does not require a
 running MySQL server on localhost.
 
 For the suites `mysql_tests`, `ssl_tests` and `transaction_tests` you need to
-start MySQL on localhost and give privileges to the user `otptest` additionally you need to set my.cnf with `local_infile=1`. And (for
-`ssl_tests`) to the user `otptestssl`:
+start MySQL on localhost and give privileges to the user `otptest`. 
+Additionally for `mysql_tests` the mysql server (my.cnf) needs to be configured 
+to allow file loading by adding the following the mysql configuration `local_infile=1`. 
+And (for `ssl_tests`) to the user `otptestssl`:
 
 ```SQL
 CREATE USER otptest@localhost IDENTIFIED BY 'otptest';
@@ -133,7 +135,7 @@ because CA certificates will no longer match.
 If you run `make tests COVER=1` a coverage report will be generated. Open
 `cover/index.html` to see that any lines you have added or modified are covered
 by a test.
- 
+
 Contributing
 ------------
 
@@ -161,7 +163,7 @@ Tagging a new version:
   * Update the online documentation and coverage reports using `make gh-pages`.
     Then push the gh-pages branch using `git push origin gh-pages`.
 
-License 
+License
 -------
 
 GNU Lesser General Public License (LGPL) version 3 or any later version.

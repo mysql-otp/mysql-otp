@@ -41,6 +41,7 @@
 %% Macros for pattern matching on packets.
 -define(ok_pattern, <<?OK, _/binary>>).
 -define(error_pattern, <<?ERROR, _/binary>>).
+-define(local_local_data_file, << ?LOAD_LOCAL_FILE_REQ, _/binary >>).
 -define(eof_pattern, <<?EOF, _:4/binary>>).
 
 %% @doc Performs a handshake using the supplied socket and socket module for
@@ -116,12 +117,12 @@ query(Query, SockModule, Socket, Timeout) ->
     Req = <<?COM_QUERY, (iolist_to_binary(Query))/binary>>,
     SeqNum0 = 0,
     {ok, SeqNum1} = send_packet(SockModule, Socket, Req, SeqNum0),
-    QryRsp = fetch_query_response(SockModule, Socket, Timeout),
-    case QryRsp of
-    {ok, [#load_local_file{filename = FileName}]} ->
-        send_load_local_file(FileName, SockModule, Socket, Timeout, SeqNum1 + 1);
-    QryRsp ->
-        QryRsp
+    Resp = fetch_query_response(SockModule, Socket, Timeout),
+    case Resp of
+        {ok, [#load_local_file{filename = FileName}]} ->
+            send_load_local_file(FileName, SockModule, Socket, Timeout, SeqNum1 + 1);
+        Resp ->
+            Resp
     end.
 
 %% @doc This is used by query/4. If query/4 returns {error, timeout}, this
@@ -440,7 +441,8 @@ fetch_response(SockModule, Socket, Timeout, Proto, Acc) ->
                     parse_ok_packet(Packet);
                 ?error_pattern ->
                     parse_error_packet(Packet);
-                <<251:8, FileName/binary>> -> 
+                ?local_local_data_file ->
+                    <<_, FileName/binary>> = Packet, 
                     #load_local_file{filename = FileName};                         
                 ResultPacket ->
                     %% The first packet in a resultset is only the column count.
