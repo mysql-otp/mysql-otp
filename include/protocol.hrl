@@ -19,6 +19,7 @@
 %% Response packet tag (first byte)
 -define(OK, 0).
 -define(EOF, 16#fe).
+-define(LOAD_LOCAL_FILE_REQ, 16#fb).
 -define(ERROR, 16#ff).
 
 %% Character sets
@@ -43,6 +44,10 @@
 %% Server: can send status flags in EOF_Packet
 %% Client: expects status flags in EOF_Packet
 -define(CLIENT_TRANSACTIONS, 16#00002000).
+
+
+%% Client: allow load file 
+-define(CLIENT_LOAD_DATA_LOCAL, 16#00000080).
 
 %% Server: supports Authentication::Native41
 %% Client: supports Authentication::Native41
