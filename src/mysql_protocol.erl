@@ -426,14 +426,7 @@ fetch_response(SockModule, Socket, Timeout, Proto, Acc) ->
                 ResultPacket ->
                     %% The first packet in a resultset is only the column count.
                     {ColCount, <<>>} = lenenc_int(ResultPacket),
-                    R0 = fetch_resultset(SockModule, Socket, ColCount, SeqNum2),
-                    case R0 of
-                        #error{} = E ->
-                            %% TODO: Find a way to get here + testcase
-                            E;
-                        #resultset{} = R ->
-                            parse_resultset(R, ColCount, Proto)
-                    end
+                    fetch_resultset(SockModule, Socket, ColCount, Proto, SeqNum2)
             end,
             Acc1 = [Result | Acc],
             case more_results_exists(Result) of
@@ -446,36 +439,36 @@ fetch_response(SockModule, Socket, Timeout, Proto, Acc) ->
             {error, timeout}
     end.
 
-%% @doc Fetches packets for a result set. The column definitions are parsed but
-%% the rows are unparsed binary packages. This function is used for both the
-%% text protocol and the binary protocol. This affects the way the rows need to
-%% be parsed.
--spec fetch_resultset(atom(), term(), integer(), integer()) ->
+%% @doc Fetches a result set.
+-spec fetch_resultset(atom(), term(), integer(), text | binary, integer()) ->
     #resultset{} | #error{}.
-fetch_resultset(SockModule, Socket, FieldCount, SeqNum) ->
-    {ok, ColDefs, SeqNum1} = fetch_column_definitions(SockModule, Socket,
-                                                      SeqNum, FieldCount, []),
-    {ok, DelimiterPacket, SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
-    #eof{status = S, warning_count = W} = parse_eof_packet(DelimiterPacket),
-    case fetch_resultset_rows(SockModule, Socket, SeqNum2, []) of
+fetch_resultset(SockModule, Socket, FieldCount, Proto, SeqNum0) ->
+    {ok, ColDefs0, SeqNum1} = fetch_column_definitions(SockModule, Socket, SeqNum0, FieldCount, []),
+    {ok, DelimPacket, SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
+    #eof{status = S, warning_count = W} = parse_eof_packet(DelimPacket),
+    ColDefs1 = lists:map(fun parse_column_definition/1, ColDefs0),
+    case fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs1, Proto, SeqNum2, []) of
         {ok, Rows, _SeqNum3} ->
-            ColDefs1 = lists:map(fun parse_column_definition/1, ColDefs),
-            #resultset{cols = ColDefs1, rows = Rows,
-                       status = S, warning_count = W};
+            #resultset{cols = ColDefs1, rows = Rows, status = S, warning_count = W};
         #error{} = E ->
             E
     end.
 
-parse_resultset(#resultset{cols = ColDefs, rows = Rows} = R, ColumnCount,
-                text) ->
-    %% Parse the rows according to the 'text protocol' representation.
-    Rows1 = [decode_text_row(ColumnCount, ColDefs, Row) || Row <- Rows],
-    R#resultset{rows = Rows1};
-parse_resultset(#resultset{cols = ColDefs, rows = Rows} = R, ColumnCount,
-                binary) ->
-    %% Parse the rows according to the 'binary protocol' representation.
-    Rows1 = [decode_binary_row(ColumnCount, ColDefs, Row) || Row <- Rows],
-    R#resultset{rows = Rows1}.
+%% @doc Fetches the rows for a result set and decodes them using either the text
+%% format (for plain queries) or binary format (for prepared statements).
+-spec fetch_resultset_rows(atom(), term(), integer(), [#col{}], text | binary, integer(), [[term()]]) ->
+    {ok, [[term()]], integer()} | #error{}.
+fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs, Proto, SeqNum0, Acc) ->
+    {ok, Packet, SeqNum1} = recv_packet(SockModule, Socket, SeqNum0),
+    case Packet of
+        ?error_pattern ->
+            parse_error_packet(Packet);
+        ?eof_pattern ->
+            {ok, lists:reverse(Acc), SeqNum1};
+        RowPacket ->
+            Row=decode_row(FieldCount, ColDefs, RowPacket, Proto),
+            fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs, Proto, SeqNum1, [Row|Acc])
+    end.
 
 more_results_exists(#ok{status = S}) ->
     S band ?SERVER_MORE_RESULTS_EXISTS /= 0;
@@ -496,24 +489,6 @@ fetch_column_definitions(SockModule, Socket, SeqNum, NumLeft, Acc)
                              [Packet | Acc]);
 fetch_column_definitions(_SockModule, _Socket, SeqNum, 0, Acc) ->
     {ok, lists:reverse(Acc), SeqNum}.
-
-%% @doc Fetches rows in a result set. There is a packet per row. The row packets
-%% are not decoded. This function can be used for both the binary and the text
-%% protocol result sets.
--spec fetch_resultset_rows(atom(), term(), SeqNum :: integer(), Acc) ->
-    {ok, Rows, integer()} | #error{}
-    when Acc :: [binary()],
-         Rows :: [binary()].
-fetch_resultset_rows(SockModule, Socket, SeqNum, Acc) ->
-    {ok, Packet, SeqNum1} = recv_packet(SockModule, Socket, SeqNum),
-    case Packet of
-        ?error_pattern ->
-            parse_error_packet(Packet);
-        ?eof_pattern ->
-            {ok, lists:reverse(Acc), SeqNum1};
-        Row ->
-            fetch_resultset_rows(SockModule, Socket, SeqNum1, [Row | Acc])
-    end.
 
 %% Parses a packet containing a column definition (part of a result set)
 parse_column_definition(Data) ->
@@ -539,6 +514,13 @@ parse_column_definition(Data) ->
     <<>> = Rest8,
     #col{name = Name, type = Type, charset = Charset, length = Length,
          decimals = Decimals, flags = Flags}.
+
+%% @doc Decodes a row using either the text or binary format.
+-spec decode_row(integer(), [#col{}], binary(), text | binary) -> [term()].
+decode_row(FieldCount, ColDefs, RowPacket, text) ->
+    decode_text_row(FieldCount, ColDefs, RowPacket);
+decode_row(FieldCount, ColDefs, RowPacket, binary) ->
+    decode_binary_row(FieldCount, ColDefs, RowPacket).
 
 %% -- text protocol --
 
