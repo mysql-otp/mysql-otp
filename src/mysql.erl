@@ -49,14 +49,15 @@
 -type row() :: [term()].
 -type rows() :: [row()].
 
+-type query_filtermap_fun() :: fun((row()) -> query_filtermap_res())
+                             | fun((column_names(), row()) -> query_filtermap_res()).
+-type query_filtermap_res() :: boolean()
+                             | {true, term()}.
+
 -type query_result() :: ok
                       | {ok, column_names(), rows()}
                       | {ok, [{column_names(), rows()}, ...]}
                       | {error, server_reason()}.
-
--type query_filtermap() :: undefined
-                         | fun((row()) -> boolean() | {true, term()})
-                         | fun((column_names(), row()) -> boolean() | {true, term()}).
 
 -define(default_connect_timeout, 5000).
 
@@ -166,101 +167,75 @@ start_link(Options) ->
     end,
     Ret.
 
-%% @doc Executes a query with the query timeout as given to start_link/1.
-%%
-%% It is possible to execute multiple semicolon-separated queries.
-%%
-%% Results are returned in the form `{ok, ColumnNames, Rows}' if there is one
-%% result set. If there are more than one result sets, they are returned in the
-%% form `{ok, [{ColumnNames, Rows}, ...]}'.
-%%
-%% For queries that don't return any rows (INSERT, UPDATE, etc.) only the atom
-%% `ok' is returned.
+%% @see query/5.
 -spec query(Conn, Query) -> Result
     when Conn :: connection(),
          Query :: iodata(),
          Result :: query_result().
 query(Conn, Query) ->
-    query_call(Conn, {query, Query, undefined, undefined}).
+    query(Conn, Query, no_params, no_filtermap_fun, default_timeout).
 
-%% @doc Depending on the 3rd argument this function does different things.
-%%
-%% If the 3rd argument is a list, it executes a parameterized query and applies
-%% no filtering/mapping of the result rows. This is equivallent to query/5
-%% with undefined as filter/map function and the query timeout as given to
-%% start_link/1.
-%%
-%% If the 3rd argumeent is a function, it is used to filter/map the result
-%% rows. This is equivalent to query/4 with the query timeout given to
-%% start_link/1.
-%%
-%% If the 3rd argument is a timeout, it executes a plain query with this
-%% timeout and applies no filtering/mapping of the resultset rows.
-%%
-%% The return value is the same as for query/2.
-%%
-%% @see query/2.
-%% @see query/4.
+%% @see query/5.
 -spec query(Conn, Query, Params | FilterMap | Timeout) -> Result
     when Conn :: connection(),
          Query :: iodata(),
-         Timeout :: timeout(),
-         Params :: [term()],
-         FilterMap :: query_filtermap(),
+         Timeout :: default_timeout | timeout(),
+         Params :: no_params | [term()],
+         FilterMap :: no_filtermap_fun | query_filtermap_fun(),
          Result :: query_result().
-query(Conn, Query, Params) when is_list(Params) ->
-    query_call(Conn, {param_query, Query, Params, undefined, undefined});
-query(Conn, Query, FilterMap) when FilterMap=:=undefined;
-        is_function(FilterMap, 1); is_function(FilterMap, 2) ->
-    query_call(Conn, {query, Query, FilterMap, undefined});
-query(Conn, Query, Timeout) when is_integer(Timeout); Timeout == infinity ->
-    query_call(Conn, {query, Query, undefined, Timeout}).
+query(Conn, Query, Params) when Params == no_params;
+                                is_list(Params) ->
+    query(Conn, Query, Params, no_filtermap_fun, default_timeout);
+query(Conn, Query, FilterMap) when FilterMap == no_filtermap_fun;
+                                   is_function(FilterMap, 1);
+                                   is_function(FilterMap, 2) ->
+    query(Conn, Query, no_params, FilterMap, default_timeout);
+query(Conn, Query, Timeout) when Timeout == default_timeout;
+                                 is_integer(Timeout);
+                                 Timeout == infinity ->
+    query(Conn, Query, no_params, no_filtermap_fun, Timeout).
 
-%% @doc Depending on the 3rd and 4th arguments this function does different
-%% things.
-%%
-%% If either the 3rd argument is a list, a prepared statement is created,
-%% executed and then cached for a certain time. If the same query is executed
-%% again when it is already cached, it does not need to be prepared again.
-%% The minimum time the prepared statement is cached can be specified using the
-%% option `{query_cache_time, Milliseconds}' to start_link/1.
-%% Conversely, if the 3rd argument is not a list, a plain query is executed.
-%%
-%% If the 4th argument is a timeout, the query is executed with that timeout.
-%% Conversely, if the 4th argument is not a timeout, the timeout given in
-%% start_link/1 is used.
-%%
-%% If either the 3rd or 4th argument is a function instead of a list or
-%% timeout, respectively, it is used to filter/map the result rows.
-%%
-%% The return value is the same as for query/2.
+%% @see query/5.
 -spec query(Conn, Query, Params, Timeout) -> Result
         when Conn :: connection(),
              Query :: iodata(),
-             Timeout :: timeout(),
-             Params :: [term()],
+             Timeout :: default_timeout | timeout(),
+             Params :: no_params | [term()],
              Result :: query_result();
     (Conn, Query, FilterMap, Timeout) -> Result
         when Conn :: connection(),
              Query :: iodata(),
-             Timeout :: timeout(),
-             FilterMap :: query_filtermap(),
+             Timeout :: default_timeout | timeout(),
+             FilterMap :: no_filtermap_fun | query_filtermap_fun(),
              Result :: query_result();
     (Conn, Query, Params, FilterMap) -> Result
         when Conn :: connection(),
              Query :: iodata(),
-             Params :: [term()],
-             FilterMap :: query_filtermap(),
+             Params :: no_params | [term()],
+             FilterMap :: no_filtermap_fun | query_filtermap_fun(),
              Result :: query_result().
-query(Conn, Query, Params, Timeout) when is_list(Params) andalso (is_integer(Timeout) orelse Timeout=:=infinity) ->
-    query_call(Conn, {param_query, Query, Params, undefined, Timeout});
-query(Conn, Query, FilterMap, Timeout) when (is_function(FilterMap, 1) orelse is_function(FilterMap, 2)) andalso (is_integer(Timeout) orelse Timeout=:=infinity) ->
-    query_call(Conn, {query, Query, FilterMap, Timeout});
-query(Conn, Query, Params, FilterMap) when is_list(Params) andalso (is_function(FilterMap, 1) orelse is_function(FilterMap, 2)) ->
-    query_call(Conn, {param_query, Query, Params, FilterMap, undefined}).
+query(Conn, Query, Params, Timeout) when (Params == no_params orelse
+                                          is_list(Params)) andalso
+                                         (Timeout == default_timeout orelse
+                                          is_integer(Timeout) orelse
+                                          Timeout == infinity) ->
+    query(Conn, Query, Params, no_filtermap_fun, Timeout);
+query(Conn, Query, FilterMap, Timeout) when (FilterMap == no_filtermap_fun orelse
+                                             is_function(FilterMap, 1) orelse
+                                             is_function(FilterMap, 2)) andalso
+                                            (Timeout == default_timeout orelse
+                                             is_integer(Timeout) orelse
+                                             Timeout=:=infinity) ->
+    query(Conn, Query, no_params, FilterMap, Timeout);
+query(Conn, Query, Params, FilterMap) when (Params == no_params orelse
+                                            is_list(Params)) andalso
+                                           (FilterMap == no_filtermap_fun orelse
+                                            is_function(FilterMap, 1) orelse
+                                            is_function(FilterMap, 2)) ->
+    query(Conn, Query, Params, FilterMap, default_timeout).
 
 %% @doc Executes a parameterized query with a timeout and applies a filter/map
-%% function to the result rows..
+%% function to the result rows.
 %%
 %% A prepared statement is created, executed and then cached for a certain
 %% time. If the same query is executed again when it is already cached, it does
@@ -269,14 +244,84 @@ query(Conn, Query, Params, FilterMap) when is_list(Params) andalso (is_function(
 %% The minimum time the prepared statement is cached can be specified using the
 %% option `{query_cache_time, Milliseconds}' to start_link/1.
 %%
-%% The return value is the same as for query/2.
+%% Results are returned in the form `{ok, ColumnNames, Rows}' if there is one
+%% result set. If there are more than one result sets, they are returned in the
+%% form `{ok, [{ColumnNames, Rows}, ...]}'.
+%%
+%% For queries that don't return any rows (INSERT, UPDATE, etc.) only the atom
+%% `ok' is returned.
+%%
+%% The `Params', `FilterMap' and `Timeout' arguments are optional.
+%% <ul>
+%%   <li>If the `Params' argument is the atom `no_params' or is omitted, a plain
+%%       query will be executed instead of a parameterized one.</li>
+%%   <li>If the `FilterMap' argument is the atom `no_filtermap_fun' or is
+%%       omitted, no row filtering/mapping will be applied and all result rows
+%%       will be returned unchanged.</li>
+%%   <li>If the `Timeout' argument is the atom `default_timeout' or is omitted,
+%%       the timeout given in `start_link/1' is used.</li>
+%% </ul>
+%%
+%% If the `FilterMap' argument is used, it must be a function of arity 1 or 2
+%% that returns either `true', `false', or `{true, Value}'.
+%%
+%% Each result row is handed to the given function as soon as it is received
+%% from the server, and only when the function has returned, the next row is
+%% fetched. This provides the ability to prevent memory exhaustion; on the
+%% other hand, it can cause the server to time out on sending if your function
+%% is doing something slow (see the MySQL documentation on `NET_WRITE_TIMEOUT').
+%%
+%% If the function is of arity 1, only the row is passed to it as the single
+%% argument, while if the function is of arity 2, the column names are passed
+%% in as the first argument and the row as the second.
+%%
+%% The value returned is then used to decide if the row is to be included in
+%% the result(s) returned from the `query' call (filtering), or if something
+%% else is to be included in the result instead (mapping). You may also use
+%% this function for side effects, like writing rows to disk or sending them
+%% to another process etc.
+%%
+%% Here is an example showing some of the things that are possible:
+%% ```
+%% Query = "SELECT `a`, `b`, `c` FROM `foo`",
+%% FilterMap = fun
+%%     %% Include all rows where the first column is < 10.
+%%     ([A|_]) when A < 10 ->
+%%         true;
+%%     %% Exclude all rows where the first column is >= 10 and < 20.
+%%     ([A|_]) when A < 20 ->
+%%         false;
+%%     %% For rows where the first column is >= 20 and < 30, include
+%%     %% the atom 'foo' in place of the row instead.
+%%     ([A|_]) when A < 30 ->
+%%         {true, foo}};
+%%     %% For rows where the first row is >= 30 and < 40, send the
+%%     %% row to a gen_server via call (ie, wait for a response),
+%%     %% and do not include the row in the result.
+%%     (R=[A|_]) when A < 40 ->
+%%         gen_server:call(Pid, R),
+%%         false;
+%%     %% For rows where the first column is >= 40 and < 50, send the
+%%     %% row to a gen_server via cast (ie, do not wait for a reply),
+%%     %% and include the row in the result, also.
+%%     (R=[A|_]) when A < 50 ->
+%%         gen_server:cast(Pid, R),
+%%         true;
+%%     %% Exclude all other rows from the result.
+%%     (_) ->
+%%         false
+%% end,
+%% query(Conn, Query, no_params, FilterMap, default_timeout).
+%% '''
 -spec query(Conn, Query, Params, FilterMap, Timeout) -> Result
     when Conn :: connection(),
          Query :: iodata(),
-         Timeout :: timeout(),
-         Params :: [term()],
-         FilterMap :: query_filtermap(),
+         Timeout :: default_timeout | timeout(),
+         Params :: no_params | [term()],
+         FilterMap :: no_filtermap_fun | query_filtermap_fun(),
          Result :: query_result().
+query(Conn, Query, no_params, FilterMap, Timeout) ->
+    query_call(Conn, {query, Query, FilterMap, Timeout});
 query(Conn, Query, Params, FilterMap, Timeout) ->
     query_call(Conn, {param_query, Query, Params, FilterMap, Timeout}).
 
@@ -285,42 +330,61 @@ query(Conn, Query, Params, FilterMap, Timeout) ->
 %% @see prepare/2
 %% @see prepare/3
 %% @see prepare/4
+%% @see execute/5
 -spec execute(Conn, StatementRef, Params) -> Result | {error, not_prepared}
   when Conn :: connection(),
        StatementRef :: atom() | integer(),
        Params :: [term()],
        Result :: query_result().
 execute(Conn, StatementRef, Params) ->
-    query_call(Conn, {execute, StatementRef, Params, undefined, undefined}).
+    execute(Conn, StatementRef, Params, no_filtermap_fun, default_timeout).
 
 %% @doc Executes a prepared statement.
 %% @see prepare/2
 %% @see prepare/3
 %% @see prepare/4
+%% @see execute/5
 -spec execute(Conn, StatementRef, Params, FilterMap | Timeout) ->
     Result | {error, not_prepared}
   when Conn :: connection(),
        StatementRef :: atom() | integer(),
        Params :: [term()],
-       FilterMap :: query_filtermap(),
-       Timeout :: timeout(),
+       FilterMap :: no_filtermap_fun | query_filtermap_fun(),
+       Timeout :: default_timeout | timeout(),
        Result :: query_result().
-execute(Conn, StatementRef, Params, Timeout) when is_integer(Timeout); Timeout=:=infinity ->
-    query_call(Conn, {execute, StatementRef, Params, undefined, Timeout});
-execute(Conn, StatementRef, Params, FilterMap) when is_function(FilterMap, 1); is_function(FilterMap, 2) ->
-    query_call(Conn, {execute, StatementRef, Params, FilterMap, undefined}).
+execute(Conn, StatementRef, Params, Timeout) when Timeout == default_timeout;
+                                                  is_integer(Timeout);
+                                                  Timeout=:=infinity ->
+    execute(Conn, StatementRef, Params, no_filtermap_fun, Timeout);
+execute(Conn, StatementRef, Params, FilterMap) when FilterMap == no_filtermap_fun;
+                                                    is_function(FilterMap, 1);
+                                                    is_function(FilterMap, 2) ->
+    execute(Conn, StatementRef, Params, FilterMap, default_timeout).
 
 %% @doc Executes a prepared statement.
+%% 
+%% The `FilterMap' and `Timeout' arguments are optional.
+%% <ul>
+%%   <li>If the `FilterMap' argument is the atom `no_filtermap_fun' or is
+%%       omitted, no row filtering/mapping will be applied and all result rows
+%%       will be returned unchanged.</li>
+%%   <li>If the `Timeout' argument is the atom `default_timeout' or is omitted,
+%%       the timeout given in `start_link/1' is used.</li>
+%% </ul>
+%%
+%% See `query/5' for an explanation of the `FilterMap' argument.
+%%
 %% @see prepare/2
 %% @see prepare/3
 %% @see prepare/4
+%% @see query/5
 -spec execute(Conn, StatementRef, Params, FilterMap, Timeout) ->
     Result | {error, not_prepared}
   when Conn :: connection(),
        StatementRef :: atom() | integer(),
        Params :: [term()],
-       FilterMap :: query_filtermap(),
-       Timeout :: timeout(),
+       FilterMap :: no_filtermap_fun | query_filtermap_fun(),
+       Timeout :: default_timeout | timeout(),
        Result :: query_result().
 execute(Conn, StatementRef, Params, FilterMap, Timeout) ->
     query_call(Conn, {execute, StatementRef, Params, FilterMap, Timeout}).

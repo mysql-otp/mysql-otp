@@ -33,10 +33,10 @@
          execute/5, execute/6, fetch_execute_response/3,
          fetch_execute_response/4]).
 
--type query_filtermap() :: undefined
-                         | fun(([term()]) -> query_filtermap_result())
-                         | fun(([term()], [term()]) -> query_filtermap_result()).
--type query_filtermap_result() :: boolean() | {true, term()}.
+-type query_filtermap() :: no_filtermap_fun
+                         | fun(([term()]) -> query_filtermap_res())
+                         | fun(([term()], [term()]) -> query_filtermap_res()).
+-type query_filtermap_res() :: boolean() | {true, term()}.
 
 %% How much data do we want per packet?
 -define(MAX_BYTES_PER_PACKET, 16#1000000).
@@ -120,23 +120,23 @@ ping(SockModule, Socket) ->
 -spec query(Query :: iodata(), atom(), term(), timeout()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
 query(Query, SockModule, Socket, Timeout) ->
-    query(Query, SockModule, Socket, undefined, Timeout).
+    query(Query, SockModule, Socket, no_filtermap_fun, Timeout).
 
 -spec query(Query :: iodata(), atom(), term(), query_filtermap(), timeout()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
-query(Query, SockModule, Socket, FilterMapFun, Timeout) ->
+query(Query, SockModule, Socket, FilterMap, Timeout) ->
     Req = <<?COM_QUERY, (iolist_to_binary(Query))/binary>>,
     SeqNum0 = 0,
     {ok, _SeqNum1} = send_packet(SockModule, Socket, Req, SeqNum0),
-    fetch_query_response(SockModule, Socket, FilterMapFun, Timeout).
+    fetch_query_response(SockModule, Socket, FilterMap, Timeout).
 
 %% @doc This is used by query/4. If query/4 returns {error, timeout}, this
 %% function can be called to retry to fetch the results of the query.
 fetch_query_response(SockModule, Socket, Timeout) ->
-    fetch_query_response(SockModule, Socket, undefined, Timeout).
+    fetch_query_response(SockModule, Socket, no_filtermap_fun, Timeout).
 
-fetch_query_response(SockModule, Socket, FilterMapFun, Timeout) ->
-    fetch_response(SockModule, Socket, Timeout, text, FilterMapFun, []).
+fetch_query_response(SockModule, Socket, FilterMap, Timeout) ->
+    fetch_response(SockModule, Socket, Timeout, text, FilterMap, []).
 
 %% @doc Prepares a statement.
 -spec prepare(iodata(), atom(), term()) -> #error{} | #prepared{}.
@@ -184,11 +184,14 @@ unprepare(#prepared{statement_id = Id}, SockModule, Socket) ->
 -spec execute(#prepared{}, [term()], atom(), term(), timeout()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
 execute(PrepStmt, ParamValues, SockModule, Socket, Timeout) ->
-    execute(PrepStmt, ParamValues, SockModule, Socket, undefined, Timeout).
--spec execute(#prepared{}, [term()], atom(), term(), query_filtermap(), timeout()) ->
+    execute(PrepStmt, ParamValues, SockModule, Socket, no_filtermap_fun,
+            Timeout).
+-spec execute(#prepared{}, [term()], atom(), term(), query_filtermap(),
+              timeout()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
 execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
-        SockModule, Socket, FilterMapFun, Timeout) when ParamCount == length(ParamValues) ->
+        SockModule, Socket, FilterMap, Timeout)
+  when ParamCount == length(ParamValues) ->
     %% Flags Constant Name
     %% 0x00 CURSOR_TYPE_NO_CURSOR
     %% 0x01 CURSOR_TYPE_READ_ONLY
@@ -215,15 +218,15 @@ execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
             iolist_to_binary([Req1, TypesAndSigns, EncValues])
     end,
     {ok, _SeqNum1} = send_packet(SockModule, Socket, Req, 0),
-    fetch_execute_response(SockModule, Socket, FilterMapFun, Timeout).
+    fetch_execute_response(SockModule, Socket, FilterMap, Timeout).
 
 %% @doc This is used by execute/5. If execute/5 returns {error, timeout}, this
 %% function can be called to retry to fetch the results of the query.
 fetch_execute_response(SockModule, Socket, Timeout) ->
-    fetch_execute_response(SockModule, Socket, undefined, Timeout).
+    fetch_execute_response(SockModule, Socket, no_filtermap_fun, Timeout).
 
-fetch_execute_response(SockModule, Socket, FilterMapFun, Timeout) ->
-    fetch_response(SockModule, Socket, Timeout, binary, FilterMapFun, []).
+fetch_execute_response(SockModule, Socket, FilterMap, Timeout) ->
+    fetch_response(SockModule, Socket, Timeout, binary, FilterMap, []).
 
 %% --- internal ---
 
@@ -435,9 +438,10 @@ parse_handshake_confirm(Packet) ->
 %% @doc Fetches one or more results and and parses the result set(s) using
 %% either the text format (for plain queries) or the binary format (for
 %% prepared statements).
--spec fetch_response(atom(), term(), timeout(), text | binary, query_filtermap(), list()) ->
+-spec fetch_response(atom(), term(), timeout(), text | binary,
+                     query_filtermap(), list()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
-fetch_response(SockModule, Socket, Timeout, Proto, FilterMapFun, Acc) ->
+fetch_response(SockModule, Socket, Timeout, Proto, FilterMap, Acc) ->
     case recv_packet(SockModule, Socket, Timeout, any) of
         {ok, Packet, SeqNum2} ->
             Result = case Packet of
@@ -448,12 +452,14 @@ fetch_response(SockModule, Socket, Timeout, Proto, FilterMapFun, Acc) ->
                 ResultPacket ->
                     %% The first packet in a resultset is only the column count.
                     {ColCount, <<>>} = lenenc_int(ResultPacket),
-                    fetch_resultset(SockModule, Socket, ColCount, Proto, FilterMapFun, SeqNum2)
+                    fetch_resultset(SockModule, Socket, ColCount, Proto,
+                                    FilterMap, SeqNum2)
             end,
             Acc1 = [Result | Acc],
             case more_results_exists(Result) of
                 true ->
-                    fetch_response(SockModule, Socket, Timeout, Proto, FilterMapFun, Acc1);
+                    fetch_response(SockModule, Socket, Timeout, Proto,
+                                   FilterMap, Acc1);
                 false ->
                     {ok, lists:reverse(Acc1)}
             end;
@@ -462,25 +468,31 @@ fetch_response(SockModule, Socket, Timeout, Proto, FilterMapFun, Acc) ->
     end.
 
 %% @doc Fetches a result set.
--spec fetch_resultset(atom(), term(), integer(), text | binary, query_filtermap(), integer()) ->
+-spec fetch_resultset(atom(), term(), integer(), text | binary,
+                      query_filtermap(), integer()) ->
     #resultset{} | #error{}.
-fetch_resultset(SockModule, Socket, FieldCount, Proto, FilterMapFun, SeqNum0) ->
-    {ok, ColDefs0, SeqNum1} = fetch_column_definitions(SockModule, Socket, SeqNum0, FieldCount, []),
+fetch_resultset(SockModule, Socket, FieldCount, Proto, FilterMap, SeqNum0) ->
+    {ok, ColDefs0, SeqNum1} = fetch_column_definitions(SockModule, Socket,
+                                                       SeqNum0, FieldCount, []),
     {ok, DelimPacket, SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
     #eof{status = S, warning_count = W} = parse_eof_packet(DelimPacket),
     ColDefs1 = lists:map(fun parse_column_definition/1, ColDefs0),
-    case fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs1, Proto, FilterMapFun, SeqNum2, []) of
+    case fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs1, Proto,
+                              FilterMap, SeqNum2, []) of
         {ok, Rows, _SeqNum3} ->
-            #resultset{cols = ColDefs1, rows = Rows, status = S, warning_count = W};
+            #resultset{cols = ColDefs1, rows = Rows, status = S,
+                       warning_count = W};
         #error{} = E ->
             E
     end.
 
 %% @doc Fetches the rows for a result set and decodes them using either the text
 %% format (for plain queries) or binary format (for prepared statements).
--spec fetch_resultset_rows(atom(), term(), integer(), [#col{}], text | binary, query_filtermap(), integer(), [[term()]]) ->
+-spec fetch_resultset_rows(atom(), term(), integer(), [#col{}], text | binary,
+                           query_filtermap(), integer(), [[term()]]) ->
     {ok, [[term()]], integer()} | #error{}.
-fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs, Proto, FilterMapFun, SeqNum0, Acc) ->
+fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs, Proto,
+                     FilterMap, SeqNum0, Acc) ->
     {ok, Packet, SeqNum1} = recv_packet(SockModule, Socket, SeqNum0),
     case Packet of
         ?error_pattern ->
@@ -489,18 +501,21 @@ fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs, Proto, FilterMapFu
             {ok, lists:reverse(Acc), SeqNum1};
         RowPacket ->
             Row0=decode_row(FieldCount, ColDefs, RowPacket, Proto),
-            case filtermap_resultset_row(FilterMapFun, ColDefs, Row0) of
-                false -> 
-                    fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs, Proto, FilterMapFun, SeqNum1, Acc);
+            Acc1 = case filtermap_resultset_row(FilterMap, ColDefs, Row0) of
+                false ->
+                    Acc;
                 true ->
-                    fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs, Proto, FilterMapFun, SeqNum1, [Row0|Acc]);
+                    [Row0|Acc];
                 {true, Row1} ->
-                    fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs, Proto, FilterMapFun, SeqNum1, [Row1|Acc])
-            end
+                    [Row1|Acc]
+            end,
+            fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs,
+                                 Proto, FilterMap, SeqNum1, Acc1)
     end.
 
--spec filtermap_resultset_row(query_filtermap(), [#col{}], [term()]) -> query_filtermap_result().
-filtermap_resultset_row(undefined, _, _) ->
+-spec filtermap_resultset_row(query_filtermap(), [#col{}], [term()]) ->
+    query_filtermap_res().
+filtermap_resultset_row(no_filtermap_fun, _, _) ->
     true;
 filtermap_resultset_row(Fun, _, Row) when is_function(Fun, 1) ->
     Fun(Row);
