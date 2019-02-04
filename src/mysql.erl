@@ -283,7 +283,7 @@ query(Conn, Query, Params, FilterMap) when (Params == no_params orelse
 %%
 %% Here is an example showing some of the things that are possible:
 %% ```
-%% Query = "SELECT `a`, `b`, `c` FROM `foo`",
+%% Query = "SELECT a, b, c FROM foo",
 %% FilterMap = fun
 %%     %% Include all rows where the first column is < 10.
 %%     ([A|_]) when A < 10 ->

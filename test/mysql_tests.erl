@@ -200,6 +200,7 @@ query_test_() ->
           {"Autocommit",           fun () -> autocommit(Pid) end},
           {"Encode",               fun () -> encode(Pid) end},
           {"Basic queries",        fun () -> basic_queries(Pid) end},
+          {"Filtermap queries",    fun () -> filtermap_queries(Pid) end},
           {"FOUND_ROWS option",    fun () -> found_rows(Pid) end},
           {"Multi statements",     fun () -> multi_statements(Pid) end},
           {"Text protocol",        fun () -> text_protocol(Pid) end},
@@ -278,6 +279,53 @@ basic_queries(Pid) ->
                  mysql:query(Pid, <<"SELECT 42 AS i, 'foo' AS s;">>)),
 
     ok.
+
+filtermap_queries(Pid) ->
+    ok = mysql:query(Pid, ?create_table_t),
+    ok = mysql:query(Pid, <<"INSERT INTO t (id, tx) VALUES (1, 'text 1')">>),
+    ok = mysql:query(Pid, <<"INSERT INTO t (id, tx) VALUES (2, 'text 2')">>),
+    ok = mysql:query(Pid, <<"INSERT INTO t (id, tx) VALUES (3, 'text 3')">>),
+
+    Query = <<"SELECT id, tx FROM t ORDER BY id">>,
+
+    %% one-ary filtermap fun
+    FilterMap1 = fun
+        ([1|_]) ->
+            true;
+        ([2|_]) ->
+            false;
+        (Row1=[3|_]) ->
+            {true, list_to_tuple(Row1)}
+    end,
+
+    %% two-ary filtermap fun
+    FilterMap2 = fun
+        (_, Row2) ->
+            FilterMap1(Row2)
+    end,
+
+    Expected = [[1, <<"text 1">>], {3, <<"text 3">>}],
+
+    %% test with plain query
+    {ok, _, Rows1}=mysql:query(Pid, Query, FilterMap1),
+    ?assertEqual(Expected, Rows1),
+    {ok, _, Rows2}=mysql:query(Pid, Query, FilterMap2),
+    ?assertEqual(Expected, Rows2),
+
+    %% test with parameterized query
+    {ok, _, Rows3}=mysql:query(Pid, Query, [], FilterMap1),
+    ?assertEqual(Expected, Rows3),
+    {ok, _, Rows4}=mysql:query(Pid, Query, [], FilterMap2),
+    ?assertEqual(Expected, Rows4),
+
+    %% test with prepared statement
+    {ok, PrepStmt} = mysql:prepare(Pid, Query),
+    {ok, _, Rows5}=mysql:execute(Pid, PrepStmt, [], FilterMap1),
+    ?assertEqual(Expected, Rows5),
+    {ok, _, Rows6}=mysql:execute(Pid, PrepStmt, [], FilterMap2),
+    ?assertEqual(Expected, Rows6),
+
+    ok = mysql:query(Pid, <<"DROP TABLE t">>).
 
 found_rows(Pid) ->
     Options = [{user, ?user}, {password, ?password}, {log_warnings, false},
