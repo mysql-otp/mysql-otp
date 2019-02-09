@@ -119,12 +119,9 @@ init(Opts) ->
 %% Query and execute calls:
 %%
 %% <ul>
-%%   <li>{query, Query}</li>
-%%   <li>{query, Query, Timeout}</li>
-%%   <li>{param_query, Query, Params}</li>
-%%   <li>{param_query, Query, Params, Timeout}</li>
-%%   <li>{execute, Stmt, Args}</li>
-%%   <li>{execute, Stmt, Args, Timeout}</li>
+%%   <li>{query, Query, FilterMap, Timeout}</li>
+%%   <li>{param_query, Query, Params, FilterMap, Timeout}</li>
+%%   <li>{execute, Stmt, Args, FilterMap, Timeout}</li>
 %% </ul>
 %%
 %% For the calls listed above, we return these values:
@@ -154,15 +151,18 @@ init(Opts) ->
 %%       able to handle this in the caller's process, we also return the
 %%       nesting level.</dd>
 %% </dl>
-handle_call({query, Query}, From, State) ->
-    handle_call({query, Query, State#state.query_timeout}, From, State);
-handle_call({query, Query, Timeout}, _From,
+handle_call({query, Query, FilterMap, default_timeout}, From, State) ->
+    handle_call({query, Query, FilterMap, State#state.query_timeout}, From,
+                State);
+handle_call({query, Query, FilterMap, Timeout}, _From,
             #state{sockmod = SockMod, socket = Socket} = State) ->
     setopts(SockMod, Socket, [{active, false}]),
-    {ok, Recs} = case mysql_protocol:query(Query, SockMod, Socket, Timeout) of
+    Result = mysql_protocol:query(Query, SockMod, Socket, FilterMap, Timeout),
+    {ok, Recs} = case Result of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
             kill_query(State),
-            mysql_protocol:fetch_query_response(SockMod, Socket, ?cmd_timeout);
+            mysql_protocol:fetch_query_response(SockMod, Socket, FilterMap,
+                                                ?cmd_timeout);
         {error, timeout} ->
             %% For MySQL 4.x.x there is no way to recover from timeout except
             %% killing the connection itself.
@@ -175,10 +175,11 @@ handle_call({query, Query, Timeout}, _From,
     State1#state.warning_count > 0 andalso State1#state.log_warnings
         andalso log_warnings(State1, Query),
     handle_query_call_reply(Recs, Query, State1, []);
-handle_call({param_query, Query, Params}, From, State) ->
-    handle_call({param_query, Query, Params, State#state.query_timeout}, From,
-                State);
-handle_call({param_query, Query, Params, Timeout}, _From,
+handle_call({param_query, Query, Params, FilterMap, default_timeout}, From,
+            State) ->
+    handle_call({param_query, Query, Params, FilterMap,
+                State#state.query_timeout}, From, State);
+handle_call({param_query, Query, Params, FilterMap, Timeout}, _From,
             #state{socket = Socket, sockmod = SockMod} = State) ->
     %% Parametrized query: Prepared statement cached with the query as the key
     QueryBin = iolist_to_binary(Query),
@@ -207,16 +208,17 @@ handle_call({param_query, Query, Params, Timeout}, _From,
     case StmtResult of
         {ok, StmtRec} ->
             State1 = State#state{query_cache = Cache1},
-            execute_stmt(StmtRec, Params, Timeout, State1);
+            execute_stmt(StmtRec, Params, FilterMap, Timeout, State1);
         PrepareError ->
             {reply, PrepareError, State}
     end;
-handle_call({execute, Stmt, Args}, From, State) ->
-    handle_call({execute, Stmt, Args, State#state.query_timeout}, From, State);
-handle_call({execute, Stmt, Args, Timeout}, _From, State) ->
+handle_call({execute, Stmt, Args, FilterMap, default_timeout}, From, State) ->
+    handle_call({execute, Stmt, Args, FilterMap, State#state.query_timeout},
+        From, State);
+handle_call({execute, Stmt, Args, FilterMap, Timeout}, _From, State) ->
     case dict:find(Stmt, State#state.stmts) of
         {ok, StmtRec} ->
-            execute_stmt(StmtRec, Args, Timeout, State);
+            execute_stmt(StmtRec, Args, FilterMap, Timeout, State);
         error ->
             {reply, {error, not_prepared}, State}
     end;
@@ -382,14 +384,15 @@ code_change(_OldVsn, _State, _Extra) ->
 %% --- Helpers ---
 
 %% @doc Executes a prepared statement and returns {Reply, NextState}.
-execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket, sockmod = SockMod}) ->
+execute_stmt(Stmt, Args, FilterMap, Timeout,
+             State = #state{socket = Socket, sockmod = SockMod}) ->
     setopts(SockMod, Socket, [{active, false}]),
     {ok, Recs} = case mysql_protocol:execute(Stmt, Args, SockMod, Socket,
-                                             Timeout) of
+                                             FilterMap, Timeout) of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
             kill_query(State),
             mysql_protocol:fetch_execute_response(SockMod, Socket,
-                                                  ?cmd_timeout);
+                                                  FilterMap, ?cmd_timeout);
         {error, timeout} ->
             %% For MySQL 4.x.x there is no way to recover from timeout except
             %% killing the connection itself.
