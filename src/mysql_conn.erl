@@ -50,7 +50,7 @@
 
 %% Gen_server state
 -record(state, {server_version, connection_id, socket, sockmod, ssl_opts,
-                host, port, user, password, log_warnings,
+                host, port, user, password, auth_plugin_data, log_warnings,
                 ping_timeout,
                 query_timeout, query_cache_time,
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
@@ -93,13 +93,16 @@ init(Opts) ->
         {ok, Handshake, SockMod, Socket} ->
             setopts(SockMod, Socket, [{active, once}]),
             #handshake{server_version = Version, connection_id = ConnId,
-                       status = Status} = Handshake,
+                       status = Status,
+                       auth_plugin_data = AuthPluginData} = Handshake,
             State = #state{server_version = Version, connection_id = ConnId,
                            sockmod = SockMod,
                            socket = Socket,
                            ssl_opts = SSLOpts,
-                           host = Host, port = Port, user = User,
-                           password = Password, status = Status,
+                           host = Host, port = Port,
+                           user = User, password = Password,
+                           auth_plugin_data = AuthPluginData,
+                           status = Status,
                            log_warnings = LogWarn,
                            ping_timeout = PingTimeout,
                            query_timeout = Timeout,
@@ -271,6 +274,25 @@ handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);
             {reply, ok, State2};
         error ->
             {reply, {error, not_prepared}, State}
+    end;
+handle_call({change_user, Username, Password, Database}, From,
+            State = #state{transaction_levels = []}) ->
+    #state{socket = Socket, sockmod = SockMod,
+           auth_plugin_data = AuthPluginData} = State,
+    setopts(SockMod, Socket, [{active, false}]),
+    Result = mysql_protocol:change_user(SockMod, Socket, Username, Password,
+                                        AuthPluginData, Database),
+    setopts(SockMod, Socket, [{active, once}]),
+    State1 = update_state(Result, State),
+    State1#state.warning_count > 0 andalso State1#state.log_warnings
+        andalso log_warnings(State1, "CHANGE USER"),
+    State2 = State1#state{query_cache = empty, stmts = dict:new()},
+    case Result of
+        #ok{} ->
+            {reply, ok, State2#state{user = Username, password = Password}};
+        #error{} = E ->
+            gen_server:reply(From, {error, error_to_reason(E)}),
+            stop_server(change_user_failed, State2)
     end;
 handle_call(warning_count, _From, State) ->
     {reply, State#state.warning_count, State};
