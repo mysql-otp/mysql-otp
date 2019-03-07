@@ -27,7 +27,7 @@
 %% @private
 -module(mysql_protocol).
 
--export([handshake/7, quit/2, ping/2,
+-export([handshake/7, change_user/6, quit/2, ping/2,
          query/4, query/5, fetch_query_response/3,
          fetch_query_response/4, prepare/3, unprepare/3,
          execute/5, execute/6, fetch_execute_response/3,
@@ -227,6 +227,27 @@ fetch_execute_response(SockModule, Socket, Timeout) ->
 
 fetch_execute_response(SockModule, Socket, FilterMap, Timeout) ->
     fetch_response(SockModule, Socket, Timeout, binary, FilterMap, []).
+
+%% @doc Changes the user of the connection.
+-spec change_user(atom(), term(), iodata(), iodata(), binary(),
+                  undefined | iodata()) -> #ok{} | #error{}.
+change_user(SockMod, Socket, Username, Password, Salt, Database) ->
+    DbBin = case Database of
+        undefined -> <<>>;
+        _ -> iolist_to_binary(Database)
+    end,
+    Hash = hash_password(Password, Salt),
+    Req = <<?COM_CHANGE_USER, (iolist_to_binary(Username))/binary, 0,
+            (lenenc_str_encode(Hash))/binary,
+            DbBin/binary, 0, ?UTF8:16/little>>,
+    {ok, _SeqNum1} = send_packet(SockMod, Socket, Req, 0),
+    {ok, Packet, _SeqNum2} = recv_packet(SockMod, Socket, infinity, any),
+    case Packet of
+        ?ok_pattern ->
+            parse_ok_packet(Packet);
+        ?error_pattern ->
+            parse_error_packet(Packet)
+    end.
 
 %% --- internal ---
 
@@ -1202,6 +1223,13 @@ lenenc_str(Bin) ->
     {Length, Rest} = lenenc_int(Bin),
     <<String:Length/binary, Rest1/binary>> = Rest,
     {String, Rest1}.
+
+%% Length-encoded-string encode. Prefixes the value with a
+%% length-encoded-integer denoting its size.
+-spec lenenc_str_encode(Input :: binary()) -> binary().
+lenenc_str_encode(Bin) ->
+    Length = byte_size(Bin),
+    <<(lenenc_int_encode(Length))/binary, Bin:Length/binary>>.
 
 %% nts/1 decodes a nul-terminated string
 -spec nulterm_str(Input :: binary()) -> {String :: binary(), Rest :: binary()}.
