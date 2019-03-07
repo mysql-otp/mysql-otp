@@ -30,7 +30,8 @@
          prepare/2, prepare/3, unprepare/2,
          warning_count/1, affected_rows/1, autocommit/1, insert_id/1,
          encode/2, in_transaction/1,
-         transaction/2, transaction/3, transaction/4]).
+         transaction/2, transaction/3, transaction/4,
+         change_user/3, change_user/4]).
 
 -export_type([connection/0, server_reason/0, query_result/0]).
 
@@ -147,22 +148,9 @@ start_link(Options) ->
     end,
     case Ret of
         {ok, Pid} ->
-            %% Initial queries
-            Queries = proplists:get_value(queries, Options, []),
-            lists:foreach(fun (Query) ->
-                              case mysql:query(Pid, Query) of
-                                  ok -> ok;
-                                  {ok, _, _} -> ok;
-                                  {ok, _} -> ok
-                              end
-                          end,
-                          Queries),
-            %% Prepare
-            Prepare = proplists:get_value(prepare, Options, []),
-            lists:foreach(fun ({Name, Stmt}) ->
-                              {ok, Name} = mysql:prepare(Pid, Name, Stmt)
-                          end,
-                          Prepare);
+            execute_after_connect(Pid,
+                                  proplists:get_value(queries, Options, []),
+                                  proplists:get_value(prepare, Options, []));
         _ -> ok
     end,
     Ret.
@@ -570,6 +558,12 @@ execute_transaction(Conn, Fun, Args, Retries) ->
             %% Returning 'atomic' or 'aborted' would both be wrong. Raise an
             %% exception is the best we can do.
             erlang:raise(error, E, ?GET_STACK(Stacktrace));
+        ?EXCEPTION(error, change_user_in_transaction = E, Stacktrace) ->
+            %% The called tried to change user inside the transaction, which
+            %% is not allowed and a serious mistake. We roll back and raise
+            %% an error.
+            ok = gen_server:call(Conn, rollback, infinity),
+            erlang:raise(error, E, ?GET_STACK(Stacktrace));
         ?EXCEPTION(Class, Reason, Stacktrace) ->
             %% We must be able to rollback. Otherwise let's crash.
             ok = gen_server:call(Conn, rollback, infinity),
@@ -580,6 +574,62 @@ execute_transaction(Conn, Fun, Args, Retries) ->
                 exit  -> Reason
             end,
             {aborted, Aborted}
+    end.
+
+%% @doc Equivalent to `change_user(Conn, Username, Password, [])'.
+%% @see change_user/4
+-spec change_user(Conn, Username, Password) -> Result
+    when Conn :: connection(),
+         Username :: iodata(),
+         Password :: iodata(),
+         Result :: ok.
+change_user(Conn, Username, Password) ->
+    change_user(Conn, Username, Password, []).
+
+%% @doc Changes the user of the active connection without closing and
+%% and re-opening it. The currently active session will be reset (ie,
+%% user variables, temporary tables, prepared statements, etc will
+%% be lost) independent of whether the operation succeeds or fails.
+%%
+%% If change user is called when a transaction is active (ie, neither
+%% committed nor rolled back), calling `change_user' will fail with
+%% an error exception and `change_user_in_transaction' as the error
+%% message.
+%%
+%% If the change user operation fails for other reasons (eg authentication
+%% failure), an error exception occurs, and the connection process
+%% exits with reason `change_user_failed'. The connection can not be used
+%% any longer if this happens.
+%%
+%% For a description of the `database', `queries' and `prepare'
+%% options, see `start_link/1'.
+%%
+%% @see start_link/1
+-spec change_user(Conn, Username, Password, Options) -> Result
+    when Conn :: connection(),
+         Username :: iodata(),
+         Password :: iodata(),
+         Options :: [Option],
+         Result :: ok,
+         Option :: {database, iodata()}
+                 | {queries, [iodata()]}
+                 | {prepare, [NamedStatement]},
+         NamedStatement :: {StatementName :: atom(), Statement :: iodata()}.
+change_user(Conn, Username, Password, Options) ->
+    case in_transaction(Conn) of
+        true -> error(change_user_in_transaction);
+        false -> ok
+    end,
+    Database = proplists:get_value(database, Options, undefined),
+    Ret = gen_server:call(Conn, {change_user, Username, Password, Database}),
+    case Ret of
+        ok ->
+            execute_after_connect(Conn,
+                                  proplists:get_value(queries, Options, []),
+                                  proplists:get_value(prepare, Options, [])),
+            ok;
+        {error, Reason} ->
+            error(Reason)
     end.
 
 %% @doc Encodes a term as a MySQL literal so that it can be used to inside a
@@ -601,6 +651,25 @@ encode(Conn, Term) ->
     mysql_encode:encode(Term1).
 
 %% --- Helpers ---
+
+%% @doc Executes the given queries and prepares the given statements after a
+%% connection has been made.
+-spec execute_after_connect(connection(), [iodata()], [{atom(), iodata()}])
+    -> ok.
+execute_after_connect(Conn, Queries, Prepares) ->
+    lists:foreach(fun (Query) ->
+                      case query(Conn, Query) of
+                          ok -> ok;
+                          {ok, _} -> ok;
+                          {ok, _, _} -> ok
+                      end
+                  end,
+                  Queries),
+    lists:foreach(fun ({Name, Stmt}) ->
+                      {ok, Name} = prepare(Conn, Name, Stmt)
+                  end,
+                  Prepares),
+    ok.
 
 %% @doc Makes a gen_server call for a query (plain, parametrized or prepared),
 %% checks the reply and sometimes throws an exception when we need to jump out
