@@ -103,7 +103,7 @@ handshake_finish_or_switch_auth(Handshake = #handshake{status = Status}, Passwor
             Error
     end.
 
--spec quit(atom(), term()) -> ok.
+-spec quit(module(), term()) -> ok.
 quit(SockModule, Socket) ->
     {ok, SeqNum1} = send_packet(SockModule, Socket, <<?COM_QUIT>>, 0),
     case recv_packet(SockModule, Socket, SeqNum1) of
@@ -111,18 +111,18 @@ quit(SockModule, Socket) ->
         {ok, ?ok_pattern, _SeqNum2} -> ok %% Some older MySQL versions?
     end.
 
--spec ping(atom(), term()) -> #ok{}.
+-spec ping(module(), term()) -> #ok{}.
 ping(SockModule, Socket) ->
     {ok, SeqNum1} = send_packet(SockModule, Socket, <<?COM_PING>>, 0),
     {ok, OkPacket, _SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
     parse_ok_packet(OkPacket).
 
--spec query(Query :: iodata(), atom(), term(), timeout()) ->
+-spec query(Query :: iodata(), module(), term(), timeout()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
 query(Query, SockModule, Socket, Timeout) ->
     query(Query, SockModule, Socket, no_filtermap_fun, Timeout).
 
--spec query(Query :: iodata(), atom(), term(), query_filtermap(), timeout()) ->
+-spec query(Query :: iodata(), module(), term(), query_filtermap(), timeout()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
 query(Query, SockModule, Socket, FilterMap, Timeout) ->
     Req = <<?COM_QUERY, (iolist_to_binary(Query))/binary>>,
@@ -139,7 +139,7 @@ fetch_query_response(SockModule, Socket, FilterMap, Timeout) ->
     fetch_response(SockModule, Socket, Timeout, text, FilterMap, []).
 
 %% @doc Prepares a statement.
--spec prepare(iodata(), atom(), term()) -> #error{} | #prepared{}.
+-spec prepare(iodata(), module(), term()) -> #error{} | #prepared{}.
 prepare(Query, SockModule, Socket) ->
     Req = <<?COM_STMT_PREPARE, (iolist_to_binary(Query))/binary>>,
     {ok, SeqNum1} = send_packet(SockModule, Socket, Req, 0),
@@ -174,19 +174,19 @@ prepare(Query, SockModule, Socket) ->
     end.
 
 %% @doc Deallocates a prepared statement.
--spec unprepare(#prepared{}, atom(), term()) -> ok.
+-spec unprepare(#prepared{}, module(), term()) -> ok.
 unprepare(#prepared{statement_id = Id}, SockModule, Socket) ->
     {ok, _SeqNum} = send_packet(SockModule, Socket,
                                 <<?COM_STMT_CLOSE, Id:32/little>>, 0),
     ok.
 
 %% @doc Executes a prepared statement.
--spec execute(#prepared{}, [term()], atom(), term(), timeout()) ->
+-spec execute(#prepared{}, [term()], module(), term(), timeout()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
 execute(PrepStmt, ParamValues, SockModule, Socket, Timeout) ->
     execute(PrepStmt, ParamValues, SockModule, Socket, no_filtermap_fun,
             Timeout).
--spec execute(#prepared{}, [term()], atom(), term(), query_filtermap(),
+-spec execute(#prepared{}, [term()], module(), term(), query_filtermap(),
               timeout()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
 execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
@@ -229,9 +229,9 @@ fetch_execute_response(SockModule, Socket, FilterMap, Timeout) ->
     fetch_response(SockModule, Socket, Timeout, binary, FilterMap, []).
 
 %% @doc Changes the user of the connection.
--spec change_user(atom(), term(), iodata(), iodata(), binary(),
+-spec change_user(module(), term(), iodata(), iodata(), binary(),
                   undefined | iodata()) -> #ok{} | #error{}.
-change_user(SockMod, Socket, Username, Password, Salt, Database) ->
+change_user(SockModule, Socket, Username, Password, Salt, Database) ->
     DbBin = case Database of
         undefined -> <<>>;
         _ -> iolist_to_binary(Database)
@@ -240,8 +240,8 @@ change_user(SockMod, Socket, Username, Password, Salt, Database) ->
     Req = <<?COM_CHANGE_USER, (iolist_to_binary(Username))/binary, 0,
             (lenenc_str_encode(Hash))/binary,
             DbBin/binary, 0, ?UTF8:16/little>>,
-    {ok, _SeqNum1} = send_packet(SockMod, Socket, Req, 0),
-    {ok, Packet, _SeqNum2} = recv_packet(SockMod, Socket, infinity, any),
+    {ok, _SeqNum1} = send_packet(SockModule, Socket, Req, 0),
+    {ok, Packet, _SeqNum2} = recv_packet(SockModule, Socket, infinity, any),
     case Packet of
         ?ok_pattern ->
             parse_ok_packet(Packet);
@@ -459,7 +459,7 @@ parse_handshake_confirm(Packet) ->
 %% @doc Fetches one or more results and and parses the result set(s) using
 %% either the text format (for plain queries) or the binary format (for
 %% prepared statements).
--spec fetch_response(atom(), term(), timeout(), text | binary,
+-spec fetch_response(module(), term(), timeout(), text | binary,
                      query_filtermap(), list()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
 fetch_response(SockModule, Socket, Timeout, Proto, FilterMap, Acc) ->
@@ -489,7 +489,7 @@ fetch_response(SockModule, Socket, Timeout, Proto, FilterMap, Acc) ->
     end.
 
 %% @doc Fetches a result set.
--spec fetch_resultset(atom(), term(), integer(), text | binary,
+-spec fetch_resultset(module(), term(), integer(), text | binary,
                       query_filtermap(), integer()) ->
     #resultset{} | #error{}.
 fetch_resultset(SockModule, Socket, FieldCount, Proto, FilterMap, SeqNum0) ->
@@ -509,7 +509,7 @@ fetch_resultset(SockModule, Socket, FieldCount, Proto, FilterMap, SeqNum0) ->
 
 %% @doc Fetches the rows for a result set and decodes them using either the text
 %% format (for plain queries) or binary format (for prepared statements).
--spec fetch_resultset_rows(atom(), term(), integer(), [#col{}], text | binary,
+-spec fetch_resultset_rows(module(), term(), integer(), [#col{}], text | binary,
                            query_filtermap(), integer(), [[term()]]) ->
     {ok, [[term()]], integer()} | #error{}.
 fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs, Proto,
@@ -552,7 +552,7 @@ more_results_exists(#resultset{status = S}) ->
 
 %% @doc Receives NumLeft column definition packets. They are not parsed.
 %% @see parse_column_definition/1
--spec fetch_column_definitions(atom(), term(), SeqNum :: integer(),
+-spec fetch_column_definitions(module(), term(), SeqNum :: integer(),
                                NumLeft :: integer(), Acc :: [binary()]) ->
     {ok, ColDefPackets :: [binary()], NextSeqNum :: integer()}.
 fetch_column_definitions(SockModule, Socket, SeqNum, NumLeft, Acc)
@@ -1037,7 +1037,7 @@ decode_decimal(Bin, P, S) when P >= 16, S > 0 ->
 
 %% @doc Wraps Data in packet headers, sends it by calling SockModule:send/2 with
 %% Socket and returns {ok, SeqNum1} where SeqNum1 is the next sequence number.
--spec send_packet(atom(), term(), Data :: binary(), SeqNum :: integer()) ->
+-spec send_packet(module(), term(), Data :: binary(), SeqNum :: integer()) ->
     {ok, NextSeqNum :: integer()}.
 send_packet(SockModule, Socket, Data, SeqNum) ->
     {WithHeaders, SeqNum1} = add_packet_headers(Data, SeqNum),
@@ -1050,13 +1050,13 @@ recv_packet(SockModule, Socket, SeqNum) ->
 
 %% @doc Receives data by calling SockModule:recv/2 and removes the packet
 %% headers. Returns the packet contents and the next packet sequence number.
--spec recv_packet(atom(), term(), timeout(), integer() | any) ->
+-spec recv_packet(module(), term(), timeout(), integer() | any) ->
     {ok, Data :: binary(), NextSeqNum :: integer()} | {error, term()}.
 recv_packet(SockModule, Socket, Timeout, SeqNum) ->
     recv_packet(SockModule, Socket, Timeout, SeqNum, <<>>).
 
 %% @doc Accumulating helper for recv_packet/4
--spec recv_packet(atom(), term(), timeout(), integer() | any, binary()) ->
+-spec recv_packet(module(), term(), timeout(), integer() | any, binary()) ->
     {ok, Data :: binary(), NextSeqNum :: integer()} | {error, term()}.
 recv_packet(SockModule, Socket, Timeout, ExpectSeqNum, Acc) ->
     case SockModule:recv(Socket, 4, Timeout) of
