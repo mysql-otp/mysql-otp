@@ -32,7 +32,7 @@ correct_credentials_test() ->
     Pid = connect_db(?user1),
     ?assertEqual(ok, mysql:change_user(Pid, ?user2, ?password2)),
     ?assert(is_current_user(Pid, ?user2)),
-    close_conn(Pid),
+    mysql:stop(Pid),
     ok.
 
 %% Ensure that change user fails when given incorrect credentials,
@@ -45,7 +45,7 @@ incorrect_credentials_fail_test() ->
     ExitReason = receive {'EXIT', Pid, Reason} -> Reason after 1000 -> error(timeout) end,
     erlang:process_flag(trap_exit, TrapExit),
     ?assertEqual(change_user_failed, ExitReason),
-    close_conn(Pid),
+    ?assertExit(noproc, mysql:stop(Pid)),
     ok.
 
 %% Ensure that user variables are reset after a successful change user
@@ -59,7 +59,7 @@ reset_variables_test() ->
                   [<<"@foo">>],
                   [[null]]},
                  mysql:query(Pid, <<"SELECT @foo">>)),
-    close_conn(Pid),
+    mysql:stop(Pid),
     ok.
 
 %% Ensure that temporary tables are reset after a successful change user
@@ -74,7 +74,7 @@ reset_temptables_test() ->
                   {1146, <<"42S02">>, _}},
                  mysql:query(Pid, <<"SELECT * FROM otptest.foo">>)),
     ok = mysql:query(Pid, <<"DROP DATABASE IF EXISTS otptest">>),
-    close_conn(Pid),
+    mysql:stop(Pid),
     ok.
 
 %% Ensure that change user fails when inside an unmanaged transaction.
@@ -86,7 +86,7 @@ fail_in_unmanaged_transaction_test() ->
                  mysql:change_user(Pid, ?user2, ?password2)),
     ?assert(is_current_user(Pid, ?user1)),
     ?assert(mysql:in_transaction(Pid)),
-    close_conn(Pid),
+    mysql:stop(Pid),
     ok.
 
 %% Ensure that change user fails when inside a managed transaction.
@@ -99,7 +99,7 @@ fail_in_managed_transaction_test() ->
                                                                ?password2)
                                    end)),
     ?assert(is_current_user(Pid, ?user1)),
-    close_conn(Pid),
+    mysql:stop(Pid),
     ok.
 
 with_db_test() ->
@@ -112,7 +112,7 @@ with_db_test() ->
                   [[<<"otptest">>]]},
                  mysql:query(Pid, <<"SELECT DATABASE()">>)),
     ok = mysql:query(Pid, <<"DROP DATABASE IF EXISTS otptest">>),
-    close_conn(Pid),
+    mysql:stop(Pid),
     ok.
 
 execute_queries_test() ->
@@ -123,7 +123,7 @@ execute_queries_test() ->
                   [<<"@foo">>],
                   [[123]]},
                  mysql:query(Pid, <<"SELECT @foo">>)),
-    close_conn(Pid),
+    mysql:stop(Pid),
     ok.
 
 prepare_statements_test() ->
@@ -134,7 +134,7 @@ prepare_statements_test() ->
                   [<<"foo">>],
                   [[123]]},
                  mysql:execute(Pid, foo, [123])),
-    close_conn(Pid),
+    mysql:stop(Pid),
     ok.
 
 
@@ -142,9 +142,6 @@ connect_db(User) ->
     {ok, Pid} = mysql:start_link([{user, User}, {password, ?password1},
                                   {log_warnings, false}]),
     Pid.
-
-close_conn(Pid) ->
-    exit(Pid, normal).
 
 is_current_user(Pid, User) when is_binary(User) ->
     {ok, [<<"CURRENT_USER()">>], [[CurUser]]}=mysql:query(Pid, <<"SELECT CURRENT_USER()">>),

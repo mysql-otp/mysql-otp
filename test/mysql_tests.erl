@@ -81,7 +81,7 @@ common_basic_check(ExtraOpts) ->
 common_conn_close() ->
     Pid = whereis(tardis),
     process_flag(trap_exit, true),
-    exit(Pid, normal),
+    mysql:stop(Pid),
     receive
         {'EXIT', Pid, normal} -> ok
     after
@@ -94,10 +94,10 @@ exit_normal_test() ->
     {ok, Pid} = mysql:start_link(Options),
     {ok, ok, LoggedErrors} = error_logger_acc:capture(fun () ->
         %% Stop the connection without noise, errors or messages
-        exit(Pid, normal),
+        mysql:stop(Pid),
         receive
             UnexpectedExitMessage -> UnexpectedExitMessage
-        after 50 ->
+        after 0 ->
             ok
         end
     end),
@@ -171,7 +171,7 @@ keep_alive_test() ->
      ExpectedPrefix = io_lib:format("** Generic server ~p terminating", [Pid]),
      ?assert(lists:prefix(lists:flatten(ExpectedPrefix), LoggedMsg)),
      ?assertMatch({crash_report, _}, LoggedReport),
-     exit(Pid, normal).
+     ?assertExit(noproc, mysql:stop(Pid)).
 
 %% For R16B where sys:get_state/1 is not available.
 get_state(Process) ->
@@ -193,7 +193,7 @@ query_test_() ->
      end,
      fun (Pid) ->
          ok = mysql:query(Pid, <<"DROP DATABASE otptest">>),
-         exit(Pid, normal)
+         mysql:stop(Pid)
      end,
      fun (Pid) ->
          [{"Select db on connect", fun () -> connect_with_db(Pid) end},
@@ -222,7 +222,7 @@ connect_with_db(_Pid) ->
                                   {database, "otptest"}]),
     ?assertMatch({ok, _, [[<<"otptest">>]]},
                  mysql:query(Pid, "SELECT DATABASE()")),
-    exit(Pid, normal).
+    mysql:stop(Pid).
 
 log_warnings_test() ->
     {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password}]),
@@ -244,7 +244,7 @@ log_warnings_test() ->
                  " in INSeRT INtO foo () VaLUeS ()\n", Log2),
     ?assertEqual("Warning 1364: Field 'x' doesn't have a default value\n"
                  " in INSERT INTO foo () VALUES ()\n", Log3),
-    exit(Pid, normal).
+    mysql:stop(Pid).
 
 autocommit(Pid) ->
     ?assert(mysql:autocommit(Pid)),
@@ -722,7 +722,7 @@ timeout_test_() ->
          Pid
      end,
      fun (Pid) ->
-         exit(Pid, normal)
+         mysql:stop(Pid)
      end,
      {with, [fun (Pid) ->
                  %% SLEEP was added in MySQL 5.0.12
@@ -762,7 +762,7 @@ with_table_foo_test_() ->
      end,
      fun (Pid) ->
          ok = mysql:query(Pid, <<"DROP DATABASE otptest">>),
-         exit(Pid, normal)
+         mysql:stop(Pid)
      end,
      fun (Pid) ->
          [{"Prepared statements", fun () -> prepared_statements(Pid) end},

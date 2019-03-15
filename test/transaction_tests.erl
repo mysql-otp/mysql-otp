@@ -38,7 +38,7 @@ single_connection_test_() ->
      end,
      fun (Pid) ->
          ok = mysql:query(Pid, <<"DROP DATABASE otptest">>),
-         exit(Pid, normal)
+         mysql:stop(Pid)
      end,
      fun (Pid) ->
          [{"Simple atomic",        fun () -> simple_atomic(Pid) end},
@@ -118,7 +118,7 @@ application_process_kill() ->
     ?assertMatch({ok, _, []},
                  mysql:query(Pid2, <<"SELECT * from foo where bar = 42">>)),
     ok = mysql:query(Pid2, <<"DROP DATABASE otptest">>),
-    exit(Pid2, normal).
+    mysql:stop(Pid2).
 
 simple_atomic(Pid) ->
     ?assertNot(mysql:in_transaction(Pid)),
@@ -207,8 +207,8 @@ deadlock_test_() ->
      end,
      fun ({Conn1, Conn2}) ->
          ok = mysql:query(Conn1, <<"DROP DATABASE otptest">>, 1000),
-         exit(Conn1, normal),
-         exit(Conn2, normal)
+         mysql:stop(Conn1),
+         mysql:stop(Conn2)
      end,
      fun (Conns) ->
          [{"Plain queries", fun () -> deadlock_plain_queries(Conns) end},
