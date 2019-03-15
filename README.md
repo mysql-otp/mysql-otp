@@ -27,8 +27,7 @@ Some of the features:
 
 Requirements:
 
-* Erlang/OTP version R16B or later, excluding 21.0 which has a bug in binary
-  pattern matching. This was fixed in OTP 21.1.
+* Erlang/OTP version R16B or later
 * MySQL database version 4.1 or later or MariaDB
 * No other dependencies
 * Authentication method `caching_sha2_password` is not supported. This is the

@@ -867,19 +867,19 @@ decode_binary(#col{type = ?TYPE_BIT, length = Length}, Data) ->
     {Binary, Rest} = lenenc_str(Data),
     %% Convert to <<_:Length/bitstring>>
     {decode_bitstring(Binary, Length), Rest};
-decode_binary(#col{type = ?TYPE_DATE}, <<Length, Data/binary>>) ->
+decode_binary(#col{type = ?TYPE_DATE}, Data) ->
     %% Coded in the same way as DATETIME and TIMESTAMP below, but returned in
     %% a simple triple.
-    case {Length, Data} of
-        {0, _} -> {{0, 0, 0}, Data};
+    case lenenc_int(Data) of
+        {0, Rest} -> {{0, 0, 0}, Rest};
         {4, <<Y:16/little, M, D, Rest/binary>>} -> {{Y, M, D}, Rest}
     end;
-decode_binary(#col{type = T}, <<Length, Data/binary>>)
+decode_binary(#col{type = T}, Data)
   when T == ?TYPE_DATETIME; T == ?TYPE_TIMESTAMP ->
     %% length (1) -- number of bytes following (valid values: 0, 4, 7, 11)
-    case {Length, Data} of
-        {0, _} ->
-            {{{0, 0, 0}, {0, 0, 0}}, Data};
+    case lenenc_int(Data) of
+        {0, Rest} ->
+            {{{0, 0, 0}, {0, 0, 0}}, Rest};
         {4, <<Y:16/little, M, D, Rest/binary>>} ->
             {{{Y, M, D}, {0, 0, 0}}, Rest};
         {7, <<Y:16/little, M, D, H, Mi, S, Rest/binary>>} ->
@@ -887,7 +887,7 @@ decode_binary(#col{type = T}, <<Length, Data/binary>>)
         {11, <<Y:16/little, M, D, H, Mi, S, Micro:32/little, Rest/binary>>} ->
             {{{Y, M, D}, {H, Mi, S + 0.000001 * Micro}}, Rest}
     end;
-decode_binary(#col{type = ?TYPE_TIME}, <<Length, Data/binary>>) ->
+decode_binary(#col{type = ?TYPE_TIME}, Data) ->
     %% length (1) -- number of bytes following (valid values: 0, 8, 12)
     %% is_negative (1) -- (1 if minus, 0 for plus)
     %% days (4) -- days
@@ -895,9 +895,9 @@ decode_binary(#col{type = ?TYPE_TIME}, <<Length, Data/binary>>) ->
     %% minutes (1) -- minutes
     %% seconds (1) -- seconds
     %% micro_seconds (4) -- micro-seconds
-    case {Length, Data} of
-        {0, _} ->
-            {{0, {0, 0, 0}}, Data};
+    case lenenc_int(Data) of
+        {0, Rest} ->
+            {{0, {0, 0, 0}}, Rest};
         {8, <<0, D:32/little, H, M, S, Rest/binary>>} ->
             {{D, {H, M, S}}, Rest};
         {12, <<0, D:32/little, H, M, S, Micro:32/little, Rest/binary>>} ->
@@ -1403,3 +1403,4 @@ hash_password_test() ->
     ?assertEqual(<<>>, hash_password(<<>>, <<"abcdefghijklmnopqrst">>)).
 
 -endif.
+
