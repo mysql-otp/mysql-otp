@@ -79,8 +79,8 @@ end
 {ok, [<<"SLEEP(5)">>], [[1]]} =
     mysql:query(Pid, <<"SELECT SLEEP(5)">>, 1000),
 
-%% Close the connection; make it exit normally
-exit(Pid, normal).
+%% Close the connection
+mysql:stop(Pid).
 ```
 
 Usage as a dependency
