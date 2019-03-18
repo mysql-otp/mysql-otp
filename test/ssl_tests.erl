@@ -47,12 +47,4 @@ common_basic_check(ExtraOpts) ->
 
 common_conn_close() ->
     Pid = whereis(tardis),
-    process_flag(trap_exit, true),
-    exit(Pid, normal),
-    receive
-        {'EXIT', Pid, normal} -> ok
-    after
-        5000 -> error({cant_stop_connection, Pid})
-    end,
-    process_flag(trap_exit, false).
-
+    mysql:stop(Pid, 5000).

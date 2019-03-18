@@ -25,7 +25,8 @@
 %% gen_server is locally registered.
 -module(mysql).
 
--export([start_link/1, query/2, query/3, query/4, query/5,
+-export([start_link/1, stop/1, stop/2,
+         query/2, query/3, query/4, query/5,
          execute/3, execute/4, execute/5,
          prepare/2, prepare/3, unprepare/2,
          warning_count/1, affected_rows/1, autocommit/1, insert_id/1,
@@ -154,6 +155,51 @@ start_link(Options) ->
         _ -> ok
     end,
     Ret.
+ 
+%% @see stop/2.
+-spec stop(Conn) -> ok
+    when Conn :: connection().
+stop(Conn) ->
+    stop(Conn, infinity).
+
+%% @doc Stops a connection process and closes the connection. The
+%% process calling `stop' will be blocked until the connection
+%% process stops or the given timeout expires.
+%%
+%% If the connection is not stopped within the given timeout,
+%% an exit exception is raised with reason `timeout'.
+%%
+%% If the connection process exits with any other reason than `normal',
+%% an exit exception is raised with that reason.
+-spec stop(Conn, Timeout) -> ok
+    when Conn :: connection(),
+         Timeout :: timeout().
+stop(Conn, Timeout) ->
+    case erlang:function_exported(gen_server, stop, 3) of
+        true -> gen_server:stop(Conn, normal, Timeout);            %% OTP >= 18
+        false -> backported_gen_server_stop(Conn, normal, Timeout) %% OTP < 18
+    end.
+
+-spec backported_gen_server_stop(Conn, Reason, Timeout) -> ok
+    when Conn :: connection(),
+         Reason :: term(),
+         Timeout :: timeout().
+backported_gen_server_stop(Conn, Reason, Timeout) ->
+    Monitor=monitor(process, Conn),
+    exit(Conn, Reason),
+    receive
+        {'DOWN', Monitor, process, Conn, Reason} ->
+            ok;
+        {'DOWN', Monitor, process, Conn, UnexpectedReason} ->
+            exit(UnexpectedReason)
+    after Timeout ->
+        exit(Conn, kill),
+        receive
+            {'DOWN', Monitor, process, Conn, killed} ->
+                exit(timeout)
+        end
+    end.
+
 
 %% @see query/5.
 -spec query(Conn, Query) -> Result
