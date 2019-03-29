@@ -31,7 +31,7 @@
          query/4, query/5, fetch_query_response/3,
          fetch_query_response/4, prepare/3, unprepare/3,
          execute/5, execute/6, fetch_execute_response/3,
-         fetch_execute_response/4]).
+         fetch_execute_response/4, valid_params/1]).
 
 -type query_filtermap() :: no_filtermap_fun
                          | fun(([term()]) -> query_filtermap_res())
@@ -1013,6 +1013,45 @@ encode_param({D, {H, M, S}}) when is_float(S), S > 0.0, D < 0 ->
 encode_param({D, {H, M, 0.0}}) ->
     encode_param({D, {H, M, 0}}).
 
+%% @doc Checks if the given Parameters can be encoded for use in the
+%% binary protocol. Returns `true' if all of the parameters can be
+%% encoded, `false' if any of them cannot be encoded.
+-spec valid_params([term()]) -> boolean().
+valid_params(Values) when is_list(Values) ->
+    lists:all(fun is_valid_param/1, Values).
+
+%% @doc Checks if the given parameter can be encoded for use in the
+%% binary protocol.
+-spec is_valid_param(term()) -> boolean().
+is_valid_param(null) ->
+    true;
+is_valid_param(Value) when is_list(Value) ->
+    try
+        unicode:characters_to_binary(Value)
+    of
+        Value1 when is_binary(Value1) ->
+            true;
+        _ErrorOrIncomplete ->
+            false
+    catch
+        error:badarg ->
+            false
+    end;
+is_valid_param(Value) when is_number(Value) ->
+    true;
+is_valid_param(Value) when is_bitstring(Value) ->
+    true;
+is_valid_param({Y, M, D}) ->
+    is_integer(Y) andalso is_integer(M) andalso is_integer(D);
+is_valid_param({{Y, M, D}, {H, Mi, S}}) ->
+    is_integer(Y) andalso is_integer(M) andalso is_integer(D) andalso
+    is_integer(H) andalso is_integer(Mi) andalso is_number(S);
+is_valid_param({D, {H, M, S}}) ->
+    is_integer(D) andalso
+    is_integer(H) andalso is_integer(M) andalso is_number(S);
+is_valid_param(_) ->
+    false.
+
 %% -- Value representation in both the text and binary protocols --
 
 %% @doc Convert to `<<_:Length/bitstring>>'
@@ -1401,6 +1440,65 @@ hash_password_test() ->
                    234,234,73,127,244,101,205,3,28,251>>,
                  hash_password(<<"foo">>, <<"abcdefghijklmnopqrst">>)),
     ?assertEqual(<<>>, hash_password(<<>>, <<"abcdefghijklmnopqrst">>)).
+
+valid_params_test() ->
+    ValidParams = [
+        null,
+        1,
+        0.5,
+        <<>>, <<$x>>, <<0:1>>,
+
+        %% valid unicode
+        [], [$x], [16#E4],
+
+        %% valid date
+        {1, 2, 3},
+
+        %% valid time
+        {1, {2, 3, 4}}, {1, {2, 3, 4.5}},
+
+        %% valid datetime
+        {{1, 2, 3}, {4, 5, 6}}, {{1, 2, 3}, {4, 5, 6.5}}
+    ],
+
+    InvalidParams = [
+        x,
+        [x],
+        {},
+        self(),
+        make_ref(),
+        fun () -> ok end,
+
+        %% invalid unicode
+        [16#FFFFFFFF],
+
+        %% invalid date
+        {x, 1, 2}, {1, x, 2}, {1, 2, x},
+
+        %% invalid time
+        {x, {1, 2, 3}}, {1, {x, 2, 3}},
+        {1, {2, x, 3}}, {1, {2, 3, x}},
+
+        %% invalid datetime
+        {{x, 1, 2}, {3, 4, 5}}, {{1, x, 2}, {3, 4, 5}},
+        {{1, 2, x}, {3, 4, 5}}, {{1, 2, 3}, {x, 4, 5}},
+        {{1, 2, 3}, {4, x, 5}}, {{1, 2, 3}, {4, 5, x}}
+    ],
+
+    lists:foreach(
+        fun (ValidParam) ->
+            ?assert(is_valid_param(ValidParam))
+        end,
+        ValidParams),
+    ?assert(valid_params(ValidParams)),
+
+    lists:foreach(
+        fun (InvalidParam) ->
+            ?assertNot(is_valid_param(InvalidParam))
+        end,
+        InvalidParams),
+    ?assertNot(valid_params(InvalidParams)),
+    ?assertNot(valid_params(ValidParams ++ InvalidParams)).
 
 -endif.
 

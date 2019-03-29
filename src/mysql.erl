@@ -357,7 +357,13 @@ query(Conn, Query, Params, FilterMap) when (Params == no_params orelse
 query(Conn, Query, no_params, FilterMap, Timeout) ->
     query_call(Conn, {query, Query, FilterMap, Timeout});
 query(Conn, Query, Params, FilterMap, Timeout) ->
-    query_call(Conn, {param_query, Query, Params, FilterMap, Timeout}).
+    case mysql_protocol:valid_params(Params) of
+        true ->
+            query_call(Conn,
+                       {param_query, Query, Params, FilterMap, Timeout});
+        false ->
+            error(badarg)
+    end.
 
 %% @doc Executes a prepared statement with the default query timeout as given
 %% to start_link/1.
@@ -421,7 +427,13 @@ execute(Conn, StatementRef, Params, FilterMap) when FilterMap == no_filtermap_fu
        Timeout :: default_timeout | timeout(),
        Result :: query_result().
 execute(Conn, StatementRef, Params, FilterMap, Timeout) ->
-    query_call(Conn, {execute, StatementRef, Params, FilterMap, Timeout}).
+    case mysql_protocol:valid_params(Params) of
+        true ->
+            query_call(Conn,
+                       {execute, StatementRef, Params, FilterMap, Timeout});
+        false ->
+            error(badarg)
+    end.
 
 %% @doc Creates a prepared statement from the passed query.
 %% @see prepare/3
@@ -729,5 +741,3 @@ query_call(Conn, CallReq) ->
         Result ->
             Result
     end.
-
-

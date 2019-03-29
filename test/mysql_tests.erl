@@ -213,7 +213,8 @@ query_test_() ->
           {"TIME",                 fun () -> time(Pid) end},
           {"DATETIME",             fun () -> datetime(Pid) end},
           {"JSON",                 fun () -> json(Pid) end},
-          {"Microseconds",         fun () -> microseconds(Pid) end}]
+          {"Microseconds",         fun () -> microseconds(Pid) end},
+          {"Invalid params",       fun () -> invalid_params(Pid) end}]
      end}.
 
 connect_with_db(_Pid) ->
@@ -684,6 +685,12 @@ test_datetime_microseconds(Pid) ->
                            <<"dt">>),
     ok = mysql:query(Pid, "DROP TABLE dt").
 
+invalid_params(Pid) ->
+    {ok, StmtId} = mysql:prepare(Pid, "SELECT ?"),
+    ?assertError(badarg, mysql:execute(Pid, StmtId, [x])),
+    ?assertError(badarg, mysql:query(Pid, "SELECT ?", [x])),
+    ok = mysql:unprepare(Pid, StmtId).
+
 %% @doc Tests write and read in text and the binary protocol, all combinations.
 %% This helper function assumes an empty table with a single column.
 write_read_text_binary(Conn, Term, SqlLiteral, Table, Column) ->
@@ -801,7 +808,7 @@ parameterized_query(Conn) ->
     {ok, _, []} = mysql:query(Conn, "SELECT * FROM foo WHERE bar = ?", [2]),
     receive after 150 -> ok end, %% Now the query cache should emptied
     {ok, _, []} = mysql:query(Conn, "SELECT * FROM foo WHERE bar = ?", [3]),
-    {error, {_, _, _}} = mysql:query(Conn, "Lorem ipsum dolor sit amet", [x]).
+    {error, {_, _, _}} = mysql:query(Conn, "Lorem ipsum dolor sit amet", [4]).
 
 %% --- simple gen_server callbacks ---
 
