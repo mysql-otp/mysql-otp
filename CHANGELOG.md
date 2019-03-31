@@ -1,6 +1,27 @@
 Change log
 ==========
 
+
+1.5.0
+-----
+* Parameter validation for prepared statements and parameterized queries [2019-03-31 18:24:59 +0200]
+* Synchronous stop [2019-03-31 18:24:59 +0200]
+* Workaround for sub binary optimization bug in OTP 21.0 [2019-03-31 18:24:59 +0200]
+* replace atom() with module() for SockModule parameters [2019-03-31 18:24:59 +0200]
+* implement COM_CHANGE_USER (#105) [2019-03-31 18:24:59 +0200]
+* Possibility to apply a filtermap fun on results (#104) [2019-03-31 18:24:59 +0200]
+* Update version and CHANGELOG.md [2019-03-31 18:24:59 +0200]
+* Get rid of socket wrapper modules [2019-03-31 18:24:59 +0200]
+* Remove redundant transaction level info in state [2019-03-31 18:24:59 +0200]
+* Remove superfluos 'Too many connections' test [2019-03-31 18:24:59 +0200]
+* Move gen_server to separate module [2019-03-31 18:24:59 +0200]
+* Handle error packet as the initial packet from the server [2019-03-31 18:24:59 +0200]
+* Clarifications for usage with MySQL 8 [2019-03-31 18:24:22 +0200]
+* Monitor calling process during transaction [2019-03-31 18:24:03 +0200]
+
+1.4.0
+-----
+* Update version and CHANGELOG.md [2019-01-11 23:15:48 +0100]
 * Get rid of socket wrapper modules [2018-12-03 01:07:39 +0100]
 * Remove redundant transaction level info in state [2018-12-02 22:39:36 +0100]
 * Remove superfluos 'Too many connections' test [2018-12-02 20:53:07 +0100]
