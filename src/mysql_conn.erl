@@ -61,7 +61,13 @@
 init(Opts) ->
     %% Connect
     Host           = proplists:get_value(host, Opts, ?default_host),
-    Port           = proplists:get_value(port, Opts, ?default_port),
+
+    DefaultPort = case Host of
+        {local, _LocalAddr} -> 0;
+        _NonLocalAddr -> ?default_port
+    end,
+    Port           = proplists:get_value(port, Opts, DefaultPort),
+
     User           = proplists:get_value(user, Opts, ?default_user),
     Password       = proplists:get_value(password, Opts, ?default_password),
     Database       = proplists:get_value(database, Opts, undefined),
