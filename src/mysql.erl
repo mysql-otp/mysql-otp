@@ -76,9 +76,11 @@
 %%       name. For details see the documentation for the first argument of
 %%       gen_server:start_link/4.</dd>
 %%   <dt>`{host, Host}'</dt>
-%%   <dd>Hostname of the MySQL database; default `"localhost"'.</dd>
+%%   <dd>Hostname of the MySQL database. Since OTP version 19, it is also
+%%       possible to specify a local (Unix) Socket by specifying
+%%       `{local, SocketFile}'. Default `"localhost"'.</dd>
 %%   <dt>`{port, Port}'</dt>
-%%   <dd>Port; default 3306 if omitted.</dd>
+%%   <dd>Port; default 3306 for non-local or 0 for local (Unix) sockets.</dd>
 %%   <dt>`{user, User}'</dt>
 %%   <dd>Username.</dd>
 %%   <dt>`{password, Password}'</dt>
