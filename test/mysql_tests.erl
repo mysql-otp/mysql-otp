@@ -206,6 +206,27 @@ unix_socket_test() ->
                                   "release could not be determined.~n")
     end.
     
+connect_queries_failure_test() ->
+    process_flag(trap_exit, true),
+    ?assertError(_Reason, mysql:start_link([{user, ?user}, {password, ?password},
+                                            {queries, ["foo"]}])),
+    receive
+        {'EXIT', _Pid, normal} -> ok
+    after 1000 ->
+        error(no_exit_message)
+    end,
+    process_flag(trap_exit, false).
+
+connect_prepare_failure_test() ->
+    process_flag(trap_exit, true),
+    ?assertError(_Reason, mysql:start_link([{user, ?user}, {password, ?password},
+                                            {prepare, [{foo, "foo"}]}])),
+    receive
+        {'EXIT', _Pid, normal} -> ok
+    after 1000 ->
+        error(no_exit_message)
+    end,
+    process_flag(trap_exit, false).
 
 %% For R16B where sys:get_state/1 is not available.
 get_state(Process) ->
