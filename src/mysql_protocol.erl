@@ -83,8 +83,11 @@ handshake_finish_or_switch_auth(Handshake = #handshake{status = Status}, Passwor
     {ok, ConfirmPacket, SeqNum1} = recv_packet(SockModule, Socket, SeqNum0),
     case parse_handshake_confirm(ConfirmPacket) of
         #ok{status = OkStatus} ->
-            %% check status, ignoring bit 16#4000, SERVER_SESSION_STATE_CHANGED.
-            Status = OkStatus band bnot 16#4000,
+            %% check status, ignoring bit 16#4000, SERVER_SESSION_STATE_CHANGED
+            %% and bit 16#0002, SERVER_STATUS_AUTOCOMMIT.
+            BitMask = bnot (?SERVER_SESSION_STATE_CHANGED bor ?SERVER_STATUS_AUTOCOMMIT),
+            StatusMasked = Status band BitMask,
+            StatusMasked = OkStatus band BitMask,
             {ok, Handshake, SockModule, Socket};
         #auth_method_switch{auth_plugin_name = AuthPluginName,
                             auth_plugin_data = AuthPluginData} ->
