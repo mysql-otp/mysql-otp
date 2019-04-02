@@ -29,7 +29,7 @@
 %% Ensure that the current user can be changed to another user
 %% when given correct credentials.
 correct_credentials_test() ->
-    Pid = connect_db(?user1),
+    Pid = connect_db(?user1, ?password1),
     ?assertEqual(ok, mysql:change_user(Pid, ?user2, ?password2)),
     ?assert(is_current_user(Pid, ?user2)),
     mysql:stop(Pid),
@@ -38,7 +38,7 @@ correct_credentials_test() ->
 %% Ensure that change user fails when given incorrect credentials,
 %% and that the current user still works.
 incorrect_credentials_fail_test() ->
-    Pid = connect_db(?user1),
+    Pid = connect_db(?user1, ?password1),
     TrapExit = erlang:process_flag(trap_exit, true),
     ?assertError({1045, <<"28000">>, <<"Access denied", _/binary>>},
                  mysql:change_user(Pid, ?user2, ?password1)),
@@ -51,7 +51,7 @@ incorrect_credentials_fail_test() ->
 %% Ensure that user variables are reset after a successful change user
 %% operation.
 reset_variables_test() ->
-    Pid = connect_db(?user1),
+    Pid = connect_db(?user1, ?password1),
     ok = mysql:query(Pid, <<"SET @foo=123">>),
     ?assertEqual(ok, mysql:change_user(Pid, ?user2, ?password2)),
     ?assert(is_current_user(Pid, ?user2)),
@@ -65,7 +65,7 @@ reset_variables_test() ->
 %% Ensure that temporary tables are reset after a successful change user
 %% operation.
 reset_temptables_test() ->
-    Pid = connect_db(?user1),
+    Pid = connect_db(?user1, ?password1),
     ok = mysql:query(Pid, <<"CREATE DATABASE IF NOT EXISTS otptest">>),
     ok = mysql:query(Pid, <<"CREATE TEMPORARY TABLE otptest.foo (bar INT)">>),
     ?assertEqual(ok, mysql:change_user(Pid, ?user2, ?password2)),
@@ -79,7 +79,7 @@ reset_temptables_test() ->
 
 %% Ensure that change user fails when inside an unmanaged transaction.
 fail_in_unmanaged_transaction_test() ->
-    Pid = connect_db(?user1),
+    Pid = connect_db(?user1, ?password1),
     ok = mysql:query(Pid, <<"BEGIN">>),
     ?assert(mysql:in_transaction(Pid)),
     ?assertError(change_user_in_transaction,
@@ -91,7 +91,7 @@ fail_in_unmanaged_transaction_test() ->
 
 %% Ensure that change user fails when inside a managed transaction.
 fail_in_managed_transaction_test() ->
-    Pid = connect_db(?user1),
+    Pid = connect_db(?user1, ?password1),
     ?assertError(change_user_in_transaction,
                  mysql:transaction(Pid,
                                    fun () -> mysql:change_user(Pid,
@@ -103,7 +103,7 @@ fail_in_managed_transaction_test() ->
     ok.
 
 with_db_test() ->
-    Pid = connect_db(?user1),
+    Pid = connect_db(?user1, ?password1),
     ok = mysql:query(Pid, <<"CREATE DATABASE IF NOT EXISTS otptest">>),
     ?assertEqual(ok, mysql:change_user(Pid, ?user2, ?password2, [{database, <<"otptest">>}])),
     ?assert(is_current_user(Pid, ?user2)),
@@ -116,7 +116,7 @@ with_db_test() ->
     ok.
 
 execute_queries_test() ->
-    Pid = connect_db(?user1),
+    Pid = connect_db(?user1, ?password1),
     ?assertEqual(ok, mysql:change_user(Pid, ?user2, ?password2, [{queries, [<<"SET @foo=123">>]}])),
     ?assert(is_current_user(Pid, ?user2)),
     ?assertEqual({ok,
@@ -126,8 +126,19 @@ execute_queries_test() ->
     mysql:stop(Pid),
     ok.
 
+execute_queries_failure_test() ->
+    Pid = connect_db(?user1, ?password1),
+    erlang:process_flag(trap_exit, true),
+    ?assertError(_Reason, mysql:change_user(Pid, ?user2, ?password2, [{queries, [<<"foo">>]}])),
+    receive
+        {'EXIT', Pid, normal} -> ok
+    after 1000 ->
+        error(no_exit_message)
+    end,
+    erlang:process_flag(trap_exit, false).
+
 prepare_statements_test() ->
-    Pid = connect_db(?user1),
+    Pid = connect_db(?user1, ?password1),
     ?assertEqual(ok, mysql:change_user(Pid, ?user2, ?password2, [{prepare, [{foo, <<"SELECT ? AS foo">>}]}])),
     ?assert(is_current_user(Pid, ?user2)),
     ?assertEqual({ok,
@@ -137,9 +148,20 @@ prepare_statements_test() ->
     mysql:stop(Pid),
     ok.
 
+prepare_statements_failure_test() ->
+    Pid = connect_db(?user1, ?password1),
+    erlang:process_flag(trap_exit, true),
+    ?assertError(_Reason, mysql:change_user(Pid, ?user2, ?password2, [{prepare, [{foo, <<"foo">>}]}])),
+    receive
+        {'EXIT', Pid, normal} -> ok
+    after 1000 ->
+        error(no_exit_message)
+    end,
+    erlang:process_flag(trap_exit, false).
 
-connect_db(User) ->
-    {ok, Pid} = mysql:start_link([{user, User}, {password, ?password1},
+
+connect_db(User, Password) ->
+    {ok, Pid} = mysql:start_link([{user, User}, {password, Password},
                                   {log_warnings, false}]),
     Pid.
 

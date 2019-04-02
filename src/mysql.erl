@@ -714,22 +714,31 @@ encode(Conn, Term) ->
 
 %% @doc Executes the given queries and prepares the given statements after a
 %% connection has been made.
+%%
+%% If any of the queries or prepares fails, the connection is closed and an
+%% exception is raised.
 -spec execute_after_connect(connection(), [iodata()], [{atom(), iodata()}])
     -> ok.
 execute_after_connect(Conn, Queries, Prepares) ->
-    lists:foreach(fun (Query) ->
-                      case query(Conn, Query) of
-                          ok -> ok;
-                          {ok, _} -> ok;
-                          {ok, _, _} -> ok
-                      end
-                  end,
-                  Queries),
-    lists:foreach(fun ({Name, Stmt}) ->
-                      {ok, Name} = prepare(Conn, Name, Stmt)
-                  end,
-                  Prepares),
-    ok.
+    try
+        lists:foreach(fun (Query) ->
+                          case query(Conn, Query) of
+                              ok -> ok;
+                              {ok, _} -> ok;
+                              {ok, _, _} -> ok
+                          end
+                      end,
+                      Queries),
+        lists:foreach(fun ({Name, Stmt}) ->
+                          {ok, Name} = prepare(Conn, Name, Stmt)
+                      end,
+                      Prepares),
+        ok
+    catch
+        ?EXCEPTION(Class, Reason, Stacktrace) ->
+            catch stop(Conn, ?default_connect_timeout),
+            erlang:raise(Class, Reason, ?GET_STACK(Stacktrace))
+    end.
 
 %% @doc Makes a gen_server call for a query (plain, parametrized or prepared),
 %% checks the reply and sometimes throws an exception when we need to jump out
