@@ -92,6 +92,17 @@ init(Opts) ->
     SockOpts = [binary, {packet, raw}, {active, false} | TcpOpts],
     {ok, Socket0} = SockMod0:connect(Host, Port, SockOpts),
 
+    %% If buffer wasn't specifically defined make it at least as
+    %% large as recbuf, as suggested by the inet:setopts() docs.
+    case proplists:is_defined(buffer, TcpOpts) of
+        true ->
+            ok;
+        false ->
+            {ok, [{buffer, Buffer}]} = inet:getopts(Socket0, [buffer]),
+            {ok, [{recbuf, Recbuf}]} = inet:getopts(Socket0, [recbuf]),
+            ok = inet:setopts(Socket0,[{buffer, max(Buffer, Recbuf)}])
+    end,
+
     %% Exchange handshake communication.
     Result = mysql_protocol:handshake(User, Password, Database, SockMod0, SSLOpts,
                                       Socket0, SetFoundRows),
