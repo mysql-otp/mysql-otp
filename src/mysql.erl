@@ -135,7 +135,8 @@
                    {queries, [iodata()]} |
                    {query_timeout, timeout()} |
                    {found_rows, boolean()} |
-                   {query_cache_time, non_neg_integer()},
+                   {query_cache_time, non_neg_integer()} |
+                   {tcp_options, [gen_tcp:connect_option()]},
          ServerName :: {local, Name :: atom()} |
                        {global, GlobalName :: term()} |
                        {via, Module :: atom(), ViaName :: term()},
