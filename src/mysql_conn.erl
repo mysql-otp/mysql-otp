@@ -96,9 +96,8 @@ init(Opts) ->
     %% large as recbuf, as suggested by the inet:setopts() docs.
     BufferIsDefined = proplists:is_defined(buffer, TcpOpts),
     if not BufferIsDefined ->
-        {ok, [{buffer, Buffer}, {recbuf, Recbuf}]} = inet:getopts(Socket0,
-                                                                  [buffer, 
-                                                                   recbuf]),
+        {ok, [{buffer, Buffer}]} = inet:getopts(Socket0, [buffer]),
+        {ok, [{recbuf, Recbuf}]} = inet:getopts(Socket0, [recbuf]),
         ok = inet:setopts(Socket0,[{buffer, max(Buffer, Recbuf)}])
     end,
 
