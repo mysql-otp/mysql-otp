@@ -89,7 +89,8 @@ init(Opts) ->
     end,
 
     %% Connect socket
-    SockOpts = [binary, {packet, raw}, {active, false} | TcpOpts],
+    SockOpts = [binary, {packet, raw}, {active, false}, {nodelay, true}
+                | TcpOpts],
     {ok, Socket0} = SockMod0:connect(Host, Port, SockOpts),
 
     %% If buffer wasn't specifically defined make it at least as
