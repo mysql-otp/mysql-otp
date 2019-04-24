@@ -94,8 +94,8 @@ init(Opts) ->
 
     %% If buffer wasn't specifically defined make it at least as
     %% large as recbuf, as suggested by the inet:setopts() docs.
-    BufferIsNotDefined = not proplists:is_defined(buffer, TcpOpts),
-    if BufferIsNotDefined ->
+    BufferIsDefined = proplists:is_defined(buffer, TcpOpts),
+    if not BufferIsDefined ->
         {ok, [{buffer, Buffer}, {recbuf, Recbuf}]} = inet:getopts(Socket0,
                                                                   [buffer, 
                                                                    recbuf]),
