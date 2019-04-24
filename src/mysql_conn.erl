@@ -92,6 +92,17 @@ init(Opts) ->
     SockOpts = [binary, {packet, raw}, {active, false} | TcpOpts],
     {ok, Socket0} = SockMod0:connect(Host, Port, SockOpts),
 
+    %% If buffer wasn't specifically defined make it at least as
+    %% large as recbuf, as suggested by the inet:setopts() docs.
+    case proplists:is_defined(buffer, TcpOpts) of
+        true ->
+            ok;
+        false ->
+            {ok, [{buffer, Buffer}]} = inet:getopts(Socket0, [buffer]),
+            {ok, [{recbuf, Recbuf}]} = inet:getopts(Socket0, [recbuf]),
+            ok = inet:setopts(Socket0,[{buffer, max(Buffer, Recbuf)}])
+    end,
+
     %% Exchange handshake communication.
     Result = mysql_protocol:handshake(User, Password, Database, SockMod0, SSLOpts,
                                       Socket0, SetFoundRows),
@@ -284,10 +295,12 @@ handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);
 handle_call({change_user, Username, Password, Database}, From,
             State = #state{transaction_levels = []}) ->
     #state{socket = Socket, sockmod = SockMod,
-           auth_plugin_data = AuthPluginData} = State,
+           auth_plugin_data = AuthPluginData,
+           server_version = ServerVersion} = State,
     setopts(SockMod, Socket, [{active, false}]),
     Result = mysql_protocol:change_user(SockMod, Socket, Username, Password,
-                                        AuthPluginData, Database),
+                                        AuthPluginData, Database, 
+                                        ServerVersion),
     setopts(SockMod, Socket, [{active, once}]),
     State1 = update_state(Result, State),
     State1#state.warning_count > 0 andalso State1#state.log_warnings

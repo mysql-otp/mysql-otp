@@ -22,7 +22,8 @@
 -define(ERROR, 16#ff).
 
 %% Character sets
--define(UTF8, 16#21). %% utf8_general_ci
+-define(UTF8MB3, 16#21). %% utf8_general_ci
+-define(UTF8MB4, 16#2d). %% utf8mb4_general_ci
 
 %% --- Capability flags ---
 
