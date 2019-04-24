@@ -27,7 +27,7 @@
 %% @private
 -module(mysql_protocol).
 
--export([handshake/7, change_user/6, quit/2, ping/2,
+-export([handshake/7, change_user/7, quit/2, ping/2,
          query/4, query/5, fetch_query_response/3,
          fetch_query_response/4, prepare/3, unprepare/3,
          execute/5, execute/6, fetch_execute_response/3,
@@ -233,8 +233,9 @@ fetch_execute_response(SockModule, Socket, FilterMap, Timeout) ->
 
 %% @doc Changes the user of the connection.
 -spec change_user(module(), term(), iodata(), iodata(), binary(),
-                  undefined | iodata()) -> #ok{} | #error{}.
-change_user(SockModule, Socket, Username, Password, Salt, Database) ->
+                  undefined | iodata(), [integer()]) -> #ok{} | #error{}.
+change_user(SockModule, Socket, Username, Password, Salt, Database, 
+            ServerVersion) ->
     DbBin = case Database of
         undefined -> <<>>;
         _ -> iolist_to_binary(Database)
@@ -242,7 +243,7 @@ change_user(SockModule, Socket, Username, Password, Salt, Database) ->
     Hash = hash_password(Password, Salt),
     Req = <<?COM_CHANGE_USER, (iolist_to_binary(Username))/binary, 0,
             (lenenc_str_encode(Hash))/binary,
-            DbBin/binary, 0, ?UTF8:16/little>>,
+            DbBin/binary, 0, (character_set(ServerVersion)):16/little>>,
     {ok, _SeqNum1} = send_packet(SockModule, Socket, Req, 0),
     {ok, Packet, _SeqNum2} = recv_packet(SockModule, Socket, infinity, any),
     case Packet of
@@ -357,7 +358,7 @@ build_handshake_response(Handshake, Database, SetFoundRows) ->
     verify_server_capabilities(Handshake, CapabilityFlags),
     ClientCapabilities = add_client_capabilities(CapabilityFlags),
     ClientSSLCapabilities = ClientCapabilities bor ?CLIENT_SSL,
-    CharacterSet = ?UTF8,
+    CharacterSet = character_set(Handshake#handshake.server_version),
     <<ClientSSLCapabilities:32/little,
       ?MAX_BYTES_PER_PACKET:32/little,
       CharacterSet:8,
@@ -385,7 +386,7 @@ build_handshake_response(Handshake, Username, Password, Database,
             error({auth_method, UnknownAuthMethod})
     end,
     HashLength = size(Hash),
-    CharacterSet = ?UTF8,
+    CharacterSet = character_set(Handshake#handshake.server_version),
     UsernameUtf8 = unicode:characters_to_binary(Username),
     DbBin = case Database of
         undefined -> <<>>;
@@ -430,6 +431,14 @@ add_client_capabilities(Caps) ->
     ?CLIENT_MULTI_STATEMENTS bor
     ?CLIENT_MULTI_RESULTS bor
     ?CLIENT_PS_MULTI_RESULTS.
+
+-spec character_set([integer()]) -> integer().
+character_set(ServerVersion) when ServerVersion >= [5, 5, 3] ->
+    %% https://dev.mysql.com/doc/relnotes/mysql/5.5/en/news-5-5-3.html
+    ?UTF8MB4;
+
+character_set(_ServerVersion) ->
+    ?UTF8MB3.
 
 %% @doc Handles the second packet from the server, when we have replied to the
 %% initial handshake. Returns an error if the server returns an error. Raises

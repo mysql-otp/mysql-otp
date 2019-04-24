@@ -284,10 +284,12 @@ handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);
 handle_call({change_user, Username, Password, Database}, From,
             State = #state{transaction_levels = []}) ->
     #state{socket = Socket, sockmod = SockMod,
-           auth_plugin_data = AuthPluginData} = State,
+           auth_plugin_data = AuthPluginData,
+           server_version = ServerVersion} = State,
     setopts(SockMod, Socket, [{active, false}]),
     Result = mysql_protocol:change_user(SockMod, Socket, Username, Password,
-                                        AuthPluginData, Database),
+                                        AuthPluginData, Database, 
+                                        ServerVersion),
     setopts(SockMod, Socket, [{active, once}]),
     State1 = update_state(Result, State),
     State1#state.warning_count > 0 andalso State1#state.log_warnings
