@@ -27,6 +27,11 @@
 -module(mysql_conn).
 
 -behaviour(gen_server).
+-export([start_link/1, start_link/2, stop/2, prepare/2, prepare/3, unprepare/2,
+         warning_count/1, affected_rows/1, autocommit/1, insert_id/1,
+         in_transaction/1, start_transaction/1, commit/1, rollback/1,
+         change_user/4, backslash_escapes_enabled/1, query/4, param_query/5,
+         execute/5]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
 
@@ -34,6 +39,7 @@
 -define(default_port, 3306).
 -define(default_user, <<>>).
 -define(default_password, <<>>).
+-define(default_connect_timeout, 5000).
 -define(default_query_timeout, infinity).
 -define(default_query_cache_time, 60000). %% for query/3.
 -define(default_ping_timeout, 60000).
@@ -43,10 +49,115 @@
 %% Errors that cause "implicit rollback"
 -define(ERROR_DEADLOCK, 1213).
 
-%% --- Gen_server callbacks ---
-
 -include("records.hrl").
 -include("server_status.hrl").
+
+%% --- API ---
+
+start_link(Options) ->
+    GenSrvOpts = [{timeout, proplists:get_value(connect_timeout, Options,
+                                                ?default_connect_timeout)}],
+    gen_server:start_link(?MODULE, Options, GenSrvOpts).
+
+start_link(Name, Options) ->
+    GenSrvOpts = [{timeout, proplists:get_value(connect_timeout, Options,
+                                                ?default_connect_timeout)}],
+    gen_server:start_link(Name, ?MODULE, Options, GenSrvOpts).
+
+stop(Conn, Timeout) ->
+    case erlang:function_exported(gen_server, stop, 3) of
+        true -> gen_server:stop(Conn, normal, Timeout);            %% OTP >= 18
+        false -> backported_gen_server_stop(Conn, normal, Timeout) %% OTP < 18
+    end.
+
+backported_gen_server_stop(Conn, Reason, Timeout) ->
+    Monitor=monitor(process, Conn),
+    exit(Conn, Reason),
+    receive
+        {'DOWN', Monitor, process, Conn, Reason} ->
+            ok;
+        {'DOWN', Monitor, process, Conn, UnexpectedReason} ->
+            exit(UnexpectedReason)
+    after Timeout ->
+        exit(Conn, kill),
+        receive
+            {'DOWN', Monitor, process, Conn, killed} ->
+                exit(timeout)
+        end
+    end.
+
+prepare(Conn, Query) ->
+    gen_server:call(Conn, {prepare, Query}).
+
+prepare(Conn, Name, Query) ->
+    gen_server:call(Conn, {prepare, Name, Query}).
+
+unprepare(Conn, StmtRef) ->
+    gen_server:call(Conn, {unprepare, StmtRef}).
+
+warning_count(Conn) ->
+    gen_server:call(Conn, warning_count).
+
+affected_rows(Conn) ->
+    gen_server:call(Conn, affected_rows).
+
+autocommit(Conn) ->
+    gen_server:call(Conn, autocommit).
+
+insert_id(Conn) ->
+    gen_server:call(Conn, insert_id).
+
+in_transaction(Conn) ->
+    gen_server:call(Conn, in_transaction).
+
+start_transaction(Conn) ->
+    gen_server:call(Conn, start_transaction, infinity).
+
+commit(Conn) ->
+    gen_server:call(Conn, commit, infinity).
+
+rollback(Conn) ->
+    gen_server:call(Conn, rollback, infinity).
+
+change_user(Conn, Username, Password, Database) ->
+    case in_transaction(Conn) of
+        true ->
+            error(change_user_in_transaction);
+        false ->
+            gen_server:call(Conn, {change_user, Username, Password, Database})
+    end.
+
+backslash_escapes_enabled(Conn) ->
+    gen_server:call(Conn, backslash_escapes_enabled).
+
+query(Conn, Query, FilterMap, Timeout) ->
+    Ret = gen_server:call(Conn, {query, Query, FilterMap, Timeout}, infinity),
+    eval_query_ret(Ret).
+
+param_query(Conn, Query, Params, FilterMap, Timeout) ->
+    case mysql_protocol:valid_params(Params) of
+        true ->
+            Ret = gen_server:call(Conn, {param_query, Query, Params, FilterMap, Timeout}, infinity),
+            eval_query_ret(Ret);
+        false ->
+            error(badarg)
+    end.
+
+execute(Conn, StmtRef, Params, FilterMap, Timeout) ->
+    case mysql_protocol:valid_params(Params) of
+        true ->
+            Ret = gen_server:call(Conn, {execute, StmtRef, Params, FilterMap, Timeout}, infinity),
+            eval_query_ret(Ret);
+        false ->
+            error(badarg)
+    end.
+
+eval_query_ret({implicit_commit, _NestingLevel, Query}) ->
+    error({implicit_commit, Query});
+eval_query_ret(ImplicitRollback = {implicit_rollback, _NestingLevel, _ServerReason}) ->
+    throw(ImplicitRollback);
+eval_query_ret(Result) ->
+    Result.
 
 %% Gen_server state
 -record(state, {server_version, connection_id, socket, sockmod, ssl_opts,
@@ -56,6 +167,8 @@
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
                 transaction_levels = [], ping_ref = undefined,
                 stmts = dict:new(), query_cache = empty, cap_found_rows = false}).
+
+%% --- Gen_server callbacks ---
 
 %% @private
 init(Opts) ->
