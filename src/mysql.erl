@@ -121,6 +121,8 @@
 %%   <dd>Additional options for `gen_tcp:connect/3'. You may want to set
 %%       `{recbuf, Size}' and `{sndbuf, Size}' if you send or receive more than
 %%       the default (typically 8K) per query.</dd>
+%%   <dt>`{ssl, Options}'</dt>
+%%   <dd>Additional options for `ssl:connect/3'.</dd>
 %% </dl>
 -spec start_link(Options) -> {ok, pid()} | ignore | {error, term()}
     when Options :: [Option],
@@ -136,7 +138,8 @@
                    {query_timeout, timeout()} |
                    {found_rows, boolean()} |
                    {query_cache_time, non_neg_integer()} |
-                   {tcp_options, [gen_tcp:connect_option()]},
+                   {tcp_options, [gen_tcp:connect_option()]} |
+                   {ssl, term()},
          ServerName :: {local, Name :: atom()} |
                        {global, GlobalName :: term()} |
                        {via, Module :: atom(), ViaName :: term()},
