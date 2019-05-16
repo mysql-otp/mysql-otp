@@ -18,6 +18,7 @@ before_script:
   - mysql -uroot -e "GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost REQUIRE SSL;"
 script: 'make tests'
 otp_release:
+  - 22.0
   - 21.1
   - 21.0
   - 20.0
