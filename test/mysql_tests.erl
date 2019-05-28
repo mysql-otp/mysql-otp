@@ -208,23 +208,23 @@ unix_socket_test() ->
     
 connect_queries_failure_test() ->
     process_flag(trap_exit, true),
-    ?assertError(_Reason, mysql:start_link([{user, ?user}, {password, ?password},
-                                            {queries, ["foo"]}])),
+    {error, Reason} = mysql:start_link([{user, ?user}, {password, ?password},
+                                        {queries, ["foo"]}]),
     receive
-        {'EXIT', _Pid, normal} -> ok
+        {'EXIT', _Pid, Reason} -> ok
     after 1000 ->
-        error(no_exit_message)
+        exit(no_exit_message)
     end,
     process_flag(trap_exit, false).
 
 connect_prepare_failure_test() ->
     process_flag(trap_exit, true),
-    ?assertError(_Reason, mysql:start_link([{user, ?user}, {password, ?password},
-                                            {prepare, [{foo, "foo"}]}])),
+    {error, Reason} = mysql:start_link([{user, ?user}, {password, ?password},
+                                        {prepare, [{foo, "foo"}]}]),
     receive
-        {'EXIT', _Pid, normal} -> ok
+        {'EXIT', _Pid, Reason} -> ok
     after 1000 ->
-        error(no_exit_message)
+        exit(no_exit_message)
     end,
     process_flag(trap_exit, false).
 
