@@ -66,7 +66,7 @@
 -include("exception.hrl").
 
 %% @doc Starts a connection gen_server process and connects to a database. To
-%% disconnect just do `exit(Pid, normal)'.
+%% disconnect use `mysql:stop/1,2'.
 %%
 %% Options:
 %%
@@ -147,20 +147,12 @@
 start_link(Options) ->
     GenSrvOpts = [{timeout, proplists:get_value(connect_timeout, Options,
                                                 ?default_connect_timeout)}],
-    Ret = case proplists:get_value(name, Options) of
+    case proplists:get_value(name, Options) of
         undefined ->
             gen_server:start_link(mysql_conn, Options, GenSrvOpts);
         ServerName ->
             gen_server:start_link(ServerName, mysql_conn, Options, GenSrvOpts)
-    end,
-    case Ret of
-        {ok, Pid} ->
-            execute_after_connect(Pid,
-                                  proplists:get_value(queries, Options, []),
-                                  proplists:get_value(prepare, Options, []));
-        _ -> ok
-    end,
-    Ret.
+    end.
  
 %% @see stop/2.
 -spec stop(Conn) -> ok
@@ -660,10 +652,13 @@ change_user(Conn, Username, Password) ->
 %% an error exception and `change_user_in_transaction' as the error
 %% message.
 %%
-%% If the change user operation fails for other reasons (eg authentication
-%% failure), an error exception occurs, and the connection process
-%% exits with reason `change_user_failed'. The connection can not be used
-%% any longer if this happens.
+%% If the change user operation fails, `{error, Reason}'  will be
+%% returned. Specifically, if the operation itself fails (eg
+%% authentication failure), `change_user_failed' will be returned as
+%% the reason, while if the operation itself succeeds but one of
+%% the given initial queries or prepares fails, the reason will
+%% reflect the cause for the failure. In any case, the connection
+%% process will exit with the same reason and cannot be used any longer.
 %%
 %% For a description of the `database', `queries' and `prepare'
 %% options, see `start_link/1'.
@@ -684,17 +679,7 @@ change_user(Conn, Username, Password, Options) ->
         true -> error(change_user_in_transaction);
         false -> ok
     end,
-    Database = proplists:get_value(database, Options, undefined),
-    Ret = gen_server:call(Conn, {change_user, Username, Password, Database}),
-    case Ret of
-        ok ->
-            execute_after_connect(Conn,
-                                  proplists:get_value(queries, Options, []),
-                                  proplists:get_value(prepare, Options, [])),
-            ok;
-        {error, Reason} ->
-            error(Reason)
-    end.
+    gen_server:call(Conn, {change_user, Username, Password, Options}).
 
 %% @doc Encodes a term as a MySQL literal so that it can be used to inside a
 %% query. If backslash escapes are enabled, backslashes and single quotes in
@@ -715,34 +700,6 @@ encode(Conn, Term) ->
     mysql_encode:encode(Term1).
 
 %% --- Helpers ---
-
-%% @doc Executes the given queries and prepares the given statements after a
-%% connection has been made.
-%%
-%% If any of the queries or prepares fails, the connection is closed and an
-%% exception is raised.
--spec execute_after_connect(connection(), [iodata()], [{atom(), iodata()}])
-    -> ok.
-execute_after_connect(Conn, Queries, Prepares) ->
-    try
-        lists:foreach(fun (Query) ->
-                          case query(Conn, Query) of
-                              ok -> ok;
-                              {ok, _} -> ok;
-                              {ok, _, _} -> ok
-                          end
-                      end,
-                      Queries),
-        lists:foreach(fun ({Name, Stmt}) ->
-                          {ok, Name} = prepare(Conn, Name, Stmt)
-                      end,
-                      Prepares),
-        ok
-    catch
-        ?EXCEPTION(Class, Reason, Stacktrace) ->
-            catch stop(Conn, ?default_connect_timeout),
-            erlang:raise(Class, Reason, ?GET_STACK(Stacktrace))
-    end.
 
 %% @doc Makes a gen_server call for a query (plain, parametrized or prepared),
 %% checks the reply and sometimes throws an exception when we need to jump out
