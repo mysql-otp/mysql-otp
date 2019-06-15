@@ -4,6 +4,7 @@ MySQL/OTP
 [![Build Status](https://travis-ci.org/mysql-otp/mysql-otp.svg?branch=master)](https://travis-ci.org/mysql-otp/mysql-otp)
  :link: [Test coverage (EUnit)](//mysql-otp.github.io/mysql-otp/eunit.html)
  :link: [API documentation (EDoc)](//mysql-otp.github.io/mysql-otp/index.html)
+ :link: [Hex package](//hex.pm/packages/mysql)
 
 MySQL/OTP is a driver for connecting Erlang/OTP applications to MySQL and
 MariaDB databases. It is a native implementation of the MySQL protocol in
@@ -88,14 +89,20 @@ Usage as a dependency
 Using *erlang.mk*:
 
     DEPS = mysql
-    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.5.0
+    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.5.1
 
 Using *rebar* (version 2 or 3):
 
     {deps, [
         {mysql, ".*", {git, "https://github.com/mysql-otp/mysql-otp",
-                       {tag, "1.5.0"}}}
+                       {tag, "1.5.1"}}}
     ]}.
+
+Using *mix*:
+
+    {:mysql, git: "https://github.com/mysql-otp/mysql-otp", tag: "1.5.1"},
+
+There's also a Hex package called [mysql](//hex.pm/packages/mysql).
 
 Tests
 -----
@@ -162,6 +169,13 @@ Tagging a new version:
   * Update the changelog using `make CHANGELOG.md` and commit it.
   * Update the online documentation and coverage reports using `make gh-pages`.
     Then push the gh-pages branch using `git push origin gh-pages`.
+
+Updating the Hex package using rebar3:
+
+1. Setup the rebar3 hex plugin and authentication;
+    see [rebar3_hex](https://github.com/tsloughter/rebar3_hex).
+2. `rebar3 hex publish`
+3. `rebar3 hex docs`
 
 License
 -------
