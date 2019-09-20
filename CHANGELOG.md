@@ -2,8 +2,23 @@ Change log
 ==========
 
 
+1.5.1
+-----
+* Info about hex and mix in README and update version [2019-09-20 20:50:05 +0200]
+* Move on-connect queries and prepares into mysql_conn [2019-06-03 16:26:09 +0200]
+* test erlang/otp 22.0 [2019-05-23 18:43:56 +0200]
+* Add ssl options to start_link/1 spec and doc [2019-05-06 23:52:16 +0200]
+* Enable TCP option 'nodelay' [2019-04-25 01:18:30 +0200]
+* Make TCP buffer at least as large as recbuf by default [2019-04-25 00:28:58 +0200]
+* Use utf8mb4 for servers that support it [2019-04-24 19:38:27 +0200]
+* Add tcp_options to start_link/1 spec [2019-04-24 18:46:09 +0200]
+* Ignore SERVER_STATUS_AUTOCOMMIT on handshake [2019-04-03 19:39:51 +0200]
+* Stop connection again when post-connect queries or prepares fail (#115) [2019-04-03 00:32:39 +0200]
+* Default port 0 for unix socket [2019-04-01 17:51:43 +0200]
+
 1.5.0
 -----
+* Update version and CHANGELOG.md [2019-03-31 18:56:42 +0200]
 * Parameter validation for prepared statements and parameterized queries [2019-03-31 18:24:59 +0200]
 * Synchronous stop [2019-03-31 18:24:59 +0200]
 * Workaround for sub binary optimization bug in OTP 21.0 [2019-03-31 18:24:59 +0200]
