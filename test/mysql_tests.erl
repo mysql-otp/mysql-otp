@@ -47,10 +47,17 @@
 
 failing_connect_test() ->
     process_flag(trap_exit, true),
-    ?assertMatch({error, {1045, <<"28000">>, <<"Access denied", _/binary>>}},
-                 mysql:start_link([{user, "dummy"}, {password, "junk"}])),
+    {error, Error} = mysql:start_link([{user, "dummy"}, {password, "junk"}]),
+    case Error of
+        {1045, <<"28000">>, <<"Access denie", _/binary>>} ->
+            ok; % MySQL 5.x, etc.
+        {1251, <<"08004">>, <<"Client does not support authentication "
+                              "protocol requested by server; consider "
+                              "upgrading MariaDB client">>} ->
+            ok % MariaDB 10.3.13
+    end,
     receive
-        {'EXIT', _Pid, {1045, <<"28000">>, <<"Access denie", _/binary>>}} -> ok
+        {'EXIT', _Pid, Error} -> ok
     after 1000 ->
         error(no_exit_message)
     end,
