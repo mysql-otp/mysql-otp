@@ -352,7 +352,8 @@ query(Conn, Query, Params, FilterMap) when (Params == no_params orelse
          Params :: no_params | [term()],
          FilterMap :: no_filtermap_fun | query_filtermap_fun(),
          Result :: query_result().
-query(Conn, Query, no_params, FilterMap, Timeout) ->
+query(Conn, Query, Params, FilterMap, Timeout) when Params =:= no_params; 
+                                                    Params =:= [] ->
     query_call(Conn, {query, Query, FilterMap, Timeout});
 query(Conn, Query, Params, FilterMap, Timeout) ->
     case mysql_protocol:valid_params(Params) of
