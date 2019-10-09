@@ -32,7 +32,7 @@
          warning_count/1, affected_rows/1, autocommit/1, insert_id/1,
          encode/2, in_transaction/1,
          transaction/2, transaction/3, transaction/4,
-         change_user/3, change_user/4]).
+         change_user/3, change_user/4, reset_connection/1]).
 
 -export_type([connection/0, server_reason/0, query_result/0]).
 
@@ -620,6 +620,12 @@ execute_transaction(Conn, Fun, Args, Retries) ->
             %% an error.
             ok = gen_server:call(Conn, rollback, infinity),
             erlang:raise(error, E, ?GET_STACK(Stacktrace));
+        ?EXCEPTION(error, reset_connection_in_transaction = E, Stacktrace) ->
+            %% The called tried to reset connection inside the transaction, which
+            %% is not allowed and a serious mistake. We roll back and raise
+            %% an error.
+            ok = gen_server:call(Conn, rollback, infinity),
+            erlang:raise(error, E, ?GET_STACK(Stacktrace));
         ?EXCEPTION(Class, Reason, Stacktrace) ->
             %% We must be able to rollback. Otherwise let's crash.
             ok = gen_server:call(Conn, rollback, infinity),
@@ -680,6 +686,16 @@ change_user(Conn, Username, Password, Options) ->
         false -> ok
     end,
     gen_server:call(Conn, {change_user, Username, Password, Options}).
+
+-spec reset_connection(Conn) -> Result
+    when Conn :: connection(),
+         Result :: ok.
+reset_connection(Conn) ->
+    case in_transaction(Conn) of
+        true -> error(reset_connection_in_transaction);
+        false -> ok
+    end,
+    gen_server:call(Conn, reset_connection).
 
 %% @doc Encodes a term as a MySQL literal so that it can be used to inside a
 %% query. If backslash escapes are enabled, backslashes and single quotes in
