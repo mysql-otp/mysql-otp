@@ -173,6 +173,19 @@ keep_alive_test() ->
      ?assertMatch({crash_report, _}, LoggedReport),
      ?assertExit(noproc, mysql:stop(Pid)).
 
+reset_connection_test() ->
+    Options = [{user, ?user}, {password, ?password}, {keep_alive, true}],
+    {ok, Pid} = mysql:start_link(Options),
+    ?assertEqual(ok, mysql:reset_connection(Pid)),
+    State = get_state(Pid),
+    %% see the recode #state{} in 'mysql_conn.erl'
+    Status = element(16 + 1, State),
+    InsertId = element(18 + 1, State),
+    ?assertEqual(16#02, Status),
+    ?assertEqual(16#00, InsertId),
+    mysql:stop(Pid),
+    ok.
+
 unix_socket_test() ->
     try
         list_to_integer(erlang:system_info(otp_release))
