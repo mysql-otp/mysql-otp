@@ -31,7 +31,8 @@
          query/4, query/5, fetch_query_response/3,
          fetch_query_response/4, prepare/3, unprepare/3,
          execute/5, execute/6, fetch_execute_response/3,
-         fetch_execute_response/4, valid_params/1]).
+         fetch_execute_response/4, reset_connnection/2,
+	 valid_params/1]).
 
 -type query_filtermap() :: no_filtermap_fun
                          | fun(([term()]) -> query_filtermap_res())
@@ -234,7 +235,7 @@ fetch_execute_response(SockModule, Socket, FilterMap, Timeout) ->
 %% @doc Changes the user of the connection.
 -spec change_user(module(), term(), iodata(), iodata(), binary(),
                   undefined | iodata(), [integer()]) -> #ok{} | #error{}.
-change_user(SockModule, Socket, Username, Password, Salt, Database, 
+change_user(SockModule, Socket, Username, Password, Salt, Database,
             ServerVersion) ->
     DbBin = case Database of
         undefined -> <<>>;
@@ -252,6 +253,12 @@ change_user(SockModule, Socket, Username, Password, Salt, Database,
         ?error_pattern ->
             parse_error_packet(Packet)
     end.
+
+-spec reset_connnection(module(), term()) -> #ok{}.
+reset_connnection(SockModule, Socket) ->
+    {ok, SeqNum1} = send_packet(SockModule, Socket, <<?COM_RESET_CONNECTION>>, 0),
+    {ok, OkPacket, _SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
+    parse_ok_packet(OkPacket).
 
 %% --- internal ---
 

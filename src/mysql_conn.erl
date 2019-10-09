@@ -312,6 +312,11 @@ handle_call({change_user, Username, Password, Options}, From,
             gen_server:reply(From, {error, error_to_reason(E)}),
             stop_server(change_user_failed, State2)
     end;
+handle_call(reset_connection, _From, #state{socket = Socket, sockmod = SockMod} = State) ->
+    setopts(SockMod, Socket, [{active, false}]),
+    Ok = mysql_protocol:reset_connnection(SockMod, Socket),
+    setopts(SockMod, Socket, [{active, once}]),
+    {reply, ok, update_state(Ok, State)};
 handle_call(warning_count, _From, State) ->
     {reply, State#state.warning_count, State};
 handle_call(insert_id, _From, State) ->
