@@ -257,8 +257,13 @@ change_user(SockModule, Socket, Username, Password, Salt, Database,
 -spec reset_connnection(module(), term()) -> #ok{}.
 reset_connnection(SockModule, Socket) ->
     {ok, SeqNum1} = send_packet(SockModule, Socket, <<?COM_RESET_CONNECTION>>, 0),
-    {ok, OkPacket, _SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
-    parse_ok_packet(OkPacket).
+    {ok, Packet, _SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
+    case Packet of
+        ?ok_pattern ->
+            parse_ok_packet(Packet);
+        ?error_pattern ->
+            parse_error_packet(Packet)
+    end.
 
 %% --- internal ---
 

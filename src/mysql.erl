@@ -153,7 +153,7 @@ start_link(Options) ->
         ServerName ->
             gen_server:start_link(ServerName, mysql_conn, Options, GenSrvOpts)
     end.
- 
+
 %% @see stop/2.
 -spec stop(Conn) -> ok
     when Conn :: connection().
@@ -400,7 +400,7 @@ execute(Conn, StatementRef, Params, FilterMap) when FilterMap == no_filtermap_fu
     execute(Conn, StatementRef, Params, FilterMap, default_timeout).
 
 %% @doc Executes a prepared statement.
-%% 
+%%
 %% The `FilterMap' and `Timeout' arguments are optional.
 %% <ul>
 %%   <li>If the `FilterMap' argument is the atom `no_filtermap_fun' or is
@@ -687,9 +687,9 @@ change_user(Conn, Username, Password, Options) ->
     end,
     gen_server:call(Conn, {change_user, Username, Password, Options}).
 
--spec reset_connection(Conn) -> Result
+-spec reset_connection(Conn) -> ok | {error, Reason}
     when Conn :: connection(),
-         Result :: ok.
+         Reason :: server_reason().
 reset_connection(Conn) ->
     case in_transaction(Conn) of
         true -> error(reset_connection_in_transaction);

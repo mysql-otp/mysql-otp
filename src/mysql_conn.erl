@@ -291,7 +291,7 @@ handle_call({change_user, Username, Password, Options}, From,
     Prepares = proplists:get_value(prepare, Options, []),
     setopts(SockMod, Socket, [{active, false}]),
     Result = mysql_protocol:change_user(SockMod, Socket, Username, Password,
-                                        AuthPluginData, Database, 
+                                        AuthPluginData, Database,
                                         ServerVersion),
     setopts(SockMod, Socket, [{active, once}]),
     State1 = update_state(Result, State),
@@ -314,9 +314,19 @@ handle_call({change_user, Username, Password, Options}, From,
     end;
 handle_call(reset_connection, _From, #state{socket = Socket, sockmod = SockMod} = State) ->
     setopts(SockMod, Socket, [{active, false}]),
-    Ok = mysql_protocol:reset_connnection(SockMod, Socket),
+    Result = mysql_protocol:reset_connnection(SockMod, Socket),
     setopts(SockMod, Socket, [{active, once}]),
-    {reply, ok, update_state(Ok, State)};
+    State1 = update_state(Result, State),
+    Reply = case Result of
+        #ok{} -> ok;
+        #error{} = E ->
+            %% 'COM_RESET_CONNECTION' is added in MySQL 5.7,
+            %% and return "Unkown command" in 5.6 (earlier version included).
+            State1#state.log_warnings andalso log_warnings(State1, "RESET CONNECTION"),
+            {error, error_to_reason(E)}
+    end,
+    {reply, Reply, State1};
+
 handle_call(warning_count, _From, State) ->
     {reply, State#state.warning_count, State};
 handle_call(insert_id, _From, State) ->

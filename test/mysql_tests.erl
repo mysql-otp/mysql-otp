@@ -174,6 +174,7 @@ keep_alive_test() ->
      ?assertExit(noproc, mysql:stop(Pid)).
 
 reset_connection_test() ->
+    %% Ignored test with MySQL earlier than 5.7
     Options = [{user, ?user}, {password, ?password}, {keep_alive, true}],
     {ok, Pid} = mysql:start_link(Options),
     ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
@@ -182,8 +183,12 @@ reset_connection_test() ->
     ok = mysql:query(Pid, ?create_table_t),
     ok = mysql:query(Pid, <<"INSERT INTO t (id, tx) VALUES (1, 'text 1')">>),
     ?assertEqual(1, mysql:insert_id(Pid)),  %% auto_increment starts from 1
-    ok = mysql:reset_connection(Pid),
-    ?assertEqual(0, mysql:insert_id(Pid)), %% insertid reset to 0
+    case mysql:reset_connection(Pid) of
+      ok ->
+        ?assertEqual(0, mysql:insert_id(Pid)); %% insertid reset to 0;
+      _Error ->
+        ?assertEqual(1, mysql:insert_id(Pid)) %% reset failed
+    end,
     mysql:stop(Pid),
     ok.
 
