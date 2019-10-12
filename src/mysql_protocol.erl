@@ -254,7 +254,7 @@ change_user(SockModule, Socket, Username, Password, Salt, Database,
             parse_error_packet(Packet)
     end.
 
--spec reset_connnection(module(), term()) -> #ok{}.
+-spec reset_connnection(module(), term()) -> #ok{}|#error{}.
 reset_connnection(SockModule, Socket) ->
     {ok, SeqNum1} = send_packet(SockModule, Socket, <<?COM_RESET_CONNECTION>>, 0),
     {ok, Packet, _SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
