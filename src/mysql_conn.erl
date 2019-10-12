@@ -320,9 +320,8 @@ handle_call(reset_connection, _From, #state{socket = Socket, sockmod = SockMod} 
     Reply = case Result of
         #ok{} -> ok;
         #error{} = E ->
-            %% 'COM_RESET_CONNECTION' is added in MySQL 5.7,
-            %% and return "Unkown command" in 5.6 (earlier version included).
-            State1#state.log_warnings andalso log_warnings(State1, "RESET CONNECTION"),
+            %% 'COM_RESET_CONNECTION' is added in MySQL 5.7 and MariaDB 10
+            %% "Unkown command" is returned when MySQL =< 5.6 or MariaDB =< 5.5
             {error, error_to_reason(E)}
     end,
     {reply, Reply, State1};
