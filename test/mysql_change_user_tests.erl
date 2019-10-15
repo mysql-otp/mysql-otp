@@ -40,9 +40,16 @@ correct_credentials_test() ->
 incorrect_credentials_fail_test() ->
     Pid = connect_db(?user1, ?password1),
     TrapExit = erlang:process_flag(trap_exit, true),
+    {ok, Ret, Logged} = error_logger_acc:capture(
+        fun () -> mysql:change_user(Pid, ?user2, ?password1) end),
+    ?assertMatch([{error, "Connection Id " ++ _}, % closing with reason: cha...
+                  {error, "** Generic server" ++ _},
+                  {error_report, {crash_report, _}}], Logged),
     ?assertMatch({error, {1045, <<"28000">>, <<"Access denied", _/binary>>}},
-                 mysql:change_user(Pid, ?user2, ?password1)),
-    ExitReason = receive {'EXIT', Pid, Reason} -> Reason after 1000 -> error(timeout) end,
+                 Ret),
+    ExitReason = receive {'EXIT', Pid, Reason} -> Reason
+                 after 1000 -> error(timeout)
+                 end,
     erlang:process_flag(trap_exit, TrapExit),
     ?assertEqual(change_user_failed, ExitReason),
     ?assertExit(noproc, mysql:stop(Pid)),
@@ -129,7 +136,15 @@ execute_queries_test() ->
 execute_queries_failure_test() ->
     Pid = connect_db(?user1, ?password1),
     erlang:process_flag(trap_exit, true),
-    {error, Reason} = mysql:change_user(Pid, ?user2, ?password2, [{queries, [<<"foo">>]}]),
+    {ok, Ret, Logged} = error_logger_acc:capture(
+        fun () ->
+            mysql:change_user(Pid, ?user2, ?password2, [{queries, [<<"foo">>]}])
+        end),
+    ?assertMatch([{error, "Connection Id " ++ _}, % closing with reason: {1064,
+                  {error, "** Generic server" ++ _},
+                  {error_report, {crash_report, _}}], Logged),
+    {error, Reason} = Ret,
+    ?assertMatch({1064, <<"42000">>, <<"You have an erro", _/binary>>}, Reason),
     receive
         {'EXIT', Pid, Reason} -> ok
     after 1000 ->
@@ -139,7 +154,8 @@ execute_queries_failure_test() ->
 
 prepare_statements_test() ->
     Pid = connect_db(?user1, ?password1),
-    ?assertEqual(ok, mysql:change_user(Pid, ?user2, ?password2, [{prepare, [{foo, <<"SELECT ? AS foo">>}]}])),
+    ?assertEqual(ok, mysql:change_user(Pid, ?user2, ?password2,
+                                       [{prepare, [{foo, <<"SELECT ? AS foo">>}]}])),
     ?assert(is_current_user(Pid, ?user2)),
     ?assertEqual({ok,
                   [<<"foo">>],
@@ -151,7 +167,16 @@ prepare_statements_test() ->
 prepare_statements_failure_test() ->
     Pid = connect_db(?user1, ?password1),
     erlang:process_flag(trap_exit, true),
-    {error, Reason} = mysql:change_user(Pid, ?user2, ?password2, [{prepare, [{foo, <<"foo">>}]}]),
+    {ok, Ret, Logged} = error_logger_acc:capture(
+        fun () ->
+            mysql:change_user(Pid, ?user2, ?password2,
+                              [{prepare, [{foo, <<"foo">>}]}])
+        end),
+    ?assertMatch([{error, "Connection Id " ++ _}, % closing with reason: {1064,
+                  {error, "** Generic server" ++ _},
+                  {error_report, {crash_report, _}}], Logged),
+    {error, Reason} = Ret,
+    ?assertMatch({1064, <<"42000">>, <<"You have an erro", _/binary>>}, Reason),
     receive
         {'EXIT', Pid, Reason} -> ok
     after 1000 ->

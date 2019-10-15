@@ -47,7 +47,12 @@
 
 failing_connect_test() ->
     process_flag(trap_exit, true),
-    {error, Error} = mysql:start_link([{user, "dummy"}, {password, "junk"}]),
+    {ok, Ret, Logged} = error_logger_acc:capture(
+        fun () ->
+            mysql:start_link([{user, "dummy"}, {password, "junk"}])
+        end),
+    ?assertMatch([_|_], Logged), % some errors logged
+    {error, Error} = Ret,
     case Error of
         {1045, <<"28000">>, <<"Access denie", _/binary>>} ->
             ok; % MySQL 5.x, etc.
@@ -234,8 +239,13 @@ unix_socket_test() ->
 
 connect_queries_failure_test() ->
     process_flag(trap_exit, true),
-    {error, Reason} = mysql:start_link([{user, ?user}, {password, ?password},
-                                        {queries, ["foo"]}]),
+    {ok, Ret, Logged} = error_logger_acc:capture(
+        fun () ->
+            mysql:start_link([{user, ?user}, {password, ?password},
+                              {queries, ["foo"]}])
+        end),
+    ?assertMatch([{error_report, {crash_report, _}}], Logged),
+    {error, Reason} = Ret,
     receive
         {'EXIT', _Pid, Reason} -> ok
     after 1000 ->
@@ -245,8 +255,14 @@ connect_queries_failure_test() ->
 
 connect_prepare_failure_test() ->
     process_flag(trap_exit, true),
-    {error, Reason} = mysql:start_link([{user, ?user}, {password, ?password},
-                                        {prepare, [{foo, "foo"}]}]),
+    {ok, Ret, Logged} = error_logger_acc:capture(
+        fun () ->
+            mysql:start_link([{user, ?user}, {password, ?password},
+                                                {prepare, [{foo, "foo"}]}])
+        end),
+    ?assertMatch([{error_report, {crash_report, _}}], Logged),
+    {error, Reason} = Ret,
+    ?assertMatch({1064, <<"42000">>, <<"You have an erro", _/binary>>}, Reason),
     receive
         {'EXIT', _Pid, Reason} -> ok
     after 1000 ->

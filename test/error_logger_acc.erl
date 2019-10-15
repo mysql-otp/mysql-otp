@@ -2,6 +2,15 @@
 %% tests. The current error report handlers are disabled during the execution
 %% of a function. Afterwards, they are restored and the errors that occered are
 %% returned along with the return value of the fun.
+%%
+%% This module was created before OTP 21 when logger didn't exist. Logger
+%% support has been added later, but the log entries are still returned in the
+%% old error_logger format. Logger events which are not backwards compatible
+%% with error_logger are silently ignored, which is OK as long as only OTP
+%% proc_lib based processes are crashing and explicit logging is done via
+%% error_logger.
+%%
+%% TODO: Use logger by default and use error_logger only for old OTP releases.
 -module(error_logger_acc).
 
 -include("exception.hrl").
@@ -24,20 +33,24 @@
        AccumulatedErrors :: [{error|warning_msg|info_msg, string()} |
                              {error_report|warning_report|info_report, term()}].
 capture(Fun) when is_function(Fun, 0) ->
-
-    start_error_logger(),
-
-    OldHandlers = gen_event:which_handlers(error_logger),
+    %% From OTP 21.0, error_logger is no longer started by default, but is
+    %% automatically started when an event handler is added with
+    %% error_logger:add_report_handler/1,2. The error_logger module is then
+    %% also added as a handler to the new logger.
     error_logger:add_report_handler(?MODULE),
+    OldHandlers = gen_event:which_handlers(error_logger) -- [?MODULE],
     lists:foreach(fun error_logger:delete_report_handler/1, OldHandlers),
+    DefaultLoggerHandler = remove_default_logger_handler(),
     try Fun() of
         Result ->
             lists:foreach(fun error_logger:add_report_handler/1, OldHandlers),
+            restore_default_logger_handler(DefaultLoggerHandler),
             {ok, Result, error_logger:delete_report_handler(?MODULE)}
     catch
         ?EXCEPTION(Class, Error, Stacktrace) ->
             lists:foreach(fun error_logger:add_report_handler/1, OldHandlers),
             AccumulatedErrors = error_logger:delete_report_handler(?MODULE),
+            restore_default_logger_handler(DefaultLoggerHandler),
             {Class, Error, ?GET_STACK(Stacktrace), AccumulatedErrors}
     end.
 
@@ -74,14 +87,22 @@ terminate(_Arg, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%% error logger is no longer started since erlang 21, start it explicitly
 -ifdef(OTP_RELEASE).
-start_error_logger() ->
-    error_logger:start(),
-    logger:add_handler(error_logger,error_logger,#{level=>info,filter_default=>log}).
+
+remove_default_logger_handler() ->
+    {ok, Config} = logger:get_handler_config(default),
+    ok = logger:remove_handler(default),
+    Config.
+
+restore_default_logger_handler(#{id := Id, module := Module} = Config) ->
+    logger:add_handler(Id, Module, Config).
+
 -else.
-start_error_logger() ->
-    ok.
+
+remove_default_logger_handler() -> none.
+
+restore_default_logger_handler(none) -> ok.
+
 -endif.
 
 -ifdef(TEST).
