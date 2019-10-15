@@ -1,539 +1,3274 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<!doctype html>
 <html>
 <head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<meta charset="utf-8">
 <title>cover/mysql_conn.COVER.html</title>
-</head><body style='background-color: white; color: black'>
-<pre>
-File generated from /home/viktor/data/mysql-otp/ebin/../src/mysql_conn.erl by COVER 2018-12-03 at 01:09:15
+<style>body {
+  font: 14px/1.6 "Helvetica Neue", Helvetica, Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  color: #000;
+  border-top: 2px solid #ddd;
+  background-color: #fff;
 
-****************************************************************************
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
 
-        |  %% MySQL/OTP – MySQL client library for Erlang/OTP
-        |  %% Copyright (C) 2014-2018 Viktor Söderqvist
-        |  %%
-        |  %% This file is part of MySQL/OTP.
-        |  %%
-        |  %% MySQL/OTP is free software: you can redistribute it and/or modify it under
-        |  %% the terms of the GNU Lesser General Public License as published by the Free
-        |  %% Software Foundation, either version 3 of the License, or (at your option)
-        |  %% any later version.
-        |  %%
-        |  %% This program is distributed in the hope that it will be useful, but WITHOUT
-        |  %% ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-        |  %% FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-        |  %% more details.
-        |  %%
-        |  %% You should have received a copy of the GNU Lesser General Public License
-        |  %% along with this program. If not, see &lt;https://www.gnu.org/licenses/&gt;.
-        |  
-        |  %% @doc This module implements parts of the MySQL client/server protocol.
-        |  %%
-        |  %% The protocol is described in the document "MySQL Internals" which can be
-        |  %% found under "MySQL Documentation: Expert Guides" on http://dev.mysql.com/.
-        |  %%
-        |  %% TCP communication is not handled in this module. Most of the public functions
-        |  %% take funs for data communitaction as parameters.
-        |  %% @private
-        |  -module(mysql_conn).
-        |  
-        |  -behaviour(gen_server).
-        |  -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
-        |           code_change/3]).
-        |  
-        |  -define(default_host, "localhost").
-        |  -define(default_port, 3306).
-        |  -define(default_user, &lt;&lt;&gt;&gt;).
-        |  -define(default_password, &lt;&lt;&gt;&gt;).
-        |  -define(default_query_timeout, infinity).
-        |  -define(default_query_cache_time, 60000). %% for query/3.
-        |  -define(default_ping_timeout, 60000).
-        |  
-        |  -define(cmd_timeout, 3000). %% Timeout used for various commands to the server
-        |  
-        |  %% Errors that cause "implicit rollback"
-        |  -define(ERROR_DEADLOCK, 1213).
-        |  
-        |  %% --- Gen_server callbacks ---
-        |  
-        |  -include("records.hrl").
-        |  -include("server_status.hrl").
-        |  
-        |  %% Gen_server state
-        |  -record(state, {server_version, connection_id, socket, sockmod, ssl_opts,
-        |                  host, port, user, password, log_warnings,
-        |                  ping_timeout,
-        |                  query_timeout, query_cache_time,
-        |                  affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
-        |                  transaction_levels = [], ping_ref = undefined,
-        |                  stmts = dict:new(), query_cache = empty, cap_found_rows = false}).
-        |  
-        |  %% @private
-        |  init(Opts) -&gt;
-        |      %% Connect
-    18..|      Host           = proplists:get_value(host, Opts, ?default_host),
-    18..|      Port           = proplists:get_value(port, Opts, ?default_port),
-    18..|      User           = proplists:get_value(user, Opts, ?default_user),
-    18..|      Password       = proplists:get_value(password, Opts, ?default_password),
-    18..|      Database       = proplists:get_value(database, Opts, undefined),
-    18..|      LogWarn        = proplists:get_value(log_warnings, Opts, true),
-    18..|      KeepAlive      = proplists:get_value(keep_alive, Opts, false),
-    18..|      Timeout        = proplists:get_value(query_timeout, Opts,
-        |                                           ?default_query_timeout),
-    18..|      QueryCacheTime = proplists:get_value(query_cache_time, Opts,
-        |                                           ?default_query_cache_time),
-    18..|      TcpOpts        = proplists:get_value(tcp_options, Opts, []),
-    18..|      SetFoundRows   = proplists:get_value(found_rows, Opts, false),
-    18..|      SSLOpts        = proplists:get_value(ssl, Opts, undefined),
-    18..|      SockMod0       = gen_tcp,
-        |  
-    18..|      PingTimeout = case KeepAlive of
-     2..|          true         -&gt; ?default_ping_timeout;
-    15..|          false        -&gt; infinity;
-     1..|          N when N &gt; 0 -&gt; N
-        |      end,
-        |  
-        |      %% Connect socket
-    18..|      SockOpts = [binary, {packet, raw}, {active, false} | TcpOpts],
-    18..|      {ok, Socket0} = SockMod0:connect(Host, Port, SockOpts),
-        |  
-        |      %% Exchange handshake communication.
-    18..|      Result = mysql_protocol:handshake(User, Password, Database, SockMod0, SSLOpts,
-        |                                        Socket0, SetFoundRows),
-    18..|      case Result of
-        |          {ok, Handshake, SockMod, Socket} -&gt;
-    17..|              setopts(SockMod, Socket, [{active, once}]),
-        |              #handshake{server_version = Version, connection_id = ConnId,
-    17..|                         status = Status} = Handshake,
-    17..|              State = #state{server_version = Version, connection_id = ConnId,
-        |                             sockmod = SockMod,
-        |                             socket = Socket,
-        |                             ssl_opts = SSLOpts,
-        |                             host = Host, port = Port, user = User,
-        |                             password = Password, status = Status,
-        |                             log_warnings = LogWarn,
-        |                             ping_timeout = PingTimeout,
-        |                             query_timeout = Timeout,
-        |                             query_cache_time = QueryCacheTime,
-        |                             cap_found_rows = (SetFoundRows =:= true)},
-        |              %% Trap exit so that we can properly disconnect when we die.
-    17..|              process_flag(trap_exit, true),
-    17..|              State1 = schedule_ping(State),
-    17..|              {ok, State1};
-        |          #error{} = E -&gt;
-     1..|              {stop, error_to_reason(E)}
-        |      end.
-        |  
-        |  %% @private
-        |  %% @doc
-        |  %%
-        |  %% Query and execute calls:
-        |  %%
-        |  %% &lt;ul&gt;
-        |  %%   &lt;li&gt;{query, Query}&lt;/li&gt;
-        |  %%   &lt;li&gt;{query, Query, Timeout}&lt;/li&gt;
-        |  %%   &lt;li&gt;{param_query, Query, Params}&lt;/li&gt;
-        |  %%   &lt;li&gt;{param_query, Query, Params, Timeout}&lt;/li&gt;
-        |  %%   &lt;li&gt;{execute, Stmt, Args}&lt;/li&gt;
-        |  %%   &lt;li&gt;{execute, Stmt, Args, Timeout}&lt;/li&gt;
-        |  %% &lt;/ul&gt;
-        |  %%
-        |  %% For the calls listed above, we return these values:
-        |  %%
-        |  %% &lt;dl&gt;
-        |  %%   &lt;dt&gt;`ok'&lt;/dt&gt;
-        |  %%   &lt;dd&gt;Success without returning any table data (UPDATE, etc.)&lt;/dd&gt;
-        |  %%   &lt;dt&gt;`{ok, ColumnNames, Rows}'&lt;/dt&gt;
-        |  %%   &lt;dd&gt;Queries returning one result set of table data&lt;/dd&gt;
-        |  %%   &lt;dt&gt;`{ok, [{ColumnNames, Rows}, ...]}'&lt;/dt&gt;
-        |  %%   &lt;dd&gt;Queries returning more than one result set of table data&lt;/dd&gt;
-        |  %%   &lt;dt&gt;`{error, ServerReason}'&lt;/dt&gt;
-        |  %%   &lt;dd&gt;MySQL server error&lt;/dd&gt;
-        |  %%   &lt;dt&gt;`{implicit_commit, NestingLevel, Query}'&lt;/dt&gt;
-        |  %%   &lt;dd&gt;A DDL statement (e.g. CREATE TABLE, ALTER TABLE, etc.) results in
-        |  %%       an implicit commit.
-        |  %%
-        |  %%       If the caller is in a (nested) transaction, it must be aborted. To be
-        |  %%       able to handle this in the caller's process, we also return the
-        |  %%       nesting level.&lt;/dd&gt;
-        |  %%   &lt;dt&gt;`{implicit_rollback, NestingLevel, ServerReason}'&lt;/dt&gt;
-        |  %%   &lt;dd&gt;This errors results in an implicit rollback: `{1213, &lt;&lt;"40001"&gt;&gt;,
-        |  %%       &lt;&lt;"Deadlock found when trying to get lock; try restarting "
-        |  %%         "transaction"&gt;&gt;}'.
-        |  %%
-        |  %%       If the caller is in a (nested) transaction, it must be aborted. To be
-        |  %%       able to handle this in the caller's process, we also return the
-        |  %%       nesting level.&lt;/dd&gt;
-        |  %% &lt;/dl&gt;
-        |  handle_call({query, Query}, From, State) -&gt;
-   395..|      handle_call({query, Query, State#state.query_timeout}, From, State);
-        |  handle_call({query, Query, Timeout}, _From,
-        |              #state{sockmod = SockMod, socket = Socket} = State) -&gt;
-   397..|      setopts(SockMod, Socket, [{active, false}]),
-   397..|      {ok, Recs} = case mysql_protocol:query(Query, SockMod, Socket, Timeout) of
-        |          {error, timeout} when State#state.server_version &gt;= [5, 0, 0] -&gt;
-     1..|              kill_query(State),
-     1..|              mysql_protocol:fetch_query_response(SockMod, Socket, ?cmd_timeout);
-        |          {error, timeout} -&gt;
-        |              %% For MySQL 4.x.x there is no way to recover from timeout except
-        |              %% killing the connection itself.
-<font color=red>     0..|              exit(timeout);</font>
-        |          QueryResult -&gt;
-   396..|              QueryResult
-        |      end,
-   397..|      setopts(SockMod, Socket, [{active, once}]),
-   397..|      State1 = lists:foldl(fun update_state/2, State, Recs),
-   397..|      State1#state.warning_count &gt; 0 andalso State1#state.log_warnings
-     1..|          andalso log_warnings(State1, Query),
-   397..|      handle_query_call_reply(Recs, Query, State1, []);
-        |  handle_call({param_query, Query, Params}, From, State) -&gt;
-     9..|      handle_call({param_query, Query, Params, State#state.query_timeout}, From,
-        |                  State);
-        |  handle_call({param_query, Query, Params, Timeout}, _From,
-        |              #state{socket = Socket, sockmod = SockMod} = State) -&gt;
-        |      %% Parametrized query: Prepared statement cached with the query as the key
-    10..|      QueryBin = iolist_to_binary(Query),
-    10..|      Cache = State#state.query_cache,
-    10..|      {StmtResult, Cache1} = case mysql_cache:lookup(QueryBin, Cache) of
-        |          {found, FoundStmt, NewCache} -&gt;
-        |              %% Found
-     1..|              {{ok, FoundStmt}, NewCache};
-        |          not_found -&gt;
-        |              %% Prepare
-     9..|              setopts(SockMod, Socket, [{active, false}]),
-     9..|              Rec = mysql_protocol:prepare(Query, SockMod, Socket),
-     9..|              setopts(SockMod, Socket, [{active, once}]),
-     9..|              case Rec of
-        |                  #error{} = E -&gt;
-     1..|                      {{error, error_to_reason(E)}, Cache};
-        |                  #prepared{} = Stmt -&gt;
-        |                      %% If the first entry in the cache, start the timer.
-     8..|                      Cache == empty andalso begin
-     5..|                          When = State#state.query_cache_time * 2,
-     5..|                          erlang:send_after(When, self(), query_cache)
-        |                      end,
-     8..|                      {{ok, Stmt}, mysql_cache:store(QueryBin, Stmt, Cache)}
-        |              end
-        |      end,
-    10..|      case StmtResult of
-        |          {ok, StmtRec} -&gt;
-     9..|              State1 = State#state{query_cache = Cache1},
-     9..|              execute_stmt(StmtRec, Params, Timeout, State1);
-        |          PrepareError -&gt;
-     1..|              {reply, PrepareError, State}
-        |      end;
-        |  handle_call({execute, Stmt, Args}, From, State) -&gt;
-   183..|      handle_call({execute, Stmt, Args, State#state.query_timeout}, From, State);
-        |  handle_call({execute, Stmt, Args, Timeout}, _From, State) -&gt;
-   184..|      case dict:find(Stmt, State#state.stmts) of
-        |          {ok, StmtRec} -&gt;
-   183..|              execute_stmt(StmtRec, Args, Timeout, State);
-        |          error -&gt;
-     1..|              {reply, {error, not_prepared}, State}
-        |      end;
-        |  handle_call({prepare, Query}, _From, State) -&gt;
-    91..|      #state{socket = Socket, sockmod = SockMod} = State,
-    91..|      setopts(SockMod, Socket, [{active, false}]),
-    91..|      Rec = mysql_protocol:prepare(Query, SockMod, Socket),
-    91..|      setopts(SockMod, Socket, [{active, once}]),
-    91..|      State1 = update_state(Rec, State),
-    91..|      case Rec of
-        |          #error{} = E -&gt;
-     1..|              {reply, {error, error_to_reason(E)}, State1};
-        |          #prepared{statement_id = Id} = Stmt -&gt;
-    90..|              Stmts1 = dict:store(Id, Stmt, State1#state.stmts),
-    90..|              State2 = State#state{stmts = Stmts1},
-    90..|              {reply, {ok, Id}, State2}
-        |      end;
-        |  handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) -&gt;
-     9..|      #state{socket = Socket, sockmod = SockMod} = State,
-        |      %% First unprepare if there is an old statement with this name.
-     9..|      setopts(SockMod, Socket, [{active, false}]),
-     9..|      State1 = case dict:find(Name, State#state.stmts) of
-        |          {ok, OldStmt} -&gt;
-     1..|              mysql_protocol:unprepare(OldStmt, SockMod, Socket),
-     1..|              State#state{stmts = dict:erase(Name, State#state.stmts)};
-        |          error -&gt;
-     8..|              State
-        |      end,
-     9..|      Rec = mysql_protocol:prepare(Query, SockMod, Socket),
-     9..|      setopts(SockMod, Socket, [{active, once}]),
-     9..|      State2 = update_state(Rec, State1),
-     9..|      case Rec of
-        |          #error{} = E -&gt;
-     1..|              {reply, {error, error_to_reason(E)}, State2};
-        |          #prepared{} = Stmt -&gt;
-     8..|              Stmts1 = dict:store(Name, Stmt, State2#state.stmts),
-     8..|              State3 = State2#state{stmts = Stmts1},
-     8..|              {reply, {ok, Name}, State3}
-        |      end;
-        |  handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);
-        |                                                    is_integer(Stmt) -&gt;
-    90..|      case dict:find(Stmt, State#state.stmts) of
-        |          {ok, StmtRec} -&gt;
-    88..|              #state{socket = Socket, sockmod = SockMod} = State,
-    88..|              setopts(SockMod, Socket, [{active, false}]),
-    88..|              mysql_protocol:unprepare(StmtRec, SockMod, Socket),
-    88..|              setopts(SockMod, Socket, [{active, once}]),
-    88..|              State1 = State#state{stmts = dict:erase(Stmt, State#state.stmts)},
-    88..|              State2 = schedule_ping(State1),
-    88..|              {reply, ok, State2};
-        |          error -&gt;
-     2..|              {reply, {error, not_prepared}, State}
-        |      end;
-        |  handle_call(warning_count, _From, State) -&gt;
-     2..|      {reply, State#state.warning_count, State};
-        |  handle_call(insert_id, _From, State) -&gt;
-     1..|      {reply, State#state.insert_id, State};
-        |  handle_call(affected_rows, _From, State) -&gt;
-     3..|      {reply, State#state.affected_rows, State};
-        |  handle_call(autocommit, _From, State) -&gt;
-     3..|      {reply, State#state.status band ?SERVER_STATUS_AUTOCOMMIT /= 0, State};
-        |  handle_call(backslash_escapes_enabled, _From, State = #state{status = S}) -&gt;
-     2..|      {reply, S band ?SERVER_STATUS_NO_BACKSLASH_ESCAPES == 0, State};
-        |  handle_call(in_transaction, _From, State) -&gt;
-    11..|      {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};
-        |  handle_call(start_transaction, {FromPid, _},
-        |              State = #state{socket = Socket, sockmod = SockMod,
-        |                             transaction_levels = L, status = Status})
-        |    when Status band ?SERVER_STATUS_IN_TRANS == 0, L == [];
-        |         Status band ?SERVER_STATUS_IN_TRANS /= 0, L /= [] -&gt;
-    27..|      MRef = erlang:monitor(process, FromPid),
-    27..|      Query = case L of
-    16..|          [] -&gt; &lt;&lt;"BEGIN"&gt;&gt;;
-    11..|          _  -&gt; &lt;&lt;"SAVEPOINT s", (integer_to_binary(length(L)))/binary&gt;&gt;
-        |      end,
-    27..|      setopts(SockMod, Socket, [{active, false}]),
-    27..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
-        |                                                 ?cmd_timeout),
-    27..|      setopts(SockMod, Socket, [{active, once}]),
-    27..|      State1 = update_state(Res, State),
-    27..|      {reply, ok, State1#state{transaction_levels = [{FromPid, MRef} | L]}};
-        |  handle_call(rollback, {FromPid, _},
-        |              State = #state{socket = Socket, sockmod = SockMod, status = Status,
-        |                             transaction_levels = [{FromPid, MRef} | L]})
-        |    when Status band ?SERVER_STATUS_IN_TRANS /= 0 -&gt;
-     5..|      erlang:demonitor(MRef),
-     5..|      Query = case L of
-     4..|          [] -&gt; &lt;&lt;"ROLLBACK"&gt;&gt;;
-     1..|          _  -&gt; &lt;&lt;"ROLLBACK TO s", (integer_to_binary(length(L)))/binary&gt;&gt;
-        |      end,
-     5..|      setopts(SockMod, Socket, [{active, false}]),
-     5..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
-        |                                                 ?cmd_timeout),
-     5..|      setopts(SockMod, Socket, [{active, once}]),
-     5..|      State1 = update_state(Res, State),
-     5..|      {reply, ok, State1#state{transaction_levels = L}};
-        |  handle_call(commit, {FromPid, _},
-        |              State = #state{socket = Socket, sockmod = SockMod, status = Status,
-        |                             transaction_levels = [{FromPid, MRef} | L]})
-        |    when Status band ?SERVER_STATUS_IN_TRANS /= 0 -&gt;
-    16..|      erlang:demonitor(MRef),
-    16..|      Query = case L of
-    10..|          [] -&gt; &lt;&lt;"COMMIT"&gt;&gt;;
-     6..|          _  -&gt; &lt;&lt;"RELEASE SAVEPOINT s", (integer_to_binary(length(L)))/binary&gt;&gt;
-        |      end,
-    16..|      setopts(SockMod, Socket, [{active, false}]),
-    16..|      {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
-        |                                                 ?cmd_timeout),
-    16..|      setopts(SockMod, Socket, [{active, once}]),
-    16..|      State1 = update_state(Res, State),
-    16..|      {reply, ok, State1#state{transaction_levels = L}}.
-        |  
-        |  %% @private
-        |  handle_cast(_Msg, State) -&gt;
-     1..|      {noreply, State}.
-        |  
-        |  %% @private
-        |  handle_info(query_cache, #state{query_cache = Cache,
-        |                                  query_cache_time = CacheTime} = State) -&gt;
-        |      %% Evict expired queries/statements in the cache used by query/3.
-     1..|      {Evicted, Cache1} = mysql_cache:evict_older_than(Cache, CacheTime),
-        |      %% Unprepare the evicted statements
-     1..|      #state{socket = Socket, sockmod = SockMod} = State,
-     1..|      setopts(SockMod, Socket, [{active, false}]),
-     1..|      lists:foreach(fun ({_Query, Stmt}) -&gt;
-     1..|                        mysql_protocol:unprepare(Stmt, SockMod, Socket)
-        |                    end,
-        |                    Evicted),
-     1..|      setopts(SockMod, Socket, [{active, once}]),
-        |      %% If nonempty, schedule eviction again.
-     1..|      mysql_cache:size(Cache1) &gt; 0 andalso
-<font color=red>     0..|          erlang:send_after(CacheTime, self(), query_cache),</font>
-     1..|      {noreply, State#state{query_cache = Cache1}};
-        |  handle_info({'DOWN', _MRef, _, Pid, _Info}, State) -&gt;
-     1..|      stop_server({application_process_died, Pid}, State);
-        |  handle_info(ping, #state{socket = Socket, sockmod = SockMod} = State) -&gt;
-     4..|      setopts(SockMod, Socket, [{active, false}]),
-     4..|      Ok = mysql_protocol:ping(SockMod, Socket),
-     3..|      setopts(SockMod, Socket, [{active, once}]),
-     3..|      {noreply, update_state(Ok, State)};
-        |  handle_info({tcp_closed, _Socket}, State) -&gt;
-     1..|      stop_server(tcp_closed, State);
-        |  handle_info({tcp_error, _Socket, Reason}, State) -&gt;
-     1..|      stop_server({tcp_error, Reason}, State);
-        |  handle_info(_Info, State) -&gt;
-     2..|      {noreply, State}.
-        |  
-        |  %% @private
-        |  terminate(Reason, #state{socket = Socket, sockmod = SockMod})
-        |    when Reason == normal; Reason == shutdown -&gt;
-        |        %% Send the goodbye message for politeness.
-    13..|        setopts(SockMod, Socket, [{active, false}]),
-    13..|        mysql_protocol:quit(SockMod, Socket);
-        |  terminate(_Reason, _State) -&gt;
-     5..|      ok.
-        |  
-        |  %% @private
-        |  code_change(_OldVsn, State = #state{}, _Extra) -&gt;
-     1..|      {ok, State};
-        |  code_change(_OldVsn, _State, _Extra) -&gt;
-     1..|      {error, incompatible_state}.
-        |  
-        |  %% --- Helpers ---
-        |  
-        |  %% @doc Executes a prepared statement and returns {Reply, NextState}.
-        |  execute_stmt(Stmt, Args, Timeout, State = #state{socket = Socket, sockmod = SockMod}) -&gt;
-   192..|      setopts(SockMod, Socket, [{active, false}]),
-   192..|      {ok, Recs} = case mysql_protocol:execute(Stmt, Args, SockMod, Socket,
-        |                                               Timeout) of
-        |          {error, timeout} when State#state.server_version &gt;= [5, 0, 0] -&gt;
-     2..|              kill_query(State),
-     2..|              mysql_protocol:fetch_execute_response(SockMod, Socket,
-        |                                                    ?cmd_timeout);
-        |          {error, timeout} -&gt;
-        |              %% For MySQL 4.x.x there is no way to recover from timeout except
-        |              %% killing the connection itself.
-<font color=red>     0..|              exit(timeout);</font>
-        |          QueryResult -&gt;
-   190..|              QueryResult
-        |      end,
-   192..|      setopts(SockMod, Socket, [{active, once}]),
-   192..|      State1 = lists:foldl(fun update_state/2, State, Recs),
-   192..|      State1#state.warning_count &gt; 0 andalso State1#state.log_warnings
-     2..|          andalso log_warnings(State1, Stmt#prepared.orig_query),
-   192..|      handle_query_call_reply(Recs, Stmt#prepared.orig_query, State1, []).
-        |  
-        |  %% @doc Produces a tuple to return as an error reason.
-        |  -spec error_to_reason(#error{}) -&gt; mysql:server_reason().
-        |  error_to_reason(#error{code = Code, state = State, msg = Msg}) -&gt;
-     9..|      {Code, State, Msg}.
-        |  
-        |  %% @doc Updates a state with information from a response. Also re-schedules
-        |  %% ping.
-        |  -spec update_state(#ok{} | #eof{} | any(), #state{}) -&gt; #state{}.
-        |  update_state(Rec, State) -&gt;
-   748..|      State1 = case Rec of
-        |          #ok{status = S, affected_rows = R, insert_id = Id, warning_count = W} -&gt;
-   393..|              State#state{status = S, affected_rows = R, insert_id = Id,
-        |                          warning_count = W};
-        |          #resultset{status = S, warning_count = W} -&gt;
-   250..|              State#state{status = S, warning_count = W};
-        |          #prepared{warning_count = W} -&gt;
-    98..|              State#state{warning_count = W};
-        |          _Other -&gt;
-        |              %% This includes errors.
-        |              %% Reset some things. (Note: We don't reset status and insert_id.)
-     7..|              State#state{warning_count = 0, affected_rows = 0}
-        |      end,
-   748..|      schedule_ping(State1).
-        |  
-        |  %% @doc Produces a reply for handle_call/3 for queries and prepared statements.
-        |  handle_query_call_reply([], _Query, State, ResultSetsAcc) -&gt;
-   583..|      Reply = case ResultSetsAcc of
-   337..|          []                    -&gt; ok;
-   242..|          [{ColumnNames, Rows}] -&gt; {ok, ColumnNames, Rows};
-     4..|          [_|_]                 -&gt; {ok, lists:reverse(ResultSetsAcc)}
-        |      end,
-   583..|      {reply, Reply, State};
-        |  handle_query_call_reply([Rec|Recs], Query,
-        |                          #state{transaction_levels = L} = State,
-        |                          ResultSetsAcc) -&gt;
-   597..|      case Rec of
-        |          #ok{status = Status} when Status band ?SERVER_STATUS_IN_TRANS == 0,
-        |                                    L /= [] -&gt;
-        |              %% DDL statements (e.g. CREATE TABLE, ALTER TABLE, etc.) result in
-        |              %% an implicit commit.
-     1..|              Length = length(L),
-     1..|              Reply = {implicit_commit, Length, Query},
-     1..|              [] = demonitor_processes(L, Length),
-     1..|              {reply, Reply, State#state{transaction_levels = []}};
-        |          #ok{} -&gt;
-   341..|              handle_query_call_reply(Recs, Query, State, ResultSetsAcc);
-        |          #resultset{cols = ColDefs, rows = Rows} -&gt;
-   250..|              Names = [Def#col.name || Def &lt;- ColDefs],
-   250..|              ResultSetsAcc1 = [{Names, Rows} | ResultSetsAcc],
-   250..|              handle_query_call_reply(Recs, Query, State, ResultSetsAcc1);
-        |          #error{code = ?ERROR_DEADLOCK} when L /= [] -&gt;
-        |              %% These errors result in an implicit rollback.
-     3..|              Reply = {implicit_rollback, length(L), error_to_reason(Rec)},
-        |              %% Everything in the transaction is rolled back, except the BEGIN
-        |              %% statement itself. Thus, we are in transaction level 1.
-     3..|              NewMonitors = demonitor_processes(L, length(L) - 1),
-     3..|              {reply, Reply, State#state{transaction_levels = NewMonitors}};
-        |          #error{} -&gt;
-     2..|              {reply, {error, error_to_reason(Rec)}, State}
-        |      end.
-        |  
-        |  %% @doc Schedules (or re-schedules) ping.
-        |  schedule_ping(State = #state{ping_timeout = infinity}) -&gt;
-   166..|      State;
-        |  schedule_ping(State = #state{ping_timeout = Timeout, ping_ref = Ref}) -&gt;
-   687..|      is_reference(Ref) andalso erlang:cancel_timer(Ref),
-   687..|      State#state{ping_ref = erlang:send_after(Timeout, self(), ping)}.
-        |  
-        |  %% @doc Fetches and logs warnings. Query is the query that gave the warnings.
-        |  log_warnings(#state{socket = Socket, sockmod = SockMod}, Query) -&gt;
-     3..|      setopts(SockMod, Socket, [{active, false}]),
-     3..|      {ok, [#resultset{rows = Rows}]} = mysql_protocol:query(&lt;&lt;"SHOW WARNINGS"&gt;&gt;,
-        |                                                             SockMod, Socket,
-        |                                                             ?cmd_timeout),
-     3..|      setopts(SockMod, Socket, [{active, once}]),
-     3..|      Lines = [[Level, " ", integer_to_binary(Code), ": ", Message, "\n"]
-     3..|               || [Level, Code, Message] &lt;- Rows],
-     3..|      error_logger:warning_msg("~s in ~s~n", [Lines, Query]).
-        |  
-        |  %% @doc Makes a separate connection and execute KILL QUERY. We do this to get
-        |  %% our main connection back to normal. KILL QUERY appeared in MySQL 5.0.0.
-        |  kill_query(#state{connection_id = ConnId, host = Host, port = Port,
-        |                    user = User, password = Password, ssl_opts = SSLOpts,
-        |                    cap_found_rows = SetFoundRows}) -&gt;
-        |      %% Connect socket
-     3..|      SockOpts = [{active, false}, binary, {packet, raw}],
-     3..|      {ok, Socket0} = gen_tcp:connect(Host, Port, SockOpts),
-        |  
-        |      %% Exchange handshake communication.
-     3..|      Result = mysql_protocol:handshake(User, Password, undefined, gen_tcp,
-        |                                        SSLOpts, Socket0, SetFoundRows),
-     3..|      case Result of
-        |          {ok, #handshake{}, SockMod, Socket} -&gt;
-        |              %% Kill and disconnect
-     3..|              IdBin = integer_to_binary(ConnId),
-     3..|              {ok, [#ok{}]} = mysql_protocol:query(&lt;&lt;"KILL QUERY ", IdBin/binary&gt;&gt;,
-        |                                                   SockMod, Socket, ?cmd_timeout),
-     3..|              mysql_protocol:quit(SockMod, Socket);
-        |          #error{} = E -&gt;
-<font color=red>     0..|              error_logger:error_msg("Failed to connect to kill query: ~p",</font>
-        |                                     [error_to_reason(E)])
-        |      end.
-        |  
-        |  stop_server(Reason,
-        |              #state{socket = Socket, connection_id = ConnId} = State) -&gt;
-     3..|    error_logger:error_msg("Connection Id ~p closing with reason: ~p~n",
-        |                           [ConnId, Reason]),
-     3..|    ok = gen_tcp:close(Socket),
-     3..|    {stop, Reason, State#state{socket = undefined, connection_id = undefined}}.
-        |  
-        |  setopts(gen_tcp, Socket, Opts) -&gt;
-  1701..|      inet:setopts(Socket, Opts);
-        |  setopts(SockMod, Socket, Opts) -&gt;
-    12..|      SockMod:setopts(Socket, Opts).
-        |  
-        |  demonitor_processes(List, 0) -&gt;
-     4..|      List;
-        |  demonitor_processes([{_FromPid, MRef}|T], Count) -&gt;
-     5..|      erlang:demonitor(MRef),
-     5..|      demonitor_processes(T, Count - 1).
-</pre>
+h1 {
+  width: 100%;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 0;
+  font-weight: 100;
+  font-size: 1.1em;
+  letter-spacing: 1px;
+}
+
+h1 code {
+  font-size: 0.96em;
+}
+
+code {
+  font: 12px monospace;
+}
+
+footer {
+  background: #eee;
+  width: 100%;
+  padding: 10px 0;
+  text-align: right;
+  border-top: 1px solid #ddd;
+  display: flex;
+  flex: 1;
+  order: 2;
+  justify-content: center;
+}
+
+table {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  border: 1px solid #cbcbcb;
+  color: #000;
+  -webkit-border-radius: 3px;
+  -moz-border-radius: 3px;
+}
+table thead {
+  display: none;
+}
+table td.line,
+table td.hits {
+  width: 20px;
+  background: #eaeaea;
+  text-align: center;
+  font-size: 11px;
+  padding: 0 10px;
+  color: #949494;
+}
+table td.hits {
+  width: 10px;
+  padding: 2px 5px;
+  color: rgba(0, 0, 0, 0.6);
+  background-color: #f0f0f0;
+}
+tr.miss td.line,
+tr.miss td.hits {
+  background-color: #ffdce0;
+  border-color: #fdaeb7;
+}
+tr.miss td {
+  background-color: #ffeef0;
+}
+tr.hit td.line,
+tr.hit td.hits {
+  background-color: #cdffd8;
+  border-color: #bef5cb;
+}
+tr.hit td {
+  background-color: #e6ffed;
+}
+td.source {
+  padding-left: 15px;
+  line-height: 15px;
+  white-space: pre;
+  font: 12px monospace;
+}
+</style>
+</head>
+<body>
+<h1><code>cover/mysql_conn.COVER.html</code></h1>
+<footer><p>File generated from <code>/home/viktor/repos/mysql-otp/ebin/../src/mysql_conn.erl</code> by <a href="http://erlang.org/doc/man/cover.html">cover</a> at 2019-10-16 at 01:20:11</p></footer>
+<table>
+<tbody>
+<tr>
+<td class="line" id="L1">1</td>
+<td class="hits"></td>
+<td class="source"><code>%% MySQL/OTP – MySQL client library for Erlang/OTP</code></td>
+</tr>
+<tr>
+<td class="line" id="L2">2</td>
+<td class="hits"></td>
+<td class="source"><code>%% Copyright (C) 2014-2018 Viktor Söderqvist</code></td>
+</tr>
+<tr>
+<td class="line" id="L3">3</td>
+<td class="hits"></td>
+<td class="source"><code>%%</code></td>
+</tr>
+<tr>
+<td class="line" id="L4">4</td>
+<td class="hits"></td>
+<td class="source"><code>%% This file is part of MySQL/OTP.</code></td>
+</tr>
+<tr>
+<td class="line" id="L5">5</td>
+<td class="hits"></td>
+<td class="source"><code>%%</code></td>
+</tr>
+<tr>
+<td class="line" id="L6">6</td>
+<td class="hits"></td>
+<td class="source"><code>%% MySQL/OTP is free software: you can redistribute it and/or modify it under</code></td>
+</tr>
+<tr>
+<td class="line" id="L7">7</td>
+<td class="hits"></td>
+<td class="source"><code>%% the terms of the GNU Lesser General Public License as published by the Free</code></td>
+</tr>
+<tr>
+<td class="line" id="L8">8</td>
+<td class="hits"></td>
+<td class="source"><code>%% Software Foundation, either version 3 of the License, or (at your option)</code></td>
+</tr>
+<tr>
+<td class="line" id="L9">9</td>
+<td class="hits"></td>
+<td class="source"><code>%% any later version.</code></td>
+</tr>
+<tr>
+<td class="line" id="L10">10</td>
+<td class="hits"></td>
+<td class="source"><code>%%</code></td>
+</tr>
+<tr>
+<td class="line" id="L11">11</td>
+<td class="hits"></td>
+<td class="source"><code>%% This program is distributed in the hope that it will be useful, but WITHOUT</code></td>
+</tr>
+<tr>
+<td class="line" id="L12">12</td>
+<td class="hits"></td>
+<td class="source"><code>%% ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or</code></td>
+</tr>
+<tr>
+<td class="line" id="L13">13</td>
+<td class="hits"></td>
+<td class="source"><code>%% FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for</code></td>
+</tr>
+<tr>
+<td class="line" id="L14">14</td>
+<td class="hits"></td>
+<td class="source"><code>%% more details.</code></td>
+</tr>
+<tr>
+<td class="line" id="L15">15</td>
+<td class="hits"></td>
+<td class="source"><code>%%</code></td>
+</tr>
+<tr>
+<td class="line" id="L16">16</td>
+<td class="hits"></td>
+<td class="source"><code>%% You should have received a copy of the GNU Lesser General Public License</code></td>
+</tr>
+<tr>
+<td class="line" id="L17">17</td>
+<td class="hits"></td>
+<td class="source"><code>%% along with this program. If not, see &lt;https://www.gnu.org/licenses/&gt;.</code></td>
+</tr>
+<tr>
+<td class="line" id="L18">18</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L19">19</td>
+<td class="hits"></td>
+<td class="source"><code>%% @doc This module implements parts of the MySQL client/server protocol.</code></td>
+</tr>
+<tr>
+<td class="line" id="L20">20</td>
+<td class="hits"></td>
+<td class="source"><code>%%</code></td>
+</tr>
+<tr>
+<td class="line" id="L21">21</td>
+<td class="hits"></td>
+<td class="source"><code>%% The protocol is described in the document "MySQL Internals" which can be</code></td>
+</tr>
+<tr>
+<td class="line" id="L22">22</td>
+<td class="hits"></td>
+<td class="source"><code>%% found under "MySQL Documentation: Expert Guides" on http://dev.mysql.com/.</code></td>
+</tr>
+<tr>
+<td class="line" id="L23">23</td>
+<td class="hits"></td>
+<td class="source"><code>%%</code></td>
+</tr>
+<tr>
+<td class="line" id="L24">24</td>
+<td class="hits"></td>
+<td class="source"><code>%% TCP communication is not handled in this module. Most of the public functions</code></td>
+</tr>
+<tr>
+<td class="line" id="L25">25</td>
+<td class="hits"></td>
+<td class="source"><code>%% take funs for data communitaction as parameters.</code></td>
+</tr>
+<tr>
+<td class="line" id="L26">26</td>
+<td class="hits"></td>
+<td class="source"><code>%% @private</code></td>
+</tr>
+<tr>
+<td class="line" id="L27">27</td>
+<td class="hits"></td>
+<td class="source"><code>-module(mysql_conn).</code></td>
+</tr>
+<tr>
+<td class="line" id="L28">28</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L29">29</td>
+<td class="hits"></td>
+<td class="source"><code>-behaviour(gen_server).</code></td>
+</tr>
+<tr>
+<td class="line" id="L30">30</td>
+<td class="hits"></td>
+<td class="source"><code>-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,</code></td>
+</tr>
+<tr>
+<td class="line" id="L31">31</td>
+<td class="hits"></td>
+<td class="source"><code>         code_change/3]).</code></td>
+</tr>
+<tr>
+<td class="line" id="L32">32</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L33">33</td>
+<td class="hits"></td>
+<td class="source"><code>-define(default_host, "localhost").</code></td>
+</tr>
+<tr>
+<td class="line" id="L34">34</td>
+<td class="hits"></td>
+<td class="source"><code>-define(default_port, 3306).</code></td>
+</tr>
+<tr>
+<td class="line" id="L35">35</td>
+<td class="hits"></td>
+<td class="source"><code>-define(default_user, &lt;&lt;&gt;&gt;).</code></td>
+</tr>
+<tr>
+<td class="line" id="L36">36</td>
+<td class="hits"></td>
+<td class="source"><code>-define(default_password, &lt;&lt;&gt;&gt;).</code></td>
+</tr>
+<tr>
+<td class="line" id="L37">37</td>
+<td class="hits"></td>
+<td class="source"><code>-define(default_query_timeout, infinity).</code></td>
+</tr>
+<tr>
+<td class="line" id="L38">38</td>
+<td class="hits"></td>
+<td class="source"><code>-define(default_query_cache_time, 60000). %% for query/3.</code></td>
+</tr>
+<tr>
+<td class="line" id="L39">39</td>
+<td class="hits"></td>
+<td class="source"><code>-define(default_ping_timeout, 60000).</code></td>
+</tr>
+<tr>
+<td class="line" id="L40">40</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L41">41</td>
+<td class="hits"></td>
+<td class="source"><code>-define(cmd_timeout, 3000). %% Timeout used for various commands to the server</code></td>
+</tr>
+<tr>
+<td class="line" id="L42">42</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L43">43</td>
+<td class="hits"></td>
+<td class="source"><code>%% Errors that cause "implicit rollback"</code></td>
+</tr>
+<tr>
+<td class="line" id="L44">44</td>
+<td class="hits"></td>
+<td class="source"><code>-define(ERROR_DEADLOCK, 1213).</code></td>
+</tr>
+<tr>
+<td class="line" id="L45">45</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L46">46</td>
+<td class="hits"></td>
+<td class="source"><code>%% --- Gen_server callbacks ---</code></td>
+</tr>
+<tr>
+<td class="line" id="L47">47</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L48">48</td>
+<td class="hits"></td>
+<td class="source"><code>-include("records.hrl").</code></td>
+</tr>
+<tr>
+<td class="line" id="L49">49</td>
+<td class="hits"></td>
+<td class="source"><code>-include("server_status.hrl").</code></td>
+</tr>
+<tr>
+<td class="line" id="L50">50</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L51">51</td>
+<td class="hits"></td>
+<td class="source"><code>%% Gen_server state</code></td>
+</tr>
+<tr>
+<td class="line" id="L52">52</td>
+<td class="hits"></td>
+<td class="source"><code>-record(state, {server_version, connection_id, socket, sockmod, ssl_opts,</code></td>
+</tr>
+<tr>
+<td class="line" id="L53">53</td>
+<td class="hits"></td>
+<td class="source"><code>                host, port, user, password, auth_plugin_data, log_warnings,</code></td>
+</tr>
+<tr>
+<td class="line" id="L54">54</td>
+<td class="hits"></td>
+<td class="source"><code>                ping_timeout,</code></td>
+</tr>
+<tr>
+<td class="line" id="L55">55</td>
+<td class="hits"></td>
+<td class="source"><code>                query_timeout, query_cache_time,</code></td>
+</tr>
+<tr>
+<td class="line" id="L56">56</td>
+<td class="hits"></td>
+<td class="source"><code>                affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,</code></td>
+</tr>
+<tr>
+<td class="line" id="L57">57</td>
+<td class="hits"></td>
+<td class="source"><code>                transaction_levels = [], ping_ref = undefined,</code></td>
+</tr>
+<tr>
+<td class="line" id="L58">58</td>
+<td class="hits"></td>
+<td class="source"><code>                stmts = dict:new(), query_cache = empty, cap_found_rows = false}).</code></td>
+</tr>
+<tr>
+<td class="line" id="L59">59</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L60">60</td>
+<td class="hits"></td>
+<td class="source"><code>%% @private</code></td>
+</tr>
+<tr>
+<td class="line" id="L61">61</td>
+<td class="hits"></td>
+<td class="source"><code>init(Opts) -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L62">62</td>
+<td class="hits"></td>
+<td class="source"><code>    %% Connect</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L63">63</td>
+<td class="hits">34</td>
+<td class="source"><code>    Host           = proplists:get_value(host, Opts, ?default_host),</code></td>
+</tr>
+<tr>
+<td class="line" id="L64">64</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L65">65</td>
+<td class="hits">34</td>
+<td class="source"><code>    DefaultPort = case Host of</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L66">66</td>
+<td class="hits">1</td>
+<td class="source"><code>        {local, _LocalAddr} -&gt; 0;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L67">67</td>
+<td class="hits">33</td>
+<td class="source"><code>        _NonLocalAddr -&gt; ?default_port</code></td>
+</tr>
+<tr>
+<td class="line" id="L68">68</td>
+<td class="hits"></td>
+<td class="source"><code>    end,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L69">69</td>
+<td class="hits">34</td>
+<td class="source"><code>    Port           = proplists:get_value(port, Opts, DefaultPort),</code></td>
+</tr>
+<tr>
+<td class="line" id="L70">70</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L71">71</td>
+<td class="hits">34</td>
+<td class="source"><code>    User           = proplists:get_value(user, Opts, ?default_user),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L72">72</td>
+<td class="hits">34</td>
+<td class="source"><code>    Password       = proplists:get_value(password, Opts, ?default_password),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L73">73</td>
+<td class="hits">34</td>
+<td class="source"><code>    Database       = proplists:get_value(database, Opts, undefined),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L74">74</td>
+<td class="hits">34</td>
+<td class="source"><code>    LogWarn        = proplists:get_value(log_warnings, Opts, true),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L75">75</td>
+<td class="hits">34</td>
+<td class="source"><code>    KeepAlive      = proplists:get_value(keep_alive, Opts, false),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L76">76</td>
+<td class="hits">34</td>
+<td class="source"><code>    Timeout        = proplists:get_value(query_timeout, Opts,</code></td>
+</tr>
+<tr>
+<td class="line" id="L77">77</td>
+<td class="hits"></td>
+<td class="source"><code>                                         ?default_query_timeout),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L78">78</td>
+<td class="hits">34</td>
+<td class="source"><code>    QueryCacheTime = proplists:get_value(query_cache_time, Opts,</code></td>
+</tr>
+<tr>
+<td class="line" id="L79">79</td>
+<td class="hits"></td>
+<td class="source"><code>                                         ?default_query_cache_time),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L80">80</td>
+<td class="hits">34</td>
+<td class="source"><code>    TcpOpts        = proplists:get_value(tcp_options, Opts, []),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L81">81</td>
+<td class="hits">34</td>
+<td class="source"><code>    SetFoundRows   = proplists:get_value(found_rows, Opts, false),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L82">82</td>
+<td class="hits">34</td>
+<td class="source"><code>    SSLOpts        = proplists:get_value(ssl, Opts, undefined),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L83">83</td>
+<td class="hits">34</td>
+<td class="source"><code>    SockMod0       = gen_tcp,</code></td>
+</tr>
+<tr>
+<td class="line" id="L84">84</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L85">85</td>
+<td class="hits">34</td>
+<td class="source"><code>    Queries        = proplists:get_value(queries, Opts, []),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L86">86</td>
+<td class="hits">34</td>
+<td class="source"><code>    Prepares       = proplists:get_value(prepare, Opts, []),</code></td>
+</tr>
+<tr>
+<td class="line" id="L87">87</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L88">88</td>
+<td class="hits">34</td>
+<td class="source"><code>    PingTimeout = case KeepAlive of</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L89">89</td>
+<td class="hits">3</td>
+<td class="source"><code>        true         -&gt; ?default_ping_timeout;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L90">90</td>
+<td class="hits">30</td>
+<td class="source"><code>        false        -&gt; infinity;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L91">91</td>
+<td class="hits">1</td>
+<td class="source"><code>        N when N &gt; 0 -&gt; N</code></td>
+</tr>
+<tr>
+<td class="line" id="L92">92</td>
+<td class="hits"></td>
+<td class="source"><code>    end,</code></td>
+</tr>
+<tr>
+<td class="line" id="L93">93</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L94">94</td>
+<td class="hits"></td>
+<td class="source"><code>    %% Connect socket</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L95">95</td>
+<td class="hits">34</td>
+<td class="source"><code>    SockOpts = [binary, {packet, raw}, {active, false}, {nodelay, true}</code></td>
+</tr>
+<tr>
+<td class="line" id="L96">96</td>
+<td class="hits"></td>
+<td class="source"><code>                | TcpOpts],</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L97">97</td>
+<td class="hits">34</td>
+<td class="source"><code>    {ok, Socket0} = SockMod0:connect(Host, Port, SockOpts),</code></td>
+</tr>
+<tr>
+<td class="line" id="L98">98</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L99">99</td>
+<td class="hits"></td>
+<td class="source"><code>    %% If buffer wasn't specifically defined make it at least as</code></td>
+</tr>
+<tr>
+<td class="line" id="L100">100</td>
+<td class="hits"></td>
+<td class="source"><code>    %% large as recbuf, as suggested by the inet:setopts() docs.</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L101">101</td>
+<td class="hits">34</td>
+<td class="source"><code>    case proplists:is_defined(buffer, TcpOpts) of</code></td>
+</tr>
+<tr>
+<td class="line" id="L102">102</td>
+<td class="hits"></td>
+<td class="source"><code>        true -&gt;</code></td>
+</tr>
+<tr class="miss">
+<td class="line" id="L103">103</td>
+<td class="hits">0</td>
+<td class="source"><code>            ok;</code></td>
+</tr>
+<tr>
+<td class="line" id="L104">104</td>
+<td class="hits"></td>
+<td class="source"><code>        false -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L105">105</td>
+<td class="hits">34</td>
+<td class="source"><code>            {ok, [{buffer, Buffer}]} = inet:getopts(Socket0, [buffer]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L106">106</td>
+<td class="hits">34</td>
+<td class="source"><code>            {ok, [{recbuf, Recbuf}]} = inet:getopts(Socket0, [recbuf]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L107">107</td>
+<td class="hits">34</td>
+<td class="source"><code>            ok = inet:setopts(Socket0,[{buffer, max(Buffer, Recbuf)}])</code></td>
+</tr>
+<tr>
+<td class="line" id="L108">108</td>
+<td class="hits"></td>
+<td class="source"><code>    end,</code></td>
+</tr>
+<tr>
+<td class="line" id="L109">109</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L110">110</td>
+<td class="hits"></td>
+<td class="source"><code>    %% Exchange handshake communication.</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L111">111</td>
+<td class="hits">34</td>
+<td class="source"><code>    Result = mysql_protocol:handshake(User, Password, Database, SockMod0, SSLOpts,</code></td>
+</tr>
+<tr>
+<td class="line" id="L112">112</td>
+<td class="hits"></td>
+<td class="source"><code>                                      Socket0, SetFoundRows),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L113">113</td>
+<td class="hits">34</td>
+<td class="source"><code>    case Result of</code></td>
+</tr>
+<tr>
+<td class="line" id="L114">114</td>
+<td class="hits"></td>
+<td class="source"><code>        {ok, Handshake, SockMod, Socket} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L115">115</td>
+<td class="hits">33</td>
+<td class="source"><code>            setopts(SockMod, Socket, [{active, once}]),</code></td>
+</tr>
+<tr>
+<td class="line" id="L116">116</td>
+<td class="hits"></td>
+<td class="source"><code>            #handshake{server_version = Version, connection_id = ConnId,</code></td>
+</tr>
+<tr>
+<td class="line" id="L117">117</td>
+<td class="hits"></td>
+<td class="source"><code>                       status = Status,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L118">118</td>
+<td class="hits">33</td>
+<td class="source"><code>                       auth_plugin_data = AuthPluginData} = Handshake,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L119">119</td>
+<td class="hits">33</td>
+<td class="source"><code>            State = #state{server_version = Version, connection_id = ConnId,</code></td>
+</tr>
+<tr>
+<td class="line" id="L120">120</td>
+<td class="hits"></td>
+<td class="source"><code>                           sockmod = SockMod,</code></td>
+</tr>
+<tr>
+<td class="line" id="L121">121</td>
+<td class="hits"></td>
+<td class="source"><code>                           socket = Socket,</code></td>
+</tr>
+<tr>
+<td class="line" id="L122">122</td>
+<td class="hits"></td>
+<td class="source"><code>                           ssl_opts = SSLOpts,</code></td>
+</tr>
+<tr>
+<td class="line" id="L123">123</td>
+<td class="hits"></td>
+<td class="source"><code>                           host = Host, port = Port,</code></td>
+</tr>
+<tr>
+<td class="line" id="L124">124</td>
+<td class="hits"></td>
+<td class="source"><code>                           user = User, password = Password,</code></td>
+</tr>
+<tr>
+<td class="line" id="L125">125</td>
+<td class="hits"></td>
+<td class="source"><code>                           auth_plugin_data = AuthPluginData,</code></td>
+</tr>
+<tr>
+<td class="line" id="L126">126</td>
+<td class="hits"></td>
+<td class="source"><code>                           status = Status,</code></td>
+</tr>
+<tr>
+<td class="line" id="L127">127</td>
+<td class="hits"></td>
+<td class="source"><code>                           log_warnings = LogWarn,</code></td>
+</tr>
+<tr>
+<td class="line" id="L128">128</td>
+<td class="hits"></td>
+<td class="source"><code>                           ping_timeout = PingTimeout,</code></td>
+</tr>
+<tr>
+<td class="line" id="L129">129</td>
+<td class="hits"></td>
+<td class="source"><code>                           query_timeout = Timeout,</code></td>
+</tr>
+<tr>
+<td class="line" id="L130">130</td>
+<td class="hits"></td>
+<td class="source"><code>                           query_cache_time = QueryCacheTime,</code></td>
+</tr>
+<tr>
+<td class="line" id="L131">131</td>
+<td class="hits"></td>
+<td class="source"><code>                           cap_found_rows = (SetFoundRows =:= true)},</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L132">132</td>
+<td class="hits">33</td>
+<td class="source"><code>            case execute_on_connect(Queries, Prepares, State) of</code></td>
+</tr>
+<tr>
+<td class="line" id="L133">133</td>
+<td class="hits"></td>
+<td class="source"><code>                {ok, State1} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L134">134</td>
+<td class="hits">31</td>
+<td class="source"><code>                    process_flag(trap_exit, true),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L135">135</td>
+<td class="hits">31</td>
+<td class="source"><code>                    State2 = schedule_ping(State1),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L136">136</td>
+<td class="hits">31</td>
+<td class="source"><code>                    {ok, State2};</code></td>
+</tr>
+<tr>
+<td class="line" id="L137">137</td>
+<td class="hits"></td>
+<td class="source"><code>                {error, Reason} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L138">138</td>
+<td class="hits">2</td>
+<td class="source"><code>                    {stop, Reason}</code></td>
+</tr>
+<tr>
+<td class="line" id="L139">139</td>
+<td class="hits"></td>
+<td class="source"><code>            end;</code></td>
+</tr>
+<tr>
+<td class="line" id="L140">140</td>
+<td class="hits"></td>
+<td class="source"><code>        #error{} = E -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L141">141</td>
+<td class="hits">1</td>
+<td class="source"><code>            {stop, error_to_reason(E)}</code></td>
+</tr>
+<tr>
+<td class="line" id="L142">142</td>
+<td class="hits"></td>
+<td class="source"><code>    end.</code></td>
+</tr>
+<tr>
+<td class="line" id="L143">143</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L144">144</td>
+<td class="hits"></td>
+<td class="source"><code>execute_on_connect([], [], State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L145">145</td>
+<td class="hits">37</td>
+<td class="source"><code>    {ok, State};</code></td>
+</tr>
+<tr>
+<td class="line" id="L146">146</td>
+<td class="hits"></td>
+<td class="source"><code>execute_on_connect([], [{Name, Stmt}|Prepares], State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L147">147</td>
+<td class="hits">5</td>
+<td class="source"><code>    case do_named_prepare(Name, Stmt, State) of</code></td>
+</tr>
+<tr>
+<td class="line" id="L148">148</td>
+<td class="hits"></td>
+<td class="source"><code>        {{ok, Name}, State1} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L149">149</td>
+<td class="hits">3</td>
+<td class="source"><code>            execute_on_connect([], Prepares, State1);</code></td>
+</tr>
+<tr>
+<td class="line" id="L150">150</td>
+<td class="hits"></td>
+<td class="source"><code>        {{error, _} = E, _} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L151">151</td>
+<td class="hits">2</td>
+<td class="source"><code>            E</code></td>
+</tr>
+<tr>
+<td class="line" id="L152">152</td>
+<td class="hits"></td>
+<td class="source"><code>    end;</code></td>
+</tr>
+<tr>
+<td class="line" id="L153">153</td>
+<td class="hits"></td>
+<td class="source"><code>execute_on_connect([Query|Queries], Prepares, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L154">154</td>
+<td class="hits">9</td>
+<td class="source"><code>    case do_query(Query, no_filtermap_fun, default_timeout, State) of</code></td>
+</tr>
+<tr>
+<td class="line" id="L155">155</td>
+<td class="hits"></td>
+<td class="source"><code>        {ok, State1} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L156">156</td>
+<td class="hits">3</td>
+<td class="source"><code>            execute_on_connect(Queries, Prepares, State1);</code></td>
+</tr>
+<tr>
+<td class="line" id="L157">157</td>
+<td class="hits"></td>
+<td class="source"><code>        {{ok, _}, State1} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L158">158</td>
+<td class="hits">2</td>
+<td class="source"><code>            execute_on_connect(Queries, Prepares, State1);</code></td>
+</tr>
+<tr>
+<td class="line" id="L159">159</td>
+<td class="hits"></td>
+<td class="source"><code>        {{ok, _, _}, State1} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L160">160</td>
+<td class="hits">2</td>
+<td class="source"><code>            execute_on_connect(Queries, Prepares, State1);</code></td>
+</tr>
+<tr>
+<td class="line" id="L161">161</td>
+<td class="hits"></td>
+<td class="source"><code>        {{error, _} = E, _} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L162">162</td>
+<td class="hits">2</td>
+<td class="source"><code>            E</code></td>
+</tr>
+<tr>
+<td class="line" id="L163">163</td>
+<td class="hits"></td>
+<td class="source"><code>    end.</code></td>
+</tr>
+<tr>
+<td class="line" id="L164">164</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L165">165</td>
+<td class="hits"></td>
+<td class="source"><code>%% @private</code></td>
+</tr>
+<tr>
+<td class="line" id="L166">166</td>
+<td class="hits"></td>
+<td class="source"><code>%% @doc</code></td>
+</tr>
+<tr>
+<td class="line" id="L167">167</td>
+<td class="hits"></td>
+<td class="source"><code>%%</code></td>
+</tr>
+<tr>
+<td class="line" id="L168">168</td>
+<td class="hits"></td>
+<td class="source"><code>%% Query and execute calls:</code></td>
+</tr>
+<tr>
+<td class="line" id="L169">169</td>
+<td class="hits"></td>
+<td class="source"><code>%%</code></td>
+</tr>
+<tr>
+<td class="line" id="L170">170</td>
+<td class="hits"></td>
+<td class="source"><code>%% &lt;ul&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L171">171</td>
+<td class="hits"></td>
+<td class="source"><code>%%   &lt;li&gt;{query, Query, FilterMap, Timeout}&lt;/li&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L172">172</td>
+<td class="hits"></td>
+<td class="source"><code>%%   &lt;li&gt;{param_query, Query, Params, FilterMap, Timeout}&lt;/li&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L173">173</td>
+<td class="hits"></td>
+<td class="source"><code>%%   &lt;li&gt;{execute, Stmt, Args, FilterMap, Timeout}&lt;/li&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L174">174</td>
+<td class="hits"></td>
+<td class="source"><code>%% &lt;/ul&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L175">175</td>
+<td class="hits"></td>
+<td class="source"><code>%%</code></td>
+</tr>
+<tr>
+<td class="line" id="L176">176</td>
+<td class="hits"></td>
+<td class="source"><code>%% For the calls listed above, we return these values:</code></td>
+</tr>
+<tr>
+<td class="line" id="L177">177</td>
+<td class="hits"></td>
+<td class="source"><code>%%</code></td>
+</tr>
+<tr>
+<td class="line" id="L178">178</td>
+<td class="hits"></td>
+<td class="source"><code>%% &lt;dl&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L179">179</td>
+<td class="hits"></td>
+<td class="source"><code>%%   &lt;dt&gt;`ok'&lt;/dt&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L180">180</td>
+<td class="hits"></td>
+<td class="source"><code>%%   &lt;dd&gt;Success without returning any table data (UPDATE, etc.)&lt;/dd&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L181">181</td>
+<td class="hits"></td>
+<td class="source"><code>%%   &lt;dt&gt;`{ok, ColumnNames, Rows}'&lt;/dt&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L182">182</td>
+<td class="hits"></td>
+<td class="source"><code>%%   &lt;dd&gt;Queries returning one result set of table data&lt;/dd&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L183">183</td>
+<td class="hits"></td>
+<td class="source"><code>%%   &lt;dt&gt;`{ok, [{ColumnNames, Rows}, ...]}'&lt;/dt&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L184">184</td>
+<td class="hits"></td>
+<td class="source"><code>%%   &lt;dd&gt;Queries returning more than one result set of table data&lt;/dd&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L185">185</td>
+<td class="hits"></td>
+<td class="source"><code>%%   &lt;dt&gt;`{error, ServerReason}'&lt;/dt&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L186">186</td>
+<td class="hits"></td>
+<td class="source"><code>%%   &lt;dd&gt;MySQL server error&lt;/dd&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L187">187</td>
+<td class="hits"></td>
+<td class="source"><code>%%   &lt;dt&gt;`{implicit_commit, NestingLevel, Query}'&lt;/dt&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L188">188</td>
+<td class="hits"></td>
+<td class="source"><code>%%   &lt;dd&gt;A DDL statement (e.g. CREATE TABLE, ALTER TABLE, etc.) results in</code></td>
+</tr>
+<tr>
+<td class="line" id="L189">189</td>
+<td class="hits"></td>
+<td class="source"><code>%%       an implicit commit.</code></td>
+</tr>
+<tr>
+<td class="line" id="L190">190</td>
+<td class="hits"></td>
+<td class="source"><code>%%</code></td>
+</tr>
+<tr>
+<td class="line" id="L191">191</td>
+<td class="hits"></td>
+<td class="source"><code>%%       If the caller is in a (nested) transaction, it must be aborted. To be</code></td>
+</tr>
+<tr>
+<td class="line" id="L192">192</td>
+<td class="hits"></td>
+<td class="source"><code>%%       able to handle this in the caller's process, we also return the</code></td>
+</tr>
+<tr>
+<td class="line" id="L193">193</td>
+<td class="hits"></td>
+<td class="source"><code>%%       nesting level.&lt;/dd&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L194">194</td>
+<td class="hits"></td>
+<td class="source"><code>%%   &lt;dt&gt;`{implicit_rollback, NestingLevel, ServerReason}'&lt;/dt&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L195">195</td>
+<td class="hits"></td>
+<td class="source"><code>%%   &lt;dd&gt;This errors results in an implicit rollback: `{1213, &lt;&lt;"40001"&gt;&gt;,</code></td>
+</tr>
+<tr>
+<td class="line" id="L196">196</td>
+<td class="hits"></td>
+<td class="source"><code>%%       &lt;&lt;"Deadlock found when trying to get lock; try restarting "</code></td>
+</tr>
+<tr>
+<td class="line" id="L197">197</td>
+<td class="hits"></td>
+<td class="source"><code>%%         "transaction"&gt;&gt;}'.</code></td>
+</tr>
+<tr>
+<td class="line" id="L198">198</td>
+<td class="hits"></td>
+<td class="source"><code>%%</code></td>
+</tr>
+<tr>
+<td class="line" id="L199">199</td>
+<td class="hits"></td>
+<td class="source"><code>%%       If the caller is in a (nested) transaction, it must be aborted. To be</code></td>
+</tr>
+<tr>
+<td class="line" id="L200">200</td>
+<td class="hits"></td>
+<td class="source"><code>%%       able to handle this in the caller's process, we also return the</code></td>
+</tr>
+<tr>
+<td class="line" id="L201">201</td>
+<td class="hits"></td>
+<td class="source"><code>%%       nesting level.&lt;/dd&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L202">202</td>
+<td class="hits"></td>
+<td class="source"><code>%% &lt;/dl&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L203">203</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call({query, Query, FilterMap, Timeout}, _From, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L204">204</td>
+<td class="hits">425</td>
+<td class="source"><code>    {Reply, State1} = do_query(Query, FilterMap, Timeout, State),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L205">205</td>
+<td class="hits">425</td>
+<td class="source"><code>    {reply, Reply, State1};</code></td>
+</tr>
+<tr>
+<td class="line" id="L206">206</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call({param_query, Query, Params, FilterMap, default_timeout}, From,</code></td>
+</tr>
+<tr>
+<td class="line" id="L207">207</td>
+<td class="hits"></td>
+<td class="source"><code>            State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L208">208</td>
+<td class="hits">11</td>
+<td class="source"><code>    handle_call({param_query, Query, Params, FilterMap,</code></td>
+</tr>
+<tr>
+<td class="line" id="L209">209</td>
+<td class="hits"></td>
+<td class="source"><code>                State#state.query_timeout}, From, State);</code></td>
+</tr>
+<tr>
+<td class="line" id="L210">210</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call({param_query, Query, Params, FilterMap, Timeout}, _From,</code></td>
+</tr>
+<tr>
+<td class="line" id="L211">211</td>
+<td class="hits"></td>
+<td class="source"><code>            #state{socket = Socket, sockmod = SockMod} = State) -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L212">212</td>
+<td class="hits"></td>
+<td class="source"><code>    %% Parametrized query: Prepared statement cached with the query as the key</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L213">213</td>
+<td class="hits">12</td>
+<td class="source"><code>    QueryBin = iolist_to_binary(Query),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L214">214</td>
+<td class="hits">12</td>
+<td class="source"><code>    Cache = State#state.query_cache,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L215">215</td>
+<td class="hits">12</td>
+<td class="source"><code>    {StmtResult, Cache1} = case mysql_cache:lookup(QueryBin, Cache) of</code></td>
+</tr>
+<tr>
+<td class="line" id="L216">216</td>
+<td class="hits"></td>
+<td class="source"><code>        {found, FoundStmt, NewCache} -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L217">217</td>
+<td class="hits"></td>
+<td class="source"><code>            %% Found</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L218">218</td>
+<td class="hits">2</td>
+<td class="source"><code>            {{ok, FoundStmt}, NewCache};</code></td>
+</tr>
+<tr>
+<td class="line" id="L219">219</td>
+<td class="hits"></td>
+<td class="source"><code>        not_found -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L220">220</td>
+<td class="hits"></td>
+<td class="source"><code>            %% Prepare</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L221">221</td>
+<td class="hits">10</td>
+<td class="source"><code>            setopts(SockMod, Socket, [{active, false}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L222">222</td>
+<td class="hits">10</td>
+<td class="source"><code>            Rec = mysql_protocol:prepare(Query, SockMod, Socket),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L223">223</td>
+<td class="hits">10</td>
+<td class="source"><code>            setopts(SockMod, Socket, [{active, once}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L224">224</td>
+<td class="hits">10</td>
+<td class="source"><code>            case Rec of</code></td>
+</tr>
+<tr>
+<td class="line" id="L225">225</td>
+<td class="hits"></td>
+<td class="source"><code>                #error{} = E -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L226">226</td>
+<td class="hits">1</td>
+<td class="source"><code>                    {{error, error_to_reason(E)}, Cache};</code></td>
+</tr>
+<tr>
+<td class="line" id="L227">227</td>
+<td class="hits"></td>
+<td class="source"><code>                #prepared{} = Stmt -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L228">228</td>
+<td class="hits"></td>
+<td class="source"><code>                    %% If the first entry in the cache, start the timer.</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L229">229</td>
+<td class="hits">9</td>
+<td class="source"><code>                    Cache == empty andalso begin</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L230">230</td>
+<td class="hits">5</td>
+<td class="source"><code>                        When = State#state.query_cache_time * 2,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L231">231</td>
+<td class="hits">5</td>
+<td class="source"><code>                        erlang:send_after(When, self(), query_cache)</code></td>
+</tr>
+<tr>
+<td class="line" id="L232">232</td>
+<td class="hits"></td>
+<td class="source"><code>                    end,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L233">233</td>
+<td class="hits">9</td>
+<td class="source"><code>                    {{ok, Stmt}, mysql_cache:store(QueryBin, Stmt, Cache)}</code></td>
+</tr>
+<tr>
+<td class="line" id="L234">234</td>
+<td class="hits"></td>
+<td class="source"><code>            end</code></td>
+</tr>
+<tr>
+<td class="line" id="L235">235</td>
+<td class="hits"></td>
+<td class="source"><code>    end,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L236">236</td>
+<td class="hits">12</td>
+<td class="source"><code>    case StmtResult of</code></td>
+</tr>
+<tr>
+<td class="line" id="L237">237</td>
+<td class="hits"></td>
+<td class="source"><code>        {ok, StmtRec} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L238">238</td>
+<td class="hits">11</td>
+<td class="source"><code>            State1 = State#state{query_cache = Cache1},</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L239">239</td>
+<td class="hits">11</td>
+<td class="source"><code>            execute_stmt(StmtRec, Params, FilterMap, Timeout, State1);</code></td>
+</tr>
+<tr>
+<td class="line" id="L240">240</td>
+<td class="hits"></td>
+<td class="source"><code>        PrepareError -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L241">241</td>
+<td class="hits">1</td>
+<td class="source"><code>            {reply, PrepareError, State}</code></td>
+</tr>
+<tr>
+<td class="line" id="L242">242</td>
+<td class="hits"></td>
+<td class="source"><code>    end;</code></td>
+</tr>
+<tr>
+<td class="line" id="L243">243</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call({execute, Stmt, Args, FilterMap, default_timeout}, From, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L244">244</td>
+<td class="hits">186</td>
+<td class="source"><code>    handle_call({execute, Stmt, Args, FilterMap, State#state.query_timeout},</code></td>
+</tr>
+<tr>
+<td class="line" id="L245">245</td>
+<td class="hits"></td>
+<td class="source"><code>        From, State);</code></td>
+</tr>
+<tr>
+<td class="line" id="L246">246</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call({execute, Stmt, Args, FilterMap, Timeout}, _From, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L247">247</td>
+<td class="hits">187</td>
+<td class="source"><code>    case dict:find(Stmt, State#state.stmts) of</code></td>
+</tr>
+<tr>
+<td class="line" id="L248">248</td>
+<td class="hits"></td>
+<td class="source"><code>        {ok, StmtRec} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L249">249</td>
+<td class="hits">186</td>
+<td class="source"><code>            execute_stmt(StmtRec, Args, FilterMap, Timeout, State);</code></td>
+</tr>
+<tr>
+<td class="line" id="L250">250</td>
+<td class="hits"></td>
+<td class="source"><code>        error -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L251">251</td>
+<td class="hits">1</td>
+<td class="source"><code>            {reply, {error, not_prepared}, State}</code></td>
+</tr>
+<tr>
+<td class="line" id="L252">252</td>
+<td class="hits"></td>
+<td class="source"><code>    end;</code></td>
+</tr>
+<tr>
+<td class="line" id="L253">253</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call({prepare, Query}, _From, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L254">254</td>
+<td class="hits">93</td>
+<td class="source"><code>    #state{socket = Socket, sockmod = SockMod} = State,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L255">255</td>
+<td class="hits">93</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, false}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L256">256</td>
+<td class="hits">93</td>
+<td class="source"><code>    Rec = mysql_protocol:prepare(Query, SockMod, Socket),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L257">257</td>
+<td class="hits">93</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, once}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L258">258</td>
+<td class="hits">93</td>
+<td class="source"><code>    State1 = update_state(Rec, State),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L259">259</td>
+<td class="hits">93</td>
+<td class="source"><code>    case Rec of</code></td>
+</tr>
+<tr>
+<td class="line" id="L260">260</td>
+<td class="hits"></td>
+<td class="source"><code>        #error{} = E -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L261">261</td>
+<td class="hits">1</td>
+<td class="source"><code>            {reply, {error, error_to_reason(E)}, State1};</code></td>
+</tr>
+<tr>
+<td class="line" id="L262">262</td>
+<td class="hits"></td>
+<td class="source"><code>        #prepared{statement_id = Id} = Stmt -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L263">263</td>
+<td class="hits">92</td>
+<td class="source"><code>            Stmts1 = dict:store(Id, Stmt, State1#state.stmts),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L264">264</td>
+<td class="hits">92</td>
+<td class="source"><code>            State2 = State#state{stmts = Stmts1},</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L265">265</td>
+<td class="hits">92</td>
+<td class="source"><code>            {reply, {ok, Id}, State2}</code></td>
+</tr>
+<tr>
+<td class="line" id="L266">266</td>
+<td class="hits"></td>
+<td class="source"><code>    end;</code></td>
+</tr>
+<tr>
+<td class="line" id="L267">267</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L268">268</td>
+<td class="hits">7</td>
+<td class="source"><code>    {Reply, State1} = do_named_prepare(Name, Query, State),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L269">269</td>
+<td class="hits">7</td>
+<td class="source"><code>    {reply, Reply, State1};</code></td>
+</tr>
+<tr>
+<td class="line" id="L270">270</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);</code></td>
+</tr>
+<tr>
+<td class="line" id="L271">271</td>
+<td class="hits"></td>
+<td class="source"><code>                                                  is_integer(Stmt) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L272">272</td>
+<td class="hits">91</td>
+<td class="source"><code>    case dict:find(Stmt, State#state.stmts) of</code></td>
+</tr>
+<tr>
+<td class="line" id="L273">273</td>
+<td class="hits"></td>
+<td class="source"><code>        {ok, StmtRec} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L274">274</td>
+<td class="hits">89</td>
+<td class="source"><code>            #state{socket = Socket, sockmod = SockMod} = State,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L275">275</td>
+<td class="hits">89</td>
+<td class="source"><code>            setopts(SockMod, Socket, [{active, false}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L276">276</td>
+<td class="hits">89</td>
+<td class="source"><code>            mysql_protocol:unprepare(StmtRec, SockMod, Socket),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L277">277</td>
+<td class="hits">89</td>
+<td class="source"><code>            setopts(SockMod, Socket, [{active, once}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L278">278</td>
+<td class="hits">89</td>
+<td class="source"><code>            State1 = State#state{stmts = dict:erase(Stmt, State#state.stmts)},</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L279">279</td>
+<td class="hits">89</td>
+<td class="source"><code>            State2 = schedule_ping(State1),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L280">280</td>
+<td class="hits">89</td>
+<td class="source"><code>            {reply, ok, State2};</code></td>
+</tr>
+<tr>
+<td class="line" id="L281">281</td>
+<td class="hits"></td>
+<td class="source"><code>        error -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L282">282</td>
+<td class="hits">2</td>
+<td class="source"><code>            {reply, {error, not_prepared}, State}</code></td>
+</tr>
+<tr>
+<td class="line" id="L283">283</td>
+<td class="hits"></td>
+<td class="source"><code>    end;</code></td>
+</tr>
+<tr>
+<td class="line" id="L284">284</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call({change_user, Username, Password, Options}, From,</code></td>
+</tr>
+<tr>
+<td class="line" id="L285">285</td>
+<td class="hits"></td>
+<td class="source"><code>            State = #state{transaction_levels = []}) -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L286">286</td>
+<td class="hits"></td>
+<td class="source"><code>    #state{socket = Socket, sockmod = SockMod,</code></td>
+</tr>
+<tr>
+<td class="line" id="L287">287</td>
+<td class="hits"></td>
+<td class="source"><code>           auth_plugin_data = AuthPluginData,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L288">288</td>
+<td class="hits">9</td>
+<td class="source"><code>           server_version = ServerVersion} = State,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L289">289</td>
+<td class="hits">9</td>
+<td class="source"><code>    Database = proplists:get_value(database, Options, undefined),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L290">290</td>
+<td class="hits">9</td>
+<td class="source"><code>    Queries = proplists:get_value(queries, Options, []),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L291">291</td>
+<td class="hits">9</td>
+<td class="source"><code>    Prepares = proplists:get_value(prepare, Options, []),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L292">292</td>
+<td class="hits">9</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, false}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L293">293</td>
+<td class="hits">9</td>
+<td class="source"><code>    Result = mysql_protocol:change_user(SockMod, Socket, Username, Password,</code></td>
+</tr>
+<tr>
+<td class="line" id="L294">294</td>
+<td class="hits"></td>
+<td class="source"><code>                                        AuthPluginData, Database,</code></td>
+</tr>
+<tr>
+<td class="line" id="L295">295</td>
+<td class="hits"></td>
+<td class="source"><code>                                        ServerVersion),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L296">296</td>
+<td class="hits">9</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, once}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L297">297</td>
+<td class="hits">9</td>
+<td class="source"><code>    State1 = update_state(Result, State),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L298">298</td>
+<td class="hits">9</td>
+<td class="source"><code>    State1#state.warning_count &gt; 0 andalso State1#state.log_warnings</code></td>
+</tr>
+<tr class="miss">
+<td class="line" id="L299">299</td>
+<td class="hits">0</td>
+<td class="source"><code>        andalso log_warnings(State1, "CHANGE USER"),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L300">300</td>
+<td class="hits">9</td>
+<td class="source"><code>    State2 = State1#state{query_cache = empty, stmts = dict:new()},</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L301">301</td>
+<td class="hits">9</td>
+<td class="source"><code>    case Result of</code></td>
+</tr>
+<tr>
+<td class="line" id="L302">302</td>
+<td class="hits"></td>
+<td class="source"><code>        #ok{} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L303">303</td>
+<td class="hits">8</td>
+<td class="source"><code>            State3 = State2#state{user = Username, password = Password},</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L304">304</td>
+<td class="hits">8</td>
+<td class="source"><code>            case execute_on_connect(Queries, Prepares, State3) of</code></td>
+</tr>
+<tr>
+<td class="line" id="L305">305</td>
+<td class="hits"></td>
+<td class="source"><code>                {ok, State4} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L306">306</td>
+<td class="hits">6</td>
+<td class="source"><code>                    {reply, ok, State4};</code></td>
+</tr>
+<tr>
+<td class="line" id="L307">307</td>
+<td class="hits"></td>
+<td class="source"><code>                {error, Reason} = E -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L308">308</td>
+<td class="hits">2</td>
+<td class="source"><code>                    gen_server:reply(From, E),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L309">309</td>
+<td class="hits">2</td>
+<td class="source"><code>                    stop_server(Reason, State3)</code></td>
+</tr>
+<tr>
+<td class="line" id="L310">310</td>
+<td class="hits"></td>
+<td class="source"><code>            end;</code></td>
+</tr>
+<tr>
+<td class="line" id="L311">311</td>
+<td class="hits"></td>
+<td class="source"><code>        #error{} = E -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L312">312</td>
+<td class="hits">1</td>
+<td class="source"><code>            gen_server:reply(From, {error, error_to_reason(E)}),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L313">313</td>
+<td class="hits">1</td>
+<td class="source"><code>            stop_server(change_user_failed, State2)</code></td>
+</tr>
+<tr>
+<td class="line" id="L314">314</td>
+<td class="hits"></td>
+<td class="source"><code>    end;</code></td>
+</tr>
+<tr>
+<td class="line" id="L315">315</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call(reset_connection, _From, #state{socket = Socket, sockmod = SockMod} = State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L316">316</td>
+<td class="hits">1</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, false}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L317">317</td>
+<td class="hits">1</td>
+<td class="source"><code>    Result = mysql_protocol:reset_connnection(SockMod, Socket),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L318">318</td>
+<td class="hits">1</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, once}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L319">319</td>
+<td class="hits">1</td>
+<td class="source"><code>    State1 = update_state(Result, State),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L320">320</td>
+<td class="hits">1</td>
+<td class="source"><code>    Reply = case Result of</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L321">321</td>
+<td class="hits">1</td>
+<td class="source"><code>        #ok{} -&gt; ok;</code></td>
+</tr>
+<tr>
+<td class="line" id="L322">322</td>
+<td class="hits"></td>
+<td class="source"><code>        #error{} = E -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L323">323</td>
+<td class="hits"></td>
+<td class="source"><code>            %% 'COM_RESET_CONNECTION' is added in MySQL 5.7 and MariaDB 10</code></td>
+</tr>
+<tr>
+<td class="line" id="L324">324</td>
+<td class="hits"></td>
+<td class="source"><code>            %% "Unkown command" is returned when MySQL =&lt; 5.6 or MariaDB =&lt; 5.5</code></td>
+</tr>
+<tr class="miss">
+<td class="line" id="L325">325</td>
+<td class="hits">0</td>
+<td class="source"><code>            {error, error_to_reason(E)}</code></td>
+</tr>
+<tr>
+<td class="line" id="L326">326</td>
+<td class="hits"></td>
+<td class="source"><code>    end,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L327">327</td>
+<td class="hits">1</td>
+<td class="source"><code>    {reply, Reply, State1};</code></td>
+</tr>
+<tr>
+<td class="line" id="L328">328</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L329">329</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call(warning_count, _From, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L330">330</td>
+<td class="hits">2</td>
+<td class="source"><code>    {reply, State#state.warning_count, State};</code></td>
+</tr>
+<tr>
+<td class="line" id="L331">331</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call(insert_id, _From, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L332">332</td>
+<td class="hits">3</td>
+<td class="source"><code>    {reply, State#state.insert_id, State};</code></td>
+</tr>
+<tr>
+<td class="line" id="L333">333</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call(affected_rows, _From, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L334">334</td>
+<td class="hits">3</td>
+<td class="source"><code>    {reply, State#state.affected_rows, State};</code></td>
+</tr>
+<tr>
+<td class="line" id="L335">335</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call(autocommit, _From, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L336">336</td>
+<td class="hits">3</td>
+<td class="source"><code>    {reply, State#state.status band ?SERVER_STATUS_AUTOCOMMIT /= 0, State};</code></td>
+</tr>
+<tr>
+<td class="line" id="L337">337</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call(backslash_escapes_enabled, _From, State = #state{status = S}) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L338">338</td>
+<td class="hits">2</td>
+<td class="source"><code>    {reply, S band ?SERVER_STATUS_NO_BACKSLASH_ESCAPES == 0, State};</code></td>
+</tr>
+<tr>
+<td class="line" id="L339">339</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call(in_transaction, _From, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L340">340</td>
+<td class="hits">25</td>
+<td class="source"><code>    {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};</code></td>
+</tr>
+<tr>
+<td class="line" id="L341">341</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call(start_transaction, {FromPid, _},</code></td>
+</tr>
+<tr>
+<td class="line" id="L342">342</td>
+<td class="hits"></td>
+<td class="source"><code>            State = #state{socket = Socket, sockmod = SockMod,</code></td>
+</tr>
+<tr>
+<td class="line" id="L343">343</td>
+<td class="hits"></td>
+<td class="source"><code>                           transaction_levels = L, status = Status})</code></td>
+</tr>
+<tr>
+<td class="line" id="L344">344</td>
+<td class="hits"></td>
+<td class="source"><code>  when Status band ?SERVER_STATUS_IN_TRANS == 0, L == [];</code></td>
+</tr>
+<tr>
+<td class="line" id="L345">345</td>
+<td class="hits"></td>
+<td class="source"><code>       Status band ?SERVER_STATUS_IN_TRANS /= 0, L /= [] -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L346">346</td>
+<td class="hits">28</td>
+<td class="source"><code>    MRef = erlang:monitor(process, FromPid),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L347">347</td>
+<td class="hits">28</td>
+<td class="source"><code>    Query = case L of</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L348">348</td>
+<td class="hits">17</td>
+<td class="source"><code>        [] -&gt; &lt;&lt;"BEGIN"&gt;&gt;;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L349">349</td>
+<td class="hits">11</td>
+<td class="source"><code>        _  -&gt; &lt;&lt;"SAVEPOINT s", (integer_to_binary(length(L)))/binary&gt;&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L350">350</td>
+<td class="hits"></td>
+<td class="source"><code>    end,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L351">351</td>
+<td class="hits">28</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, false}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L352">352</td>
+<td class="hits">28</td>
+<td class="source"><code>    {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,</code></td>
+</tr>
+<tr>
+<td class="line" id="L353">353</td>
+<td class="hits"></td>
+<td class="source"><code>                                               ?cmd_timeout),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L354">354</td>
+<td class="hits">28</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, once}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L355">355</td>
+<td class="hits">28</td>
+<td class="source"><code>    State1 = update_state(Res, State),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L356">356</td>
+<td class="hits">28</td>
+<td class="source"><code>    {reply, ok, State1#state{transaction_levels = [{FromPid, MRef} | L]}};</code></td>
+</tr>
+<tr>
+<td class="line" id="L357">357</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call(rollback, {FromPid, _},</code></td>
+</tr>
+<tr>
+<td class="line" id="L358">358</td>
+<td class="hits"></td>
+<td class="source"><code>            State = #state{socket = Socket, sockmod = SockMod, status = Status,</code></td>
+</tr>
+<tr>
+<td class="line" id="L359">359</td>
+<td class="hits"></td>
+<td class="source"><code>                           transaction_levels = [{FromPid, MRef} | L]})</code></td>
+</tr>
+<tr>
+<td class="line" id="L360">360</td>
+<td class="hits"></td>
+<td class="source"><code>  when Status band ?SERVER_STATUS_IN_TRANS /= 0 -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L361">361</td>
+<td class="hits">6</td>
+<td class="source"><code>    erlang:demonitor(MRef),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L362">362</td>
+<td class="hits">6</td>
+<td class="source"><code>    Query = case L of</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L363">363</td>
+<td class="hits">5</td>
+<td class="source"><code>        [] -&gt; &lt;&lt;"ROLLBACK"&gt;&gt;;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L364">364</td>
+<td class="hits">1</td>
+<td class="source"><code>        _  -&gt; &lt;&lt;"ROLLBACK TO s", (integer_to_binary(length(L)))/binary&gt;&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L365">365</td>
+<td class="hits"></td>
+<td class="source"><code>    end,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L366">366</td>
+<td class="hits">6</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, false}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L367">367</td>
+<td class="hits">6</td>
+<td class="source"><code>    {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,</code></td>
+</tr>
+<tr>
+<td class="line" id="L368">368</td>
+<td class="hits"></td>
+<td class="source"><code>                                               ?cmd_timeout),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L369">369</td>
+<td class="hits">6</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, once}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L370">370</td>
+<td class="hits">6</td>
+<td class="source"><code>    State1 = update_state(Res, State),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L371">371</td>
+<td class="hits">6</td>
+<td class="source"><code>    {reply, ok, State1#state{transaction_levels = L}};</code></td>
+</tr>
+<tr>
+<td class="line" id="L372">372</td>
+<td class="hits"></td>
+<td class="source"><code>handle_call(commit, {FromPid, _},</code></td>
+</tr>
+<tr>
+<td class="line" id="L373">373</td>
+<td class="hits"></td>
+<td class="source"><code>            State = #state{socket = Socket, sockmod = SockMod, status = Status,</code></td>
+</tr>
+<tr>
+<td class="line" id="L374">374</td>
+<td class="hits"></td>
+<td class="source"><code>                           transaction_levels = [{FromPid, MRef} | L]})</code></td>
+</tr>
+<tr>
+<td class="line" id="L375">375</td>
+<td class="hits"></td>
+<td class="source"><code>  when Status band ?SERVER_STATUS_IN_TRANS /= 0 -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L376">376</td>
+<td class="hits">16</td>
+<td class="source"><code>    erlang:demonitor(MRef),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L377">377</td>
+<td class="hits">16</td>
+<td class="source"><code>    Query = case L of</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L378">378</td>
+<td class="hits">10</td>
+<td class="source"><code>        [] -&gt; &lt;&lt;"COMMIT"&gt;&gt;;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L379">379</td>
+<td class="hits">6</td>
+<td class="source"><code>        _  -&gt; &lt;&lt;"RELEASE SAVEPOINT s", (integer_to_binary(length(L)))/binary&gt;&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L380">380</td>
+<td class="hits"></td>
+<td class="source"><code>    end,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L381">381</td>
+<td class="hits">16</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, false}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L382">382</td>
+<td class="hits">16</td>
+<td class="source"><code>    {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,</code></td>
+</tr>
+<tr>
+<td class="line" id="L383">383</td>
+<td class="hits"></td>
+<td class="source"><code>                                               ?cmd_timeout),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L384">384</td>
+<td class="hits">16</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, once}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L385">385</td>
+<td class="hits">16</td>
+<td class="source"><code>    State1 = update_state(Res, State),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L386">386</td>
+<td class="hits">16</td>
+<td class="source"><code>    {reply, ok, State1#state{transaction_levels = L}}.</code></td>
+</tr>
+<tr>
+<td class="line" id="L387">387</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L388">388</td>
+<td class="hits"></td>
+<td class="source"><code>%% @private</code></td>
+</tr>
+<tr>
+<td class="line" id="L389">389</td>
+<td class="hits"></td>
+<td class="source"><code>handle_cast(_Msg, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L390">390</td>
+<td class="hits">1</td>
+<td class="source"><code>    {noreply, State}.</code></td>
+</tr>
+<tr>
+<td class="line" id="L391">391</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L392">392</td>
+<td class="hits"></td>
+<td class="source"><code>%% @private</code></td>
+</tr>
+<tr>
+<td class="line" id="L393">393</td>
+<td class="hits"></td>
+<td class="source"><code>handle_info(query_cache, #state{query_cache = Cache,</code></td>
+</tr>
+<tr>
+<td class="line" id="L394">394</td>
+<td class="hits"></td>
+<td class="source"><code>                                query_cache_time = CacheTime} = State) -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L395">395</td>
+<td class="hits"></td>
+<td class="source"><code>    %% Evict expired queries/statements in the cache used by query/3.</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L396">396</td>
+<td class="hits">1</td>
+<td class="source"><code>    {Evicted, Cache1} = mysql_cache:evict_older_than(Cache, CacheTime),</code></td>
+</tr>
+<tr>
+<td class="line" id="L397">397</td>
+<td class="hits"></td>
+<td class="source"><code>    %% Unprepare the evicted statements</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L398">398</td>
+<td class="hits">1</td>
+<td class="source"><code>    #state{socket = Socket, sockmod = SockMod} = State,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L399">399</td>
+<td class="hits">1</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, false}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L400">400</td>
+<td class="hits">1</td>
+<td class="source"><code>    lists:foreach(fun ({_Query, Stmt}) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L401">401</td>
+<td class="hits">1</td>
+<td class="source"><code>                      mysql_protocol:unprepare(Stmt, SockMod, Socket)</code></td>
+</tr>
+<tr>
+<td class="line" id="L402">402</td>
+<td class="hits"></td>
+<td class="source"><code>                  end,</code></td>
+</tr>
+<tr>
+<td class="line" id="L403">403</td>
+<td class="hits"></td>
+<td class="source"><code>                  Evicted),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L404">404</td>
+<td class="hits">1</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, once}]),</code></td>
+</tr>
+<tr>
+<td class="line" id="L405">405</td>
+<td class="hits"></td>
+<td class="source"><code>    %% If nonempty, schedule eviction again.</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L406">406</td>
+<td class="hits">1</td>
+<td class="source"><code>    mysql_cache:size(Cache1) &gt; 0 andalso</code></td>
+</tr>
+<tr class="miss">
+<td class="line" id="L407">407</td>
+<td class="hits">0</td>
+<td class="source"><code>        erlang:send_after(CacheTime, self(), query_cache),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L408">408</td>
+<td class="hits">1</td>
+<td class="source"><code>    {noreply, State#state{query_cache = Cache1}};</code></td>
+</tr>
+<tr>
+<td class="line" id="L409">409</td>
+<td class="hits"></td>
+<td class="source"><code>handle_info({'DOWN', _MRef, _, Pid, _Info}, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L410">410</td>
+<td class="hits">1</td>
+<td class="source"><code>    stop_server({application_process_died, Pid}, State);</code></td>
+</tr>
+<tr>
+<td class="line" id="L411">411</td>
+<td class="hits"></td>
+<td class="source"><code>handle_info(ping, #state{socket = Socket, sockmod = SockMod} = State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L412">412</td>
+<td class="hits">4</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, false}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L413">413</td>
+<td class="hits">4</td>
+<td class="source"><code>    Ok = mysql_protocol:ping(SockMod, Socket),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L414">414</td>
+<td class="hits">3</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, once}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L415">415</td>
+<td class="hits">3</td>
+<td class="source"><code>    {noreply, update_state(Ok, State)};</code></td>
+</tr>
+<tr>
+<td class="line" id="L416">416</td>
+<td class="hits"></td>
+<td class="source"><code>handle_info({tcp_closed, _Socket}, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L417">417</td>
+<td class="hits">1</td>
+<td class="source"><code>    stop_server(tcp_closed, State);</code></td>
+</tr>
+<tr>
+<td class="line" id="L418">418</td>
+<td class="hits"></td>
+<td class="source"><code>handle_info({tcp_error, _Socket, Reason}, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L419">419</td>
+<td class="hits">1</td>
+<td class="source"><code>    stop_server({tcp_error, Reason}, State);</code></td>
+</tr>
+<tr>
+<td class="line" id="L420">420</td>
+<td class="hits"></td>
+<td class="source"><code>handle_info(_Info, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L421">421</td>
+<td class="hits">2</td>
+<td class="source"><code>    {noreply, State}.</code></td>
+</tr>
+<tr>
+<td class="line" id="L422">422</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L423">423</td>
+<td class="hits"></td>
+<td class="source"><code>%% @private</code></td>
+</tr>
+<tr>
+<td class="line" id="L424">424</td>
+<td class="hits"></td>
+<td class="source"><code>terminate(Reason, #state{socket = Socket, sockmod = SockMod})</code></td>
+</tr>
+<tr>
+<td class="line" id="L425">425</td>
+<td class="hits"></td>
+<td class="source"><code>  when Reason == normal; Reason == shutdown -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L426">426</td>
+<td class="hits"></td>
+<td class="source"><code>      %% Send the goodbye message for politeness.</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L427">427</td>
+<td class="hits">24</td>
+<td class="source"><code>      setopts(SockMod, Socket, [{active, false}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L428">428</td>
+<td class="hits">24</td>
+<td class="source"><code>      mysql_protocol:quit(SockMod, Socket);</code></td>
+</tr>
+<tr>
+<td class="line" id="L429">429</td>
+<td class="hits"></td>
+<td class="source"><code>terminate(_Reason, _State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L430">430</td>
+<td class="hits">8</td>
+<td class="source"><code>    ok.</code></td>
+</tr>
+<tr>
+<td class="line" id="L431">431</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L432">432</td>
+<td class="hits"></td>
+<td class="source"><code>%% @private</code></td>
+</tr>
+<tr>
+<td class="line" id="L433">433</td>
+<td class="hits"></td>
+<td class="source"><code>code_change(_OldVsn, State = #state{}, _Extra) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L434">434</td>
+<td class="hits">1</td>
+<td class="source"><code>    {ok, State};</code></td>
+</tr>
+<tr>
+<td class="line" id="L435">435</td>
+<td class="hits"></td>
+<td class="source"><code>code_change(_OldVsn, _State, _Extra) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L436">436</td>
+<td class="hits">1</td>
+<td class="source"><code>    {error, incompatible_state}.</code></td>
+</tr>
+<tr>
+<td class="line" id="L437">437</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L438">438</td>
+<td class="hits"></td>
+<td class="source"><code>%% --- Helpers ---</code></td>
+</tr>
+<tr>
+<td class="line" id="L439">439</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L440">440</td>
+<td class="hits"></td>
+<td class="source"><code>%% @doc Executes a prepared statement and returns {reply, Reply, NextState}.</code></td>
+</tr>
+<tr>
+<td class="line" id="L441">441</td>
+<td class="hits"></td>
+<td class="source"><code>execute_stmt(Stmt, Args, FilterMap, Timeout,</code></td>
+</tr>
+<tr>
+<td class="line" id="L442">442</td>
+<td class="hits"></td>
+<td class="source"><code>             State = #state{socket = Socket, sockmod = SockMod}) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L443">443</td>
+<td class="hits">197</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, false}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L444">444</td>
+<td class="hits">197</td>
+<td class="source"><code>    {ok, Recs} = case mysql_protocol:execute(Stmt, Args, SockMod, Socket,</code></td>
+</tr>
+<tr>
+<td class="line" id="L445">445</td>
+<td class="hits"></td>
+<td class="source"><code>                                             FilterMap, Timeout) of</code></td>
+</tr>
+<tr>
+<td class="line" id="L446">446</td>
+<td class="hits"></td>
+<td class="source"><code>        {error, timeout} when State#state.server_version &gt;= [5, 0, 0] -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L447">447</td>
+<td class="hits">2</td>
+<td class="source"><code>            kill_query(State),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L448">448</td>
+<td class="hits">2</td>
+<td class="source"><code>            mysql_protocol:fetch_execute_response(SockMod, Socket,</code></td>
+</tr>
+<tr>
+<td class="line" id="L449">449</td>
+<td class="hits"></td>
+<td class="source"><code>                                                  FilterMap, ?cmd_timeout);</code></td>
+</tr>
+<tr>
+<td class="line" id="L450">450</td>
+<td class="hits"></td>
+<td class="source"><code>        {error, timeout} -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L451">451</td>
+<td class="hits"></td>
+<td class="source"><code>            %% For MySQL 4.x.x there is no way to recover from timeout except</code></td>
+</tr>
+<tr>
+<td class="line" id="L452">452</td>
+<td class="hits"></td>
+<td class="source"><code>            %% killing the connection itself.</code></td>
+</tr>
+<tr class="miss">
+<td class="line" id="L453">453</td>
+<td class="hits">0</td>
+<td class="source"><code>            exit(timeout);</code></td>
+</tr>
+<tr>
+<td class="line" id="L454">454</td>
+<td class="hits"></td>
+<td class="source"><code>        QueryResult -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L455">455</td>
+<td class="hits">195</td>
+<td class="source"><code>            QueryResult</code></td>
+</tr>
+<tr>
+<td class="line" id="L456">456</td>
+<td class="hits"></td>
+<td class="source"><code>    end,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L457">457</td>
+<td class="hits">197</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, once}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L458">458</td>
+<td class="hits">197</td>
+<td class="source"><code>    State1 = lists:foldl(fun update_state/2, State, Recs),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L459">459</td>
+<td class="hits">197</td>
+<td class="source"><code>    State1#state.warning_count &gt; 0 andalso State1#state.log_warnings</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L460">460</td>
+<td class="hits">2</td>
+<td class="source"><code>        andalso log_warnings(State1, Stmt#prepared.orig_query),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L461">461</td>
+<td class="hits">197</td>
+<td class="source"><code>    {Reply, State2} = handle_query_call_result(Recs, Stmt#prepared.orig_query, State1, []),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L462">462</td>
+<td class="hits">197</td>
+<td class="source"><code>    {reply, Reply, State2}.</code></td>
+</tr>
+<tr>
+<td class="line" id="L463">463</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L464">464</td>
+<td class="hits"></td>
+<td class="source"><code>%% @doc Produces a tuple to return as an error reason.</code></td>
+</tr>
+<tr>
+<td class="line" id="L465">465</td>
+<td class="hits"></td>
+<td class="source"><code>-spec error_to_reason(#error{}) -&gt; mysql:server_reason().</code></td>
+</tr>
+<tr>
+<td class="line" id="L466">466</td>
+<td class="hits"></td>
+<td class="source"><code>error_to_reason(#error{code = Code, state = State, msg = Msg}) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L467">467</td>
+<td class="hits">15</td>
+<td class="source"><code>    {Code, State, Msg}.</code></td>
+</tr>
+<tr>
+<td class="line" id="L468">468</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L469">469</td>
+<td class="hits"></td>
+<td class="source"><code>%% @doc Updates a state with information from a response. Also re-schedules</code></td>
+</tr>
+<tr>
+<td class="line" id="L470">470</td>
+<td class="hits"></td>
+<td class="source"><code>%% ping.</code></td>
+</tr>
+<tr>
+<td class="line" id="L471">471</td>
+<td class="hits"></td>
+<td class="source"><code>-spec update_state(#ok{} | #eof{} | any(), #state{}) -&gt; #state{}.</code></td>
+</tr>
+<tr>
+<td class="line" id="L472">472</td>
+<td class="hits"></td>
+<td class="source"><code>update_state(Rec, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L473">473</td>
+<td class="hits">807</td>
+<td class="source"><code>    State1 = case Rec of</code></td>
+</tr>
+<tr>
+<td class="line" id="L474">474</td>
+<td class="hits"></td>
+<td class="source"><code>        #ok{status = S, affected_rows = R, insert_id = Id, warning_count = W} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L475">475</td>
+<td class="hits">422</td>
+<td class="source"><code>            State#state{status = S, affected_rows = R, insert_id = Id,</code></td>
+</tr>
+<tr>
+<td class="line" id="L476">476</td>
+<td class="hits"></td>
+<td class="source"><code>                        warning_count = W};</code></td>
+</tr>
+<tr>
+<td class="line" id="L477">477</td>
+<td class="hits"></td>
+<td class="source"><code>        #resultset{status = S, warning_count = W} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L478">478</td>
+<td class="hits">271</td>
+<td class="source"><code>            State#state{status = S, warning_count = W};</code></td>
+</tr>
+<tr>
+<td class="line" id="L479">479</td>
+<td class="hits"></td>
+<td class="source"><code>        #prepared{warning_count = W} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L480">480</td>
+<td class="hits">101</td>
+<td class="source"><code>            State#state{warning_count = W};</code></td>
+</tr>
+<tr>
+<td class="line" id="L481">481</td>
+<td class="hits"></td>
+<td class="source"><code>        _Other -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L482">482</td>
+<td class="hits"></td>
+<td class="source"><code>            %% This includes errors.</code></td>
+</tr>
+<tr>
+<td class="line" id="L483">483</td>
+<td class="hits"></td>
+<td class="source"><code>            %% Reset some things. (Note: We don't reset status and insert_id.)</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L484">484</td>
+<td class="hits">13</td>
+<td class="source"><code>            State#state{warning_count = 0, affected_rows = 0}</code></td>
+</tr>
+<tr>
+<td class="line" id="L485">485</td>
+<td class="hits"></td>
+<td class="source"><code>    end,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L486">486</td>
+<td class="hits">807</td>
+<td class="source"><code>    schedule_ping(State1).</code></td>
+</tr>
+<tr>
+<td class="line" id="L487">487</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L488">488</td>
+<td class="hits"></td>
+<td class="source"><code>%% @doc executes an unparameterized query and returns {Reply, NewState}.</code></td>
+</tr>
+<tr>
+<td class="line" id="L489">489</td>
+<td class="hits"></td>
+<td class="source"><code>do_query(Query, FilterMap, default_timeout,</code></td>
+</tr>
+<tr>
+<td class="line" id="L490">490</td>
+<td class="hits"></td>
+<td class="source"><code>            #state{query_timeout = DefaultTimeout} = State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L491">491</td>
+<td class="hits">432</td>
+<td class="source"><code>    do_query(Query, FilterMap, DefaultTimeout, State);</code></td>
+</tr>
+<tr>
+<td class="line" id="L492">492</td>
+<td class="hits"></td>
+<td class="source"><code>do_query(Query, FilterMap, Timeout,</code></td>
+</tr>
+<tr>
+<td class="line" id="L493">493</td>
+<td class="hits"></td>
+<td class="source"><code>            #state{sockmod = SockMod, socket = Socket} = State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L494">494</td>
+<td class="hits">434</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, false}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L495">495</td>
+<td class="hits">434</td>
+<td class="source"><code>    Result = mysql_protocol:query(Query, SockMod, Socket, FilterMap, Timeout),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L496">496</td>
+<td class="hits">434</td>
+<td class="source"><code>    {ok, Recs} = case Result of</code></td>
+</tr>
+<tr>
+<td class="line" id="L497">497</td>
+<td class="hits"></td>
+<td class="source"><code>        {error, timeout} when State#state.server_version &gt;= [5, 0, 0] -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L498">498</td>
+<td class="hits">1</td>
+<td class="source"><code>            kill_query(State),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L499">499</td>
+<td class="hits">1</td>
+<td class="source"><code>            mysql_protocol:fetch_query_response(SockMod, Socket, FilterMap,</code></td>
+</tr>
+<tr>
+<td class="line" id="L500">500</td>
+<td class="hits"></td>
+<td class="source"><code>                                                ?cmd_timeout);</code></td>
+</tr>
+<tr>
+<td class="line" id="L501">501</td>
+<td class="hits"></td>
+<td class="source"><code>        {error, timeout} -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L502">502</td>
+<td class="hits"></td>
+<td class="source"><code>            %% For MySQL 4.x.x there is no way to recover from timeout except</code></td>
+</tr>
+<tr>
+<td class="line" id="L503">503</td>
+<td class="hits"></td>
+<td class="source"><code>            %% killing the connection itself.</code></td>
+</tr>
+<tr class="miss">
+<td class="line" id="L504">504</td>
+<td class="hits">0</td>
+<td class="source"><code>            exit(timeout);</code></td>
+</tr>
+<tr>
+<td class="line" id="L505">505</td>
+<td class="hits"></td>
+<td class="source"><code>        QueryResult -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L506">506</td>
+<td class="hits">433</td>
+<td class="source"><code>            QueryResult</code></td>
+</tr>
+<tr>
+<td class="line" id="L507">507</td>
+<td class="hits"></td>
+<td class="source"><code>    end,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L508">508</td>
+<td class="hits">434</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, once}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L509">509</td>
+<td class="hits">434</td>
+<td class="source"><code>    State1 = lists:foldl(fun update_state/2, State, Recs),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L510">510</td>
+<td class="hits">434</td>
+<td class="source"><code>    State1#state.warning_count &gt; 0 andalso State1#state.log_warnings</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L511">511</td>
+<td class="hits">1</td>
+<td class="source"><code>        andalso log_warnings(State1, Query),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L512">512</td>
+<td class="hits">434</td>
+<td class="source"><code>    handle_query_call_result(Recs, Query, State1, []).</code></td>
+</tr>
+<tr>
+<td class="line" id="L513">513</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L514">514</td>
+<td class="hits"></td>
+<td class="source"><code>%% @doc Prepares a named query and returns {{ok, Name}, NewState} or</code></td>
+</tr>
+<tr>
+<td class="line" id="L515">515</td>
+<td class="hits"></td>
+<td class="source"><code>%% {{error, Reason}, NewState}.</code></td>
+</tr>
+<tr>
+<td class="line" id="L516">516</td>
+<td class="hits"></td>
+<td class="source"><code>do_named_prepare(Name, Query, State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L517">517</td>
+<td class="hits">12</td>
+<td class="source"><code>    #state{socket = Socket, sockmod = SockMod} = State,</code></td>
+</tr>
+<tr>
+<td class="line" id="L518">518</td>
+<td class="hits"></td>
+<td class="source"><code>    %% First unprepare if there is an old statement with this name.</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L519">519</td>
+<td class="hits">12</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, false}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L520">520</td>
+<td class="hits">12</td>
+<td class="source"><code>    State1 = case dict:find(Name, State#state.stmts) of</code></td>
+</tr>
+<tr>
+<td class="line" id="L521">521</td>
+<td class="hits"></td>
+<td class="source"><code>        {ok, OldStmt} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L522">522</td>
+<td class="hits">1</td>
+<td class="source"><code>            mysql_protocol:unprepare(OldStmt, SockMod, Socket),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L523">523</td>
+<td class="hits">1</td>
+<td class="source"><code>            State#state{stmts = dict:erase(Name, State#state.stmts)};</code></td>
+</tr>
+<tr>
+<td class="line" id="L524">524</td>
+<td class="hits"></td>
+<td class="source"><code>        error -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L525">525</td>
+<td class="hits">11</td>
+<td class="source"><code>            State</code></td>
+</tr>
+<tr>
+<td class="line" id="L526">526</td>
+<td class="hits"></td>
+<td class="source"><code>    end,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L527">527</td>
+<td class="hits">12</td>
+<td class="source"><code>    Rec = mysql_protocol:prepare(Query, SockMod, Socket),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L528">528</td>
+<td class="hits">12</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, once}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L529">529</td>
+<td class="hits">12</td>
+<td class="source"><code>    State2 = update_state(Rec, State1),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L530">530</td>
+<td class="hits">12</td>
+<td class="source"><code>    case Rec of</code></td>
+</tr>
+<tr>
+<td class="line" id="L531">531</td>
+<td class="hits"></td>
+<td class="source"><code>        #error{} = E -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L532">532</td>
+<td class="hits">3</td>
+<td class="source"><code>            {{error, error_to_reason(E)}, State2};</code></td>
+</tr>
+<tr>
+<td class="line" id="L533">533</td>
+<td class="hits"></td>
+<td class="source"><code>        #prepared{} = Stmt -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L534">534</td>
+<td class="hits">9</td>
+<td class="source"><code>            Stmts1 = dict:store(Name, Stmt, State2#state.stmts),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L535">535</td>
+<td class="hits">9</td>
+<td class="source"><code>            State3 = State2#state{stmts = Stmts1},</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L536">536</td>
+<td class="hits">9</td>
+<td class="source"><code>            {{ok, Name}, State3}</code></td>
+</tr>
+<tr>
+<td class="line" id="L537">537</td>
+<td class="hits"></td>
+<td class="source"><code>    end.</code></td>
+</tr>
+<tr>
+<td class="line" id="L538">538</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L539">539</td>
+<td class="hits"></td>
+<td class="source"><code>%% @doc Transforms result sets into a structure appropriate to be returned</code></td>
+</tr>
+<tr>
+<td class="line" id="L540">540</td>
+<td class="hits"></td>
+<td class="source"><code>%% to the client.</code></td>
+</tr>
+<tr>
+<td class="line" id="L541">541</td>
+<td class="hits"></td>
+<td class="source"><code>handle_query_call_result([], _Query, State, []) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L542">542</td>
+<td class="hits">355</td>
+<td class="source"><code>    {ok, State};</code></td>
+</tr>
+<tr>
+<td class="line" id="L543">543</td>
+<td class="hits"></td>
+<td class="source"><code>handle_query_call_result([], _Query, State, [{ColumnNames, Rows}]) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L544">544</td>
+<td class="hits">263</td>
+<td class="source"><code>    {{ok, ColumnNames, Rows}, State};</code></td>
+</tr>
+<tr>
+<td class="line" id="L545">545</td>
+<td class="hits"></td>
+<td class="source"><code>handle_query_call_result([], _Query, State, ResultSetsAcc) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L546">546</td>
+<td class="hits">4</td>
+<td class="source"><code>    {{ok, lists:reverse(ResultSetsAcc)}, State};</code></td>
+</tr>
+<tr>
+<td class="line" id="L547">547</td>
+<td class="hits"></td>
+<td class="source"><code>handle_query_call_result([Rec|Recs], Query, State = #state{transaction_levels = L}, ResultSetsAcc) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L548">548</td>
+<td class="hits">639</td>
+<td class="source"><code>    case Rec of</code></td>
+</tr>
+<tr>
+<td class="line" id="L549">549</td>
+<td class="hits"></td>
+<td class="source"><code>        #ok{status = Status} when Status band ?SERVER_STATUS_IN_TRANS == 0,</code></td>
+</tr>
+<tr>
+<td class="line" id="L550">550</td>
+<td class="hits"></td>
+<td class="source"><code>                                  L /= [] -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L551">551</td>
+<td class="hits"></td>
+<td class="source"><code>            %% DDL statements (e.g. CREATE TABLE, ALTER TABLE, etc.) result in</code></td>
+</tr>
+<tr>
+<td class="line" id="L552">552</td>
+<td class="hits"></td>
+<td class="source"><code>            %% an implicit commit.</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L553">553</td>
+<td class="hits">1</td>
+<td class="source"><code>            Length = length(L),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L554">554</td>
+<td class="hits">1</td>
+<td class="source"><code>            Reply = {implicit_commit, Length, Query},</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L555">555</td>
+<td class="hits">1</td>
+<td class="source"><code>            [] = demonitor_processes(L, Length),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L556">556</td>
+<td class="hits">1</td>
+<td class="source"><code>            {Reply, State#state{transaction_levels = []}};</code></td>
+</tr>
+<tr>
+<td class="line" id="L557">557</td>
+<td class="hits"></td>
+<td class="source"><code>        #ok{} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L558">558</td>
+<td class="hits">359</td>
+<td class="source"><code>            handle_query_call_result(Recs, Query, State, ResultSetsAcc);</code></td>
+</tr>
+<tr>
+<td class="line" id="L559">559</td>
+<td class="hits"></td>
+<td class="source"><code>        #resultset{cols = ColDefs, rows = Rows} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L560">560</td>
+<td class="hits">271</td>
+<td class="source"><code>            Names = [Def#col.name || Def &lt;- ColDefs],</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L561">561</td>
+<td class="hits">271</td>
+<td class="source"><code>            ResultSetsAcc1 = [{Names, Rows} | ResultSetsAcc],</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L562">562</td>
+<td class="hits">271</td>
+<td class="source"><code>            handle_query_call_result(Recs, Query, State, ResultSetsAcc1);</code></td>
+</tr>
+<tr>
+<td class="line" id="L563">563</td>
+<td class="hits"></td>
+<td class="source"><code>        #error{code = ?ERROR_DEADLOCK} when L /= [] -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L564">564</td>
+<td class="hits"></td>
+<td class="source"><code>            %% These errors result in an implicit rollback.</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L565">565</td>
+<td class="hits">3</td>
+<td class="source"><code>            Reply = {implicit_rollback, length(L), error_to_reason(Rec)},</code></td>
+</tr>
+<tr>
+<td class="line" id="L566">566</td>
+<td class="hits"></td>
+<td class="source"><code>            %% Everything in the transaction is rolled back, except the BEGIN</code></td>
+</tr>
+<tr>
+<td class="line" id="L567">567</td>
+<td class="hits"></td>
+<td class="source"><code>            %% statement itself. Thus, we are in transaction level 1.</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L568">568</td>
+<td class="hits">3</td>
+<td class="source"><code>            NewMonitors = demonitor_processes(L, length(L) - 1),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L569">569</td>
+<td class="hits">3</td>
+<td class="source"><code>            {Reply, State#state{transaction_levels = NewMonitors}};</code></td>
+</tr>
+<tr>
+<td class="line" id="L570">570</td>
+<td class="hits"></td>
+<td class="source"><code>        #error{} -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L571">571</td>
+<td class="hits">5</td>
+<td class="source"><code>            {{error, error_to_reason(Rec)}, State}</code></td>
+</tr>
+<tr>
+<td class="line" id="L572">572</td>
+<td class="hits"></td>
+<td class="source"><code>    end.</code></td>
+</tr>
+<tr>
+<td class="line" id="L573">573</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L574">574</td>
+<td class="hits"></td>
+<td class="source"><code>%% @doc Schedules (or re-schedules) ping.</code></td>
+</tr>
+<tr>
+<td class="line" id="L575">575</td>
+<td class="hits"></td>
+<td class="source"><code>schedule_ping(State = #state{ping_timeout = infinity}) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L576">576</td>
+<td class="hits">219</td>
+<td class="source"><code>    State;</code></td>
+</tr>
+<tr>
+<td class="line" id="L577">577</td>
+<td class="hits"></td>
+<td class="source"><code>schedule_ping(State = #state{ping_timeout = Timeout, ping_ref = Ref}) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L578">578</td>
+<td class="hits">708</td>
+<td class="source"><code>    is_reference(Ref) andalso erlang:cancel_timer(Ref),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L579">579</td>
+<td class="hits">708</td>
+<td class="source"><code>    State#state{ping_ref = erlang:send_after(Timeout, self(), ping)}.</code></td>
+</tr>
+<tr>
+<td class="line" id="L580">580</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L581">581</td>
+<td class="hits"></td>
+<td class="source"><code>%% @doc Fetches and logs warnings. Query is the query that gave the warnings.</code></td>
+</tr>
+<tr>
+<td class="line" id="L582">582</td>
+<td class="hits"></td>
+<td class="source"><code>log_warnings(#state{socket = Socket, sockmod = SockMod}, Query) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L583">583</td>
+<td class="hits">3</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, false}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L584">584</td>
+<td class="hits">3</td>
+<td class="source"><code>    {ok, [#resultset{rows = Rows}]} = mysql_protocol:query(&lt;&lt;"SHOW WARNINGS"&gt;&gt;,</code></td>
+</tr>
+<tr>
+<td class="line" id="L585">585</td>
+<td class="hits"></td>
+<td class="source"><code>                                                           SockMod, Socket,</code></td>
+</tr>
+<tr>
+<td class="line" id="L586">586</td>
+<td class="hits"></td>
+<td class="source"><code>                                                           ?cmd_timeout),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L587">587</td>
+<td class="hits">3</td>
+<td class="source"><code>    setopts(SockMod, Socket, [{active, once}]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L588">588</td>
+<td class="hits">3</td>
+<td class="source"><code>    Lines = [[Level, " ", integer_to_binary(Code), ": ", Message, "\n"]</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L589">589</td>
+<td class="hits">3</td>
+<td class="source"><code>             || [Level, Code, Message] &lt;- Rows],</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L590">590</td>
+<td class="hits">3</td>
+<td class="source"><code>    error_logger:warning_msg("~s in ~s~n", [Lines, Query]).</code></td>
+</tr>
+<tr>
+<td class="line" id="L591">591</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L592">592</td>
+<td class="hits"></td>
+<td class="source"><code>%% @doc Makes a separate connection and execute KILL QUERY. We do this to get</code></td>
+</tr>
+<tr>
+<td class="line" id="L593">593</td>
+<td class="hits"></td>
+<td class="source"><code>%% our main connection back to normal. KILL QUERY appeared in MySQL 5.0.0.</code></td>
+</tr>
+<tr>
+<td class="line" id="L594">594</td>
+<td class="hits"></td>
+<td class="source"><code>kill_query(#state{connection_id = ConnId, host = Host, port = Port,</code></td>
+</tr>
+<tr>
+<td class="line" id="L595">595</td>
+<td class="hits"></td>
+<td class="source"><code>                  user = User, password = Password, ssl_opts = SSLOpts,</code></td>
+</tr>
+<tr>
+<td class="line" id="L596">596</td>
+<td class="hits"></td>
+<td class="source"><code>                  cap_found_rows = SetFoundRows}) -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L597">597</td>
+<td class="hits"></td>
+<td class="source"><code>    %% Connect socket</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L598">598</td>
+<td class="hits">3</td>
+<td class="source"><code>    SockOpts = [{active, false}, binary, {packet, raw}],</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L599">599</td>
+<td class="hits">3</td>
+<td class="source"><code>    {ok, Socket0} = gen_tcp:connect(Host, Port, SockOpts),</code></td>
+</tr>
+<tr>
+<td class="line" id="L600">600</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L601">601</td>
+<td class="hits"></td>
+<td class="source"><code>    %% Exchange handshake communication.</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L602">602</td>
+<td class="hits">3</td>
+<td class="source"><code>    Result = mysql_protocol:handshake(User, Password, undefined, gen_tcp,</code></td>
+</tr>
+<tr>
+<td class="line" id="L603">603</td>
+<td class="hits"></td>
+<td class="source"><code>                                      SSLOpts, Socket0, SetFoundRows),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L604">604</td>
+<td class="hits">3</td>
+<td class="source"><code>    case Result of</code></td>
+</tr>
+<tr>
+<td class="line" id="L605">605</td>
+<td class="hits"></td>
+<td class="source"><code>        {ok, #handshake{}, SockMod, Socket} -&gt;</code></td>
+</tr>
+<tr>
+<td class="line" id="L606">606</td>
+<td class="hits"></td>
+<td class="source"><code>            %% Kill and disconnect</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L607">607</td>
+<td class="hits">3</td>
+<td class="source"><code>            IdBin = integer_to_binary(ConnId),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L608">608</td>
+<td class="hits">3</td>
+<td class="source"><code>            {ok, [#ok{}]} = mysql_protocol:query(&lt;&lt;"KILL QUERY ", IdBin/binary&gt;&gt;,</code></td>
+</tr>
+<tr>
+<td class="line" id="L609">609</td>
+<td class="hits"></td>
+<td class="source"><code>                                                 SockMod, Socket, ?cmd_timeout),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L610">610</td>
+<td class="hits">3</td>
+<td class="source"><code>            mysql_protocol:quit(SockMod, Socket);</code></td>
+</tr>
+<tr>
+<td class="line" id="L611">611</td>
+<td class="hits"></td>
+<td class="source"><code>        #error{} = E -&gt;</code></td>
+</tr>
+<tr class="miss">
+<td class="line" id="L612">612</td>
+<td class="hits">0</td>
+<td class="source"><code>            error_logger:error_msg("Failed to connect to kill query: ~p",</code></td>
+</tr>
+<tr>
+<td class="line" id="L613">613</td>
+<td class="hits"></td>
+<td class="source"><code>                                   [error_to_reason(E)])</code></td>
+</tr>
+<tr>
+<td class="line" id="L614">614</td>
+<td class="hits"></td>
+<td class="source"><code>    end.</code></td>
+</tr>
+<tr>
+<td class="line" id="L615">615</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L616">616</td>
+<td class="hits"></td>
+<td class="source"><code>stop_server(Reason,</code></td>
+</tr>
+<tr>
+<td class="line" id="L617">617</td>
+<td class="hits"></td>
+<td class="source"><code>            #state{socket = Socket, connection_id = ConnId} = State) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L618">618</td>
+<td class="hits">6</td>
+<td class="source"><code>  error_logger:error_msg("Connection Id ~p closing with reason: ~p~n",</code></td>
+</tr>
+<tr>
+<td class="line" id="L619">619</td>
+<td class="hits"></td>
+<td class="source"><code>                         [ConnId, Reason]),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L620">620</td>
+<td class="hits">6</td>
+<td class="source"><code>  ok = gen_tcp:close(Socket),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L621">621</td>
+<td class="hits">6</td>
+<td class="source"><code>  {stop, Reason, State#state{socket = undefined, connection_id = undefined}}.</code></td>
+</tr>
+<tr>
+<td class="line" id="L622">622</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L623">623</td>
+<td class="hits"></td>
+<td class="source"><code>setopts(gen_tcp, Socket, Opts) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L624">624</td>
+<td class="hits">1850</td>
+<td class="source"><code>    inet:setopts(Socket, Opts);</code></td>
+</tr>
+<tr>
+<td class="line" id="L625">625</td>
+<td class="hits"></td>
+<td class="source"><code>setopts(SockMod, Socket, Opts) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L626">626</td>
+<td class="hits">12</td>
+<td class="source"><code>    SockMod:setopts(Socket, Opts).</code></td>
+</tr>
+<tr>
+<td class="line" id="L627">627</td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L628">628</td>
+<td class="hits"></td>
+<td class="source"><code>demonitor_processes(List, 0) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L629">629</td>
+<td class="hits">4</td>
+<td class="source"><code>    List;</code></td>
+</tr>
+<tr>
+<td class="line" id="L630">630</td>
+<td class="hits"></td>
+<td class="source"><code>demonitor_processes([{_FromPid, MRef}|T], Count) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L631">631</td>
+<td class="hits">5</td>
+<td class="source"><code>    erlang:demonitor(MRef),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L632">632</td>
+<td class="hits">5</td>
+<td class="source"><code>    demonitor_processes(T, Count - 1).</code></td>
+</tr>
+</tbody>
+<thead>
+<tr>
+<th>Line</th>
+<th>Hits</th>
+<th>Source</th>
+</tr>
+</thead>
+</table>
 </body>
 </html>
