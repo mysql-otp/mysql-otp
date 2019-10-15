@@ -180,6 +180,25 @@ keep_alive_test() ->
      ?assertMatch({crash_report, _}, LoggedReport),
      ?assertExit(noproc, mysql:stop(Pid)).
 
+reset_connection_test() ->
+    %% Ignored test with MySQL earlier than 5.7
+    Options = [{user, ?user}, {password, ?password}, {keep_alive, true}],
+    {ok, Pid} = mysql:start_link(Options),
+    ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
+    ok = mysql:query(Pid, <<"USE otptest">>),
+    ok = mysql:query(Pid, <<"SET autocommit = 1">>),
+    ok = mysql:query(Pid, ?create_table_t),
+    ok = mysql:query(Pid, <<"INSERT INTO t (id, tx) VALUES (1, 'text 1')">>),
+    ?assertEqual(1, mysql:insert_id(Pid)),  %% auto_increment starts from 1
+    case mysql:reset_connection(Pid) of
+      ok ->
+        ?assertEqual(0, mysql:insert_id(Pid)); %% insertid reset to 0;
+      _Error ->
+        ?assertEqual(1, mysql:insert_id(Pid)) %% reset failed
+    end,
+    mysql:stop(Pid),
+    ok.
+
 unix_socket_test() ->
     try
         list_to_integer(erlang:system_info(otp_release))
@@ -212,7 +231,7 @@ unix_socket_test() ->
             error_logger:info_msg("Skipping unix socket tests. Current OTP "
                                   "release could not be determined.~n")
     end.
-    
+
 connect_queries_failure_test() ->
     process_flag(trap_exit, true),
     {error, Reason} = mysql:start_link([{user, ?user}, {password, ?password},

@@ -101,6 +101,7 @@
 -define(COM_STMT_RESET, 16#1a).
 -define(COM_SET_OPTION, 16#1b).
 -define(COM_STMT_FETCH, 16#1c).
+-define(COM_RESET_CONNECTION, 16#1f).
 
 %% --- Types ---
 

@@ -291,7 +291,7 @@ handle_call({change_user, Username, Password, Options}, From,
     Prepares = proplists:get_value(prepare, Options, []),
     setopts(SockMod, Socket, [{active, false}]),
     Result = mysql_protocol:change_user(SockMod, Socket, Username, Password,
-                                        AuthPluginData, Database, 
+                                        AuthPluginData, Database,
                                         ServerVersion),
     setopts(SockMod, Socket, [{active, once}]),
     State1 = update_state(Result, State),
@@ -312,6 +312,20 @@ handle_call({change_user, Username, Password, Options}, From,
             gen_server:reply(From, {error, error_to_reason(E)}),
             stop_server(change_user_failed, State2)
     end;
+handle_call(reset_connection, _From, #state{socket = Socket, sockmod = SockMod} = State) ->
+    setopts(SockMod, Socket, [{active, false}]),
+    Result = mysql_protocol:reset_connnection(SockMod, Socket),
+    setopts(SockMod, Socket, [{active, once}]),
+    State1 = update_state(Result, State),
+    Reply = case Result of
+        #ok{} -> ok;
+        #error{} = E ->
+            %% 'COM_RESET_CONNECTION' is added in MySQL 5.7 and MariaDB 10
+            %% "Unkown command" is returned when MySQL =< 5.6 or MariaDB =< 5.5
+            {error, error_to_reason(E)}
+    end,
+    {reply, Reply, State1};
+
 handle_call(warning_count, _From, State) ->
     {reply, State#state.warning_count, State};
 handle_call(insert_id, _From, State) ->
