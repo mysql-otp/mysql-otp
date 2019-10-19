@@ -124,19 +124,13 @@ server_disconnect_test() ->
         %% Make the server close the connection after 1 second of inactivity.
         ok = mysql:query(Pid, <<"SET SESSION wait_timeout = 1">>),
         receive
-            {'EXIT', Pid, tcp_closed} -> ok
+            {'EXIT', Pid, normal} -> ok
         after 2000 ->
             no_exit_message
         end
     end),
     process_flag(trap_exit, false),
-    %% Check that we got the expected errors in the error log.
-    [{error, Msg1}, {error, Msg2}, {error_report, CrashReport}] = LoggedErrors,
-    %% "Connection Id 24 closing with reason: tcp_closed"
-    ?assert(lists:prefix("Connection Id", Msg1)),
-    ExpectedPrefix = io_lib:format("** Generic server ~p terminating", [Pid]),
-    ?assert(lists:prefix(lists:flatten(ExpectedPrefix), Msg2)),
-    ?assertMatch({crash_report, _}, CrashReport).
+    ?assertExit(noproc, mysql:stop(Pid)).
 
 tcp_error_test() ->
     process_flag(trap_exit, true),
@@ -177,12 +171,7 @@ keep_alive_test() ->
          end
      end),
      process_flag(trap_exit, false),
-     %% Check that we got the expected crash report in the error log.
      ?assertMatch({'EXIT', Pid, _Reason}, ExitMessage),
-     [{error, LoggedMsg}, {error_report, LoggedReport}] = LoggedErrors,
-     ExpectedPrefix = io_lib:format("** Generic server ~p terminating", [Pid]),
-     ?assert(lists:prefix(lists:flatten(ExpectedPrefix), LoggedMsg)),
-     ?assertMatch({crash_report, _}, LoggedReport),
      ?assertExit(noproc, mysql:stop(Pid)).
 
 reset_connection_test() ->
