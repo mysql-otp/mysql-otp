@@ -414,7 +414,7 @@ handle_info(ping, #state{socket = Socket, sockmod = SockMod} = State) ->
     setopts(SockMod, Socket, [{active, once}]),
     {noreply, update_state(Ok, State)};
 handle_info({tcp_closed, _Socket}, State) ->
-    stop_server(tcp_closed, State);
+    {stop, normal, State#state{socket = undefined, connection_id = undefined}}; 
 handle_info({tcp_error, _Socket, Reason}, State) ->
     stop_server({tcp_error, Reason}, State);
 handle_info(_Info, State) ->
@@ -422,7 +422,7 @@ handle_info(_Info, State) ->
 
 %% @private
 terminate(Reason, #state{socket = Socket, sockmod = SockMod})
-  when Reason == normal; Reason == shutdown ->
+  when Socket =/= undefined andalso (Reason == normal orelse Reason == shutdown) ->
       %% Send the goodbye message for politeness.
       setopts(SockMod, Socket, [{active, false}]),
       mysql_protocol:quit(SockMod, Socket);
