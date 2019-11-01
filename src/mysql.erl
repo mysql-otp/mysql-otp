@@ -123,7 +123,15 @@
 %%       the default (typically 8K) per query.</dd>
 %%   <dt>`{ssl, Options}'</dt>
 %%   <dd>Additional options for `ssl:connect/3'.</dd>
+%%   <dt>`{reconnect_timeout, Seconds}'</dt>
+%%   <dd>The maximum number of seconds to reconnect mysql server. Process will
+%%       exit after `Seconds' seconds. And `infinity' means process will
+%%       try to keep reconnecting. If `reconnect_timeout' is not configured,
+%%       then reconnection is not available.</dd>
+%%   <dt>`{reconnect_interval, Milliseconds}'</dt>
+%%   <dd>The interval of milliseconds to reconnect mysql server.</dd>
 %% </dl>
+
 -spec start_link(Options) -> {ok, pid()} | ignore | {error, term()}
     when Options :: [Option],
          Option :: {name, ServerName} |
@@ -139,7 +147,9 @@
                    {found_rows, boolean()} |
                    {query_cache_time, non_neg_integer()} |
                    {tcp_options, [gen_tcp:connect_option()]} |
-                   {ssl, term()},
+                   {ssl, term()} |
+                   {reconnect_interval, Milliseconds :: timeout()} |
+                   {reconnect_timeout, Seconds :: non_neg_integer() | infinity},
          ServerName :: {local, Name :: atom()} |
                        {global, GlobalName :: term()} |
                        {via, Module :: atom(), ViaName :: term()},

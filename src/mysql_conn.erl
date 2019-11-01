@@ -40,6 +40,9 @@
 
 -define(cmd_timeout, 3000). %% Timeout used for various commands to the server
 
+-define(reconnect_interval, 100). %% Try to reconnect to server every 100 ms
+-define(reconnect_timeout,  10000). %% Do not reconnect after 10 s, infinity means reconnect for ever.
+
 %% Errors that cause "implicit rollback"
 -define(ERROR_DEADLOCK, 1213).
 
@@ -55,7 +58,10 @@
                 query_timeout, query_cache_time,
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
                 transaction_levels = [], ping_ref = undefined,
-                stmts = dict:new(), query_cache = empty, cap_found_rows = false}).
+                stmts = dict:new(), query_cache = empty, cap_found_rows = false,
+                queries, prepare,
+                database, socket_opts,
+                reconnect_pid, reconnect_interval, reconnect_timeout}).
 
 %% @private
 init(Opts) ->
@@ -84,6 +90,11 @@ init(Opts) ->
 
     Queries        = proplists:get_value(queries, Opts, []),
     Prepares       = proplists:get_value(prepare, Opts, []),
+
+    ReconnectTimeout  = proplists:get_value(reconnect_timeout, Opts, undefined),
+    ReconnectInterval = proplists:get_value(reconnect_interval,
+                                            Opts,
+                                            reconnect_interval(ReconnectTimeout)),
 
     PingTimeout = case KeepAlive of
         true         -> ?default_ping_timeout;
@@ -117,6 +128,7 @@ init(Opts) ->
                        status = Status,
                        auth_plugin_data = AuthPluginData} = Handshake,
             State = #state{server_version = Version, connection_id = ConnId,
+                           database = Database, queries = Queries, prepare = Prepares,
                            sockmod = SockMod,
                            socket = Socket,
                            ssl_opts = SSLOpts,
@@ -128,7 +140,10 @@ init(Opts) ->
                            ping_timeout = PingTimeout,
                            query_timeout = Timeout,
                            query_cache_time = QueryCacheTime,
-                           cap_found_rows = (SetFoundRows =:= true)},
+                           cap_found_rows = (SetFoundRows =:= true),
+                           socket_opts = SockOpts,
+                           reconnect_interval = ReconnectInterval,
+                           reconnect_timeout = seconds(ReconnectTimeout)},
             case execute_on_connect(Queries, Prepares, State) of
                 {ok, State1} ->
                     process_flag(trap_exit, true),
@@ -200,6 +215,10 @@ execute_on_connect([Query|Queries], Prepares, State) ->
 %%       able to handle this in the caller's process, we also return the
 %%       nesting level.</dd>
 %% </dl>
+handle_call(state, _From, #state{socket = undefined} = State) ->
+    {reply, State, State};
+handle_call(_, _From, #state{socket = undefined} = State) ->
+    {reply, {error, reconnecting}, State};
 handle_call({query, Query, FilterMap, Timeout}, _From, State) ->
     {Reply, State1} = do_query(Query, FilterMap, Timeout, State),
     {reply, Reply, State1};
@@ -386,6 +405,14 @@ handle_call(commit, {FromPid, _},
     {reply, ok, State1#state{transaction_levels = L}}.
 
 %% @private
+handle_cast({connection_ready, #state{host = Host,
+                                      port = Port}= State1}, _State) ->
+    error_logger:info_msg("mysql reconnected ~p:~p", [Host, Port]),
+    {noreply, schedule_ping(State1)};
+
+handle_cast(reconnect_timeout, State) ->
+    stop_server({error, reconnect_timeout}, State);
+
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -408,13 +435,17 @@ handle_info(query_cache, #state{query_cache = Cache,
     {noreply, State#state{query_cache = Cache1}};
 handle_info({'DOWN', _MRef, _, Pid, _Info}, State) ->
     stop_server({application_process_died, Pid}, State);
+handle_info(ping, #state{socket = undefined} = State) ->
+    %%tcp_closed and reconnecting
+    {noreply, State#state{ping_ref = undefined}};
 handle_info(ping, #state{socket = Socket, sockmod = SockMod} = State) ->
     setopts(SockMod, Socket, [{active, false}]),
     Ok = mysql_protocol:ping(SockMod, Socket),
     setopts(SockMod, Socket, [{active, once}]),
     {noreply, update_state(Ok, State)};
 handle_info({tcp_closed, _Socket}, State) ->
-    {stop, normal, State#state{socket = undefined, connection_id = undefined}}; 
+    is_reference(State#state.ping_ref) andalso erlang:cancel_timer(State#state.ping_ref),
+    try_reconnect(tcp_closed, State#state{ping_ref = undefined});
 handle_info({tcp_error, _Socket, Reason}, State) ->
     stop_server({tcp_error, Reason}, State);
 handle_info(_Info, State) ->
@@ -617,7 +648,7 @@ stop_server(Reason,
             #state{socket = Socket, connection_id = ConnId} = State) ->
   error_logger:error_msg("Connection Id ~p closing with reason: ~p~n",
                          [ConnId, Reason]),
-  ok = gen_tcp:close(Socket),
+  undefined =/= Socket andalso gen_tcp:close(Socket),
   {stop, Reason, State#state{socket = undefined, connection_id = undefined}}.
 
 setopts(gen_tcp, Socket, Opts) ->
@@ -630,3 +661,115 @@ demonitor_processes(List, 0) ->
 demonitor_processes([{_FromPid, MRef}|T], Count) ->
     erlang:demonitor(MRef),
     demonitor_processes(T, Count - 1).
+
+%% ---- Reconnect logic ----
+reconnect_interval(undefined) ->
+    undefined;
+reconnect_interval(_) ->
+    ?reconnect_interval.
+
+seconds(infinity) ->
+    infinity;
+seconds(Seconds) when is_integer(Seconds) ->
+    timer:seconds(Seconds);
+seconds(_) ->
+    undefined.
+
+try_reconnect(Reason, #state{reconnect_interval = undefined} = State) ->
+    %% If we aren't going to reconnect, then there is nothing else for
+    %% this process to do.
+    {stop, Reason, State#state{socket = undefined, connection_id = undefined}};
+try_reconnect(Reason, #state{connection_id = ConnId, host = Host, port = Port,
+                               reconnect_interval = ReconnectInterval,
+                               reconnect_timeout = ReconnectTimeout} = State) ->
+    error_logger:error_msg("mysql : connection_id <~p> disconnect, "
+                           "establishing to ~p:~p due to ~p",
+                           [ConnId, Host, Port, Reason]),
+    Self = self(),
+    Pid = spawn_link(fun() ->
+        reconnect_loop(ReconnectTimeout, ReconnectInterval, Self, State) end),
+
+    {noreply, State#state{socket = undefined,
+                          connection_id = undefined,
+                          reconnect_pid = Pid}}.
+
+%% @doc: Loop until a connection can be established, this includes
+%% successfully issuing the auth and select calls. When we have a
+%% connection, give the socket to the mysql client.
+reconnect_loop(Timeout, Interval, Client, State) when (Timeout > 0) orelse (infinity =:= Timeout) ->
+    NewTimeout = update_reconnect_timeout(Timeout, Interval),
+    case catch(connecting(State)) of
+        {ok, #state{socket = Socket} = State1} ->
+            gen_server:cast(Client, {connection_ready, State1}),
+            gen_tcp:controlling_process(Socket, Client),
+            get_all_messages(),
+            ok;
+        {error, _Reason} ->
+            timer:sleep(Interval),
+            reconnect_loop(NewTimeout, Interval, Client, State);
+        %% Something bad happened when connecting, like mysql might be
+        %% loading the dataset and we got something other than 'OK' in
+        %% auth
+        _ ->
+            timer:sleep(Interval),
+            reconnect_loop(NewTimeout, Interval, Client, State)
+    end;
+
+reconnect_loop(_Timeout, _Interval, Client, _State) ->
+    gen_server:cast(Client, reconnect_timeout).
+
+%% update reconnect timeout
+update_reconnect_timeout(infinity, _ReconnectInterval) ->
+    infinity;
+update_reconnect_timeout(ReconnectTimeout, ReconnectInterval) ->
+    ReconnectTimeout - ReconnectInterval.
+
+get_all_messages() ->
+    receive _ -> ok
+    after   0 -> ok
+    end.
+
+connecting(#state{ssl_opts = SSLOpts, cap_found_rows = SetFoundRows,
+                  host = Host, port = Port, user = User, password = Password,
+                  queries = Queries, prepare = Prepares,
+                  database = Database, socket_opts = SockOpts} = State) ->
+
+    {ok, Socket0} = gen_tcp:connect(Host, Port, SockOpts),
+
+    %% If buffer wasn't specifically defined make it at least as
+    %% large as recbuf, as suggested by the inet:setopts() docs.
+    case proplists:is_defined(buffer, SockOpts) of
+        true ->
+            ok;
+        false ->
+            {ok, [{buffer, Buffer}]} = inet:getopts(Socket0, [buffer]),
+            {ok, [{recbuf, Recbuf}]} = inet:getopts(Socket0, [recbuf]),
+            ok = inet:setopts(Socket0,[{buffer, max(Buffer, Recbuf)}])
+    end,
+    %% Exchange handshake communication.
+    Result = mysql_protocol:handshake(User, Password, Database, gen_tcp, SSLOpts,
+                                      Socket0, SetFoundRows),
+    case Result of
+        {ok, Handshake, SockMod, Socket} ->
+            setopts(SockMod, Socket, [{active, once}]),
+            #handshake{server_version = Version, connection_id = ConnId,
+                       status = Status,
+                       auth_plugin_data = AuthPluginData} = Handshake,
+            State1 = State#state{server_version = Version, connection_id = ConnId,
+                           sockmod = SockMod,
+                           socket = Socket,
+                           status = Status,
+                           auth_plugin_data = AuthPluginData,
+                           affected_rows = 0,
+                           warning_count = 0,
+                           insert_id = 0,
+                           reconnect_pid = undefined},
+            case execute_on_connect(Queries, Prepares, State1) of
+                {ok, State2} ->
+                    {ok, State2};
+                {error, Reason} ->
+                    {stop, Reason}
+            end;
+        #error{} = E ->
+            {stop, error_to_reason(E)}
+    end.
