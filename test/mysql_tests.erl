@@ -45,6 +45,46 @@
                           "  c CHAR(2)"
                           ") ENGINE=InnoDB">>).
 
+connect_synchronous_test() ->
+    {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
+                                  {connect_mode, synchronous}]),
+    ?assert(mysql:is_connected(Pid)),
+    mysql:stop(Pid),
+    ok.
+
+connect_asynchronous_successful_test() ->
+    {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
+                                  {connect_mode, asynchronous}]),
+    ?assert(mysql:is_connected(Pid)),
+    mysql:stop(Pid),
+    ok.
+
+connect_asynchronous_failing_test() ->
+    process_flag(trap_exit, true),
+    {ok, Ret, _Logged} = error_logger_acc:capture(
+        fun () ->
+            {ok, Pid} = mysql:start_link([{user, "dummy"}, {password, "junk"},
+                                          {connect_mode, asynchronous}]),
+            receive
+                {'EXIT', Pid, {error, {1045, <<"28000">>, _}}} -> ok
+            after 1000 ->
+                error(no_exit_message)
+            end
+        end
+    ),
+    ?assertEqual(ok, Ret),
+    process_flag(trap_exit, false),
+    ok.
+
+connect_lazy_test() ->
+    {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
+                                  {connect_mode, lazy}]),
+    ?assertNot(mysql:is_connected(Pid)),
+    {ok, [<<"1">>], [[1]]} = mysql:query(Pid, <<"SELECT 1">>),
+    ?assert(mysql:is_connected(Pid)),
+    mysql:stop(Pid),
+    ok.
+
 failing_connect_test() ->
     process_flag(trap_exit, true),
     {ok, Ret, Logged} = error_logger_acc:capture(
@@ -120,7 +160,7 @@ server_disconnect_test() ->
     process_flag(trap_exit, true),
     Options = [{user, ?user}, {password, ?password}],
     {ok, Pid} = mysql:start_link(Options),
-    {ok, ok, LoggedErrors} = error_logger_acc:capture(fun () ->
+    {ok, ok, _LoggedErrors} = error_logger_acc:capture(fun () ->
         %% Make the server close the connection after 1 second of inactivity.
         ok = mysql:query(Pid, <<"SET SESSION wait_timeout = 1">>),
         receive
@@ -162,7 +202,7 @@ keep_alive_test() ->
      receive after 70 -> ok end,
      State = get_state(Pid),
      [state, _Version, _ConnectionId, Socket | _] = tuple_to_list(State),
-     {ok, ExitMessage, LoggedErrors} = error_logger_acc:capture(fun () ->
+     {ok, ExitMessage, _LoggedErrors} = error_logger_acc:capture(fun () ->
          gen_tcp:close(Socket),
          receive
             Message -> Message

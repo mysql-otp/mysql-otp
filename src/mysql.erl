@@ -26,6 +26,7 @@
 -module(mysql).
 
 -export([start_link/1, stop/1, stop/2,
+         is_connected/1,
          query/2, query/3, query/4, query/5,
          execute/3, execute/4, execute/5,
          prepare/2, prepare/3, unprepare/2,
@@ -61,8 +62,6 @@
                       | {ok, [{column_names(), rows()}, ...]}
                       | {error, server_reason()}.
 
--define(default_connect_timeout, 5000).
-
 -include("exception.hrl").
 
 %% @doc Starts a connection gen_server process and connects to a database. To
@@ -88,6 +87,28 @@
 %%   <dt>`{database, Database}'</dt>
 %%   <dd>The name of the database AKA schema to use. This can be changed later
 %%       using the query `USE <database>'.</dd>
+%%   <dt>`{connect_mode, synchronous | asynchronous | lazy}'</dt>
+%%   <dd>Specifies how and when the connection process should establish a connection
+%%       to the MySQL server.
+%%       <dl>
+%%         <dt>`synchronus' (default)</dt>
+%%         <dd>The connection will be established as part of the connection process'
+%%             start routine, ie the returned connection process will already be
+%%             connected and ready to use, and any on-connect prepares and queries
+%%             will have been executed.</dd>
+%%         <dt>`asynchronous'</dt>
+%%         <dd>The connection process will be started and returned to the caller
+%%             before really establishing a connection to the server and executing
+%%             the on-connect prepares and executes. This will instead be done
+%%             immediately afterwards as the first action of the connection
+%%             process.</dd>
+%%         <dt>`lazy'</dt>
+%%         <dd>Similar to `asynchronous' mode, but an actual connection will be
+%%             esatblished and the on-connect prepares and queries executed only
+%%             when a connection is needed for the first time, eg. to execute a
+%%             query.</dd>
+%%      </dl>
+%%   </dd>
 %%   <dt>`{connect_timeout, Timeout}'</dt>
 %%   <dd>The maximum time to spend for start_link/1.</dd>
 %%   <dt>`{log_warnings, boolean()}'</dt>
@@ -130,6 +151,7 @@
                    {host, inet:socket_address() | inet:hostname()} | {port, integer()} |
                    {user, iodata()} | {password, iodata()} |
                    {database, iodata()} |
+                   {connect_mode, synchronous | asynchronous | lazy} |
                    {connect_timeout, timeout()} |
                    {log_warnings, boolean()} |
                    {keep_alive, boolean() | timeout()} |
@@ -145,13 +167,11 @@
                        {via, Module :: atom(), ViaName :: term()},
          NamedStatements :: [{StatementName :: atom(), Statement :: iodata()}].
 start_link(Options) ->
-    GenSrvOpts = [{timeout, proplists:get_value(connect_timeout, Options,
-                                                ?default_connect_timeout)}],
     case proplists:get_value(name, Options) of
         undefined ->
-            gen_server:start_link(mysql_conn, Options, GenSrvOpts);
+            gen_server:start_link(mysql_conn, Options, []);
         ServerName ->
-            gen_server:start_link(ServerName, mysql_conn, Options, GenSrvOpts)
+            gen_server:start_link(ServerName, mysql_conn, Options, [])
     end.
 
 %% @see stop/2.
@@ -198,6 +218,11 @@ backported_gen_server_stop(Conn, Reason, Timeout) ->
         end
     end.
 
+%% @private
+-spec is_connected(Conn) -> boolean()
+    when Conn :: connection().
+is_connected(Conn) ->
+    gen_server:call(Conn, is_connected).
 
 %% @see query/5.
 -spec query(Conn, Query) -> Result
