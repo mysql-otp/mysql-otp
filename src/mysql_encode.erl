@@ -17,7 +17,7 @@ encode(Float) when is_float(Float) ->
     %% "floats are printed accurately as the shortest, correctly rounded string"
     io_lib:format("~w", [Float]);
 encode(Bin) when is_binary(Bin) ->
-    Escaped = binary:replace(Bin, <<"'">>, <<"''">>, [global]),
+    Escaped = binary:replace(Bin, [<<"'">>, <<"\\">>], <<"\\">>, [global, {insert_replaced, 1}]),
     [$', Escaped, $'];
 encode(String) when is_list(String) ->
     encode(unicode:characters_to_binary(String));
