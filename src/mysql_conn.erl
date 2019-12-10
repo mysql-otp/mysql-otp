@@ -149,8 +149,7 @@ connect(#state{connect_timeout = ConnectTimeout} = State) ->
 
 connect_socket(#state{tcp_opts = TcpOpts, host = Host, port = Port} = State) ->
     %% Connect socket
-    SockOpts = [binary, {packet, raw}, {active, false}, {nodelay, true}
-                | TcpOpts],
+    SockOpts = sanitize_tcp_opts(TcpOpts),
     {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
 
     %% If buffer wasn't specifically defined make it at least as
@@ -165,6 +164,24 @@ connect_socket(#state{tcp_opts = TcpOpts, host = Host, port = Port} = State) ->
     end,
 
     {ok, State#state{socket = Socket}}.
+
+sanitize_tcp_opts(TcpOpts0) ->
+    TcpOpts1 = lists:filter(
+        fun
+            ({mode, _}) -> false;
+            (binary) -> false;
+            (list) -> false;
+            ({packet, _}) -> false;
+            ({active, _}) -> false;
+            (_) -> true
+        end,
+        TcpOpts0
+    ),
+    TcpOpts2 = case lists:keymember(nodelay, 1, TcpOpts1) of
+        true -> TcpOpts1;
+        false -> [{nodelay, true} | TcpOpts1]
+    end,
+    [binary, {packet, raw}, {active, false} | TcpOpts2].
 
 handshake(#state{socket = Socket0, ssl_opts = SSLOpts,
         user = User, password = Password, database = Database,
