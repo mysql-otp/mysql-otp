@@ -520,11 +520,11 @@ fetch_resultset(SockModule, Socket, FieldCount, Proto, FilterMap, SeqNum0) ->
     {ok, ColDefs0, SeqNum1} = fetch_column_definitions(SockModule, Socket,
                                                        SeqNum0, FieldCount, []),
     {ok, DelimPacket, SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
-    #eof{status = S, warning_count = W} = parse_eof_packet(DelimPacket),
+    #eof{} = parse_eof_packet(DelimPacket),
     ColDefs1 = lists:map(fun parse_column_definition/1, ColDefs0),
     case fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs1, Proto,
                               FilterMap, SeqNum2, []) of
-        {ok, Rows, _SeqNum3} ->
+        {ok, Rows, _SeqNum3, #eof{status = S, warning_count = W}} ->
             #resultset{cols = ColDefs1, rows = Rows, status = S,
                        warning_count = W};
         #error{} = E ->
@@ -535,7 +535,7 @@ fetch_resultset(SockModule, Socket, FieldCount, Proto, FilterMap, SeqNum0) ->
 %% format (for plain queries) or binary format (for prepared statements).
 -spec fetch_resultset_rows(module(), term(), integer(), [#col{}], text | binary,
                            query_filtermap(), integer(), [[term()]]) ->
-    {ok, [[term()]], integer()} | #error{}.
+    {ok, [[term()]], integer(), #eof{}} | #error{}.
 fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs, Proto,
                      FilterMap, SeqNum0, Acc) ->
     {ok, Packet, SeqNum1} = recv_packet(SockModule, Socket, SeqNum0),
@@ -543,7 +543,8 @@ fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs, Proto,
         ?error_pattern ->
             parse_error_packet(Packet);
         ?eof_pattern ->
-            {ok, lists:reverse(Acc), SeqNum1};
+            Eof = parse_eof_packet(Packet),
+            {ok, lists:reverse(Acc), SeqNum1, Eof};
         RowPacket ->
             Row0=decode_row(FieldCount, ColDefs, RowPacket, Proto),
             Acc1 = case filtermap_resultset_row(FilterMap, ColDefs, Row0) of
