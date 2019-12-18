@@ -373,6 +373,55 @@ log_warnings_test() ->
                  " in INSERT INTO foo () VALUES ()\n", Log3),
     mysql:stop(Pid).
 
+log_slow_queries_test() ->
+    {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
+                                  {log_warnings, false}, {log_slow_queries, true}]),
+    VersionStr = db_version_string(Pid),
+    try
+        Version = parse_db_version(VersionStr),
+        case is_mariadb(VersionStr) of
+            true when Version < [10, 0, 21] ->
+                throw({mariadb, version_too_small});
+            false when Version < [5, 5, 8] ->
+                throw({mysql, version_too_small});
+            _ ->
+                ok
+        end
+    of _ ->
+        ok = mysql:query(Pid, "SET long_query_time = 0.1"),
+
+        %% single statement should not include query number
+        SingleQuery = "SELECT SLEEP(0.2)",
+        {ok, _, SingleLogged} = error_logger_acc:capture( fun () ->
+            {ok, _, _} = mysql:query(Pid, SingleQuery)
+        end),
+        [{_, SingleLog}] = SingleLogged,
+        ?assertEqual("MySQL query was slow: " ++ SingleQuery ++ "\n", SingleLog),
+
+        %% multi statement should include number of slow query
+        MultiQuery = "SELECT SLEEP(0.2); " %% #1 -> slow
+                     "SELECT 1; "          %% #2 -> not slow
+                     "SET @foo = 1; "      %% #3 -> not slow, no result set
+                     "SELECT SLEEP(0.2); " %% #4 -> slow
+                     "SELECT 1",           %% #5 -> not slow
+        {ok, _, MultiLogged} = error_logger_acc:capture(fun () ->
+            {ok, _} = mysql:query(Pid, MultiQuery)
+        end),
+        [{_, MultiLog1}, {_, MultiLog2}] = MultiLogged,
+        ?assertEqual("MySQL query #1 was slow: " ++ MultiQuery ++ "\n", MultiLog1),
+        ?assertEqual("MySQL query #4 was slow: " ++ MultiQuery ++ "\n", MultiLog2)
+    catch
+        throw:{mysql, version_too_small} ->
+            error_logger:info_msg("Skipping Log Slow Queries test. Current MySQL version"
+                                  " is ~s. Required version is >= 5.5.8.~n",
+                                  [VersionStr]);
+        throw:{mariadb, version_too_small} ->
+            error_logger:info_msg("Skipping Log Slow Queries test. Current MariaDB version"
+                                  " is ~s. Required version is >= 10.0.21.~n",
+                                  [VersionStr])
+    end,
+    mysql:stop(Pid).
+
 autocommit(Pid) ->
     ?assert(mysql:autocommit(Pid)),
     ok = mysql:query(Pid, <<"SET autocommit = 0">>),
