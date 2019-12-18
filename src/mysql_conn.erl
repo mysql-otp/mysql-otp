@@ -52,7 +52,8 @@
 %% Gen_server state
 -record(state, {server_version, connection_id, socket, sockmod, tcp_opts, ssl_opts,
                 host, port, user, password, database, queries, prepares, auth_plugin_data,
-                log_warnings, connect_timeout, ping_timeout, query_timeout, query_cache_time,
+                log_warnings, log_slow_queries,
+                connect_timeout, ping_timeout, query_timeout, query_cache_time,
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
                 transaction_levels = [], ping_ref = undefined,
                 stmts = dict:new(), query_cache = empty, cap_found_rows = false}).
@@ -72,6 +73,7 @@ init(Opts) ->
     Password       = proplists:get_value(password, Opts, ?default_password),
     Database       = proplists:get_value(database, Opts, undefined),
     LogWarn        = proplists:get_value(log_warnings, Opts, true),
+    LogSlow        = proplists:get_value(log_slow_queries, Opts, false),
     KeepAlive      = proplists:get_value(keep_alive, Opts, false),
     ConnectTimeout = proplists:get_value(connect_timeout, Opts,
                                          ?default_connect_timeout),
@@ -99,7 +101,7 @@ init(Opts) ->
         user = User, password = Password,
         database = Database,
         queries = Queries, prepares = Prepares,
-        log_warnings = LogWarn,
+        log_warnings = LogWarn, log_slow_queries = LogSlow,
         connect_timeout = ConnectTimeout,
         ping_timeout = PingTimeout,
         query_timeout = QueryTimeout,
@@ -537,7 +539,7 @@ execute_stmt(Stmt, Args, FilterMap, Timeout,
     State1 = lists:foldl(fun update_state/2, State, Recs),
     State1#state.warning_count > 0 andalso State1#state.log_warnings
         andalso log_warnings(State1, Stmt#prepared.orig_query),
-    handle_query_call_result(Recs, Stmt#prepared.orig_query, State1, []).
+    handle_query_call_result(Recs, Stmt#prepared.orig_query, State1).
 
 %% @doc Produces a tuple to return as an error reason.
 -spec error_to_reason(#error{}) -> mysql:server_reason().
@@ -565,10 +567,10 @@ update_state(Rec, State) ->
 
 %% @doc executes an unparameterized query and returns {Reply, NewState}.
 query(Query, FilterMap, default_timeout,
-            #state{query_timeout = DefaultTimeout} = State) ->
+      #state{query_timeout = DefaultTimeout} = State) ->
     query(Query, FilterMap, DefaultTimeout, State);
 query(Query, FilterMap, Timeout,
-            #state{sockmod = SockMod, socket = Socket} = State) ->
+      #state{sockmod = SockMod, socket = Socket} = State) ->
     setopts(SockMod, Socket, [{active, false}]),
     Result = mysql_protocol:query(Query, SockMod, Socket, FilterMap, Timeout),
     {ok, Recs} = case Result of
@@ -587,7 +589,7 @@ query(Query, FilterMap, Timeout,
     State1 = lists:foldl(fun update_state/2, State, Recs),
     State1#state.warning_count > 0 andalso State1#state.log_warnings
         andalso log_warnings(State1, Query),
-    handle_query_call_result(Recs, Query, State1, []).
+    handle_query_call_result(Recs, Query, State1).
 
 %% @doc Prepares a named query and returns {{ok, Name}, NewState} or
 %% {{error, Reason}, NewState}.
@@ -616,13 +618,24 @@ named_prepare(Name, Query, State) ->
 
 %% @doc Transforms result sets into a structure appropriate to be returned
 %% to the client.
-handle_query_call_result([], _Query, State, []) ->
+handle_query_call_result([_] = Recs, Query, State) ->
+    handle_query_call_result(Recs, not_applicable, Query, State, []);
+handle_query_call_result(Recs, Query, State) ->
+    handle_query_call_result(Recs, 1, Query, State, []).
+
+handle_query_call_result([], _RecNum, _Query, State, []) ->
     {ok, State};
-handle_query_call_result([], _Query, State, [{ColumnNames, Rows}]) ->
+handle_query_call_result([], _RecNum, _Query, State, [{ColumnNames, Rows}]) ->
     {{ok, ColumnNames, Rows}, State};
-handle_query_call_result([], _Query, State, ResultSetsAcc) ->
+handle_query_call_result([], _RecNum, _Query, State, ResultSetsAcc) ->
     {{ok, lists:reverse(ResultSetsAcc)}, State};
-handle_query_call_result([Rec|Recs], Query, State = #state{transaction_levels = L}, ResultSetsAcc) ->
+handle_query_call_result([Rec|Recs], RecNum, Query,
+                         #state{transaction_levels = L} = State,
+                         ResultSetsAcc) ->
+    RecNum1 = case RecNum of
+        not_applicable -> not_applicable;
+        _ -> RecNum + 1
+    end,
     case Rec of
         #ok{status = Status} when Status band ?SERVER_STATUS_IN_TRANS == 0,
                                   L /= [] ->
@@ -632,12 +645,14 @@ handle_query_call_result([Rec|Recs], Query, State = #state{transaction_levels = 
             Reply = {implicit_commit, Length, Query},
             [] = demonitor_processes(L, Length),
             {Reply, State#state{transaction_levels = []}};
-        #ok{} ->
-            handle_query_call_result(Recs, Query, State, ResultSetsAcc);
-        #resultset{cols = ColDefs, rows = Rows} ->
+        #ok{status = Status} ->
+            maybe_log_slow_query(State, Status, RecNum, Query),
+            handle_query_call_result(Recs, RecNum1, Query, State, ResultSetsAcc);
+        #resultset{cols = ColDefs, rows = Rows, status = Status} ->
             Names = [Def#col.name || Def <- ColDefs],
             ResultSetsAcc1 = [{Names, Rows} | ResultSetsAcc],
-            handle_query_call_result(Recs, Query, State, ResultSetsAcc1);
+            maybe_log_slow_query(State, Status, RecNum, Query),
+            handle_query_call_result(Recs, RecNum1, Query, State, ResultSetsAcc1);
         #error{code = ?ERROR_DEADLOCK} when L /= [] ->
             %% These errors result in an implicit rollback.
             Reply = {implicit_rollback, length(L), error_to_reason(Rec)},
@@ -666,6 +681,28 @@ log_warnings(#state{socket = Socket, sockmod = SockMod}, Query) ->
     Lines = [[Level, " ", integer_to_binary(Code), ": ", Message, "\n"]
              || [Level, Code, Message] <- Rows],
     error_logger:warning_msg("~s in ~s~n", [Lines, Query]).
+
+%% @doc Logs slow queries. Query is the query that gave the warnings.
+maybe_log_slow_query(#state{log_slow_queries = true}, S, RecNum, Query)
+  when S band ?SERVER_QUERY_WAS_SLOW /= 0 ->
+    IndexHint = if
+        S band ?SERVER_STATUS_NO_GOOD_INDEX_USED /= 0 ->
+            " (with no good index)";
+        S band ?SERVER_STATUS_NO_INDEX_USED /= 0 ->
+            " (with no index)";
+        true ->
+            ""
+    end,
+    QueryNumHint = case RecNum of
+        not_applicable ->
+            "";
+        _ ->
+            io_lib:format(" #~b", [RecNum])
+    end,
+    error_logger:warning_msg("MySQL query~s~s was slow: ~s~n",
+                             [QueryNumHint, IndexHint, Query]);
+maybe_log_slow_query(_, _, _, _) ->
+    ok.
 
 %% @doc Makes a separate connection and execute KILL QUERY. We do this to get
 %% our main connection back to normal. KILL QUERY appeared in MySQL 5.0.0.

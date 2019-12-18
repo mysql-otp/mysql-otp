@@ -91,7 +91,7 @@
 %%   <dd>Specifies how and when the connection process should establish a connection
 %%       to the MySQL server.
 %%       <dl>
-%%         <dt>`synchronus' (default)</dt>
+%%         <dt>`synchronous' (default)</dt>
 %%         <dd>The connection will be established as part of the connection process'
 %%             start routine, ie the returned connection process will already be
 %%             connected and ready to use, and any on-connect prepares and queries
@@ -104,7 +104,7 @@
 %%             process.</dd>
 %%         <dt>`lazy'</dt>
 %%         <dd>Similar to `asynchronous' mode, but an actual connection will be
-%%             esatblished and the on-connect prepares and queries executed only
+%%             established and the on-connect prepares and queries executed only
 %%             when a connection is needed for the first time, eg. to execute a
 %%             query.</dd>
 %%      </dl>
@@ -114,6 +114,10 @@
 %%   <dt>`{log_warnings, boolean()}'</dt>
 %%   <dd>Whether to fetch warnings and log them using error_logger; default
 %%       true.</dd>
+%%   <dt>`{log_slow_queries, boolean()}'</dt>
+%%   <dd>Whether to log slow queries using error_logger; default false. Queries
+%%       are flagged as slow by the server if their execution time exceeds the
+%%       value in the `long_query_time' variable.</dd>
 %%   <dt>`{keep_alive, boolean() | timeout()}'</dt>
 %%   <dd>Send ping when unused for a certain time. Possible values are `true',
 %%       `false' and `integer() > 0' for an explicit interval in milliseconds.
@@ -154,6 +158,7 @@
                    {connect_mode, synchronous | asynchronous | lazy} |
                    {connect_timeout, timeout()} |
                    {log_warnings, boolean()} |
+                   {log_slow_queries, boolean()} |
                    {keep_alive, boolean() | timeout()} |
                    {prepare, NamedStatements} |
                    {queries, [iodata()]} |
