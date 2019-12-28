@@ -1,5 +1,5 @@
 MySQL/OTP – MySQL client library for Erlang/OTP
-Copyright (C) 2014 Viktor Söderqvist
+Copyright (C) 2014-2019 Viktor Söderqvist
 
 This file is part of MySQL/OTP.
 
@@ -121,7 +121,7 @@ Notes:
 
 <h2>Copying</h2>
 
-Copyright 2014 The authors of MySQL/OTP. See the project page at
+Copyright 2014-2019 The authors of MySQL/OTP. See the project page at
 <a href="https://github.com/mysql-otp/mysql-otp"
    target="_top">https://github.com/mysql-otp/mysql-otp</a>.
 

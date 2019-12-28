@@ -229,6 +229,7 @@ backported_gen_server_stop(Conn, Reason, Timeout) ->
 is_connected(Conn) ->
     gen_server:call(Conn, is_connected).
 
+%% @doc Executes a plain query.
 %% @see query/5.
 -spec query(Conn, Query) -> Result
     when Conn :: connection(),
@@ -237,6 +238,7 @@ is_connected(Conn) ->
 query(Conn, Query) ->
     query(Conn, Query, no_params, no_filtermap_fun, default_timeout).
 
+%% @doc Executes a query.
 %% @see query/5.
 -spec query(Conn, Query, Params | FilterMap | Timeout) -> Result
     when Conn :: connection(),
@@ -257,6 +259,7 @@ query(Conn, Query, Timeout) when Timeout == default_timeout;
                                  Timeout == infinity ->
     query(Conn, Query, no_params, no_filtermap_fun, Timeout).
 
+%% @doc Executes a query.
 %% @see query/5.
 -spec query(Conn, Query, Params, Timeout) -> Result
         when Conn :: connection(),
@@ -296,40 +299,53 @@ query(Conn, Query, Params, FilterMap) when (Params == no_params orelse
                                             is_function(FilterMap, 2)) ->
     query(Conn, Query, Params, FilterMap, default_timeout).
 
-%% @doc Executes a parameterized query with a timeout and applies a filter/map
-%% function to the result rows.
+%% @doc Executes a query.
 %%
-%% A prepared statement is created, executed and then cached for a certain
-%% time. If the same query is executed again when it is already cached, it does
-%% not need to be prepared again.
+%% === Parameters ===
 %%
-%% The minimum time the prepared statement is cached can be specified using the
-%% option `{query_cache_time, Milliseconds}' to start_link/1.
+%% `Conn' is identifying a connection process started using
+%% `mysql:start_link/1'.
+%%
+%% `Query' is the query to execute, as a binary or a list.
+%%
+%% `Params', `FilterMap' and `Timeout' are optional.
+%%
+%% If `Params' (a list) is specified, the query is performed as a prepared
+%% statement. A prepared statement is created, executed and then cached for a
+%% certain time (specified using the option `{query_cache_time, Milliseconds}'
+%% to `start_link/1'). If the same query is executed again during this time,
+%% it does not need to be prepared again. If `Params' is omitted (or specified
+%% as `no_params'), the query is executed as a plain query. To force a query
+%% without parameters to be executed as a prepared statement, an empty list can
+%% be used for `Params'.
+%%
+%% If `FilterMap' (a fun) is specified, the function is applied to each row to
+%% filter or perform other actions on the rows, in a way similar to how
+%% `lists:filtermap/2' works, before the result is returned to the caller. See
+%% below for details.
+%%
+%% `Timeout' specifies the time to wait for a response from the database. If
+%% omitted (or specified as `default_timeout'), the timeout given in
+%% `start_link/1' is used.
+%%
+%% === Return value ===
 %%
 %% Results are returned in the form `{ok, ColumnNames, Rows}' if there is one
 %% result set. If there are more than one result sets, they are returned in the
-%% form `{ok, [{ColumnNames, Rows}, ...]}'.
+%% form `{ok, [{ColumnNames, Rows}, ...]}'. This is typically the case if
+%% multiple queries are specified at the same time, separated by semicolons.
 %%
 %% For queries that don't return any rows (INSERT, UPDATE, etc.) only the atom
 %% `ok' is returned.
 %%
-%% The `Params', `FilterMap' and `Timeout' arguments are optional.
-%% <ul>
-%%   <li>If the `Params' argument is the atom `no_params' or is omitted, a plain
-%%       query will be executed instead of a parameterized one.</li>
-%%   <li>If the `FilterMap' argument is the atom `no_filtermap_fun' or is
-%%       omitted, no row filtering/mapping will be applied and all result rows
-%%       will be returned unchanged.</li>
-%%   <li>If the `Timeout' argument is the atom `default_timeout' or is omitted,
-%%       the timeout given in `start_link/1' is used.</li>
-%% </ul>
+%% === FilterMap details ===
 %%
 %% If the `FilterMap' argument is used, it must be a function of arity 1 or 2
 %% that returns either `true', `false', or `{true, Value}'.
 %%
 %% Each result row is handed to the given function as soon as it is received
 %% from the server, and only when the function has returned, the next row is
-%% fetched. This provides the ability to prevent memory exhaustion; on the
+%% fetched. This provides the ability to prevent memory exhaustion. On the
 %% other hand, it can cause the server to time out on sending if your function
 %% is doing something slow (see the MySQL documentation on `NET_WRITE_TIMEOUT').
 %%
@@ -342,6 +358,8 @@ query(Conn, Query, Params, FilterMap) when (Params == no_params orelse
 %% else is to be included in the result instead (mapping). You may also use
 %% this function for side effects, like writing rows to disk or sending them
 %% to another process etc.
+%%
+%% === Examples ===
 %%
 %% Here is an example showing some of the things that are possible:
 %% ```
