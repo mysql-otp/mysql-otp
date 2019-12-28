@@ -203,30 +203,14 @@ deadlock_test_() ->
          ok = mysql:query(Conn1, "INSERT INTO foo (k,v) VALUES (1,0), (2,0)"),
          {ok, Conn2} = mysql:start_link([{user, ?user}, {password, ?password}]),
          ok = mysql:query(Conn2, <<"USE otptest">>),
-         {ok, [_], [[VersionBin]]} = mysql:query(Conn1, "SELECT @@version"),
-         {Conn1, Conn2, VersionBin}
+         {Conn1, Conn2}
      end,
-     fun ({Conn1, Conn2, _VersionBin}) ->
+     fun ({Conn1, Conn2}) ->
          ok = mysql:query(Conn1, <<"DROP DATABASE otptest">>, 1000),
          mysql:stop(Conn1),
          mysql:stop(Conn2)
      end,
-     fun ({_Conn1, _Conn2, <<"5.7.", _/binary>>}) ->
-             fun () ->
-                error_logger:info_msg(
-                    "The deadlock test fails in some MySQL versions so it is "
-                    "currently disabled for MySQL 5.7.x. TODO: Confirm if "
-                    "there is a bug or a changed behavior for this scenario.")
-             end;
-         ({_Conn1, _Conn2, <<"8.", _/binary>>}) ->
-             fun () ->
-                error_logger:info_msg(
-                    "The deadlock test fails in some MySQL versions so it is "
-                    "currently disabled for MySQL 8.x.y. TODO: Confirm if "
-                    "there is a bug or a changed behavior for this scenario.")
-             end;
-         ({Conn1, Conn2, _VersionBin}) ->
-             Conns = {Conn1, Conn2},
+     fun (Conns) ->
              [{"Plain queries", fun () -> deadlock_plain_queries(Conns) end},
               {"Prep stmts", fun () -> deadlock_prepared_statements(Conns) end},
               {"No retry", fun () -> deadlock_no_retry(Conns) end},

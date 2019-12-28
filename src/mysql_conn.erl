@@ -677,8 +677,9 @@ handle_query_call_result([Rec|Recs], RecNum, Query,
         #error{code = ?ERROR_DEADLOCK} when L /= [] ->
             %% These errors result in an implicit rollback.
             Reply = {implicit_rollback, length(L), error_to_reason(Rec)},
-            %% Everything in the transaction is rolled back, except the BEGIN
-            %% statement itself. Thus, we are in transaction level 1.
+            %% The transaction is rollbacked, except the BEGIN, so we're still
+            %% in a transaction.  (In 5.7+, also the BEGIN has been rolled back,
+            %% but here we assume the old behaviour.)
             NewMonitors = demonitor_processes(L, length(L) - 1),
             {Reply, State#state{transaction_levels = NewMonitors}};
         #error{} ->

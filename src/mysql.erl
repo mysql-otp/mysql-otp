@@ -622,6 +622,11 @@ transaction(Conn, Fun, Args, Retries) when is_list(Args),
 %% rollback does not cancel that statement."
 %% (https://dev.mysql.com/doc/refman/5.6/en/innodb-error-handling.html)
 %%
+%% This seems to have changed in MySQL 5.7.x though (although the MySQL
+%% documentation hasn't been updated). Now, also the BEGIN is cancelled, so a
+%% new BEGIN has to be issued when restarting the transaction. This has no
+%% effect on older versions, not even a warning.
+%%
 %% Lock Wait Timeout:
 %% "InnoDB rolls back only the last statement on a transaction timeout by
 %% default. If --innodb_rollback_on_timeout is specified, a transaction timeout
@@ -638,15 +643,23 @@ execute_transaction(Conn, Fun, Args, Retries) ->
         %% retries left
         ?EXCEPTION(throw, {implicit_rollback, 1, _}, _Stacktrace)
           when Retries == infinity ->
+            %% In MySQL < 5.7 we're not in a transaction here, but in earlier
+            %% versions we are, so we can't use `gen_server:call(Conn,
+            %% start_transaction, infinity)' here.
+            ok = query(Conn, <<"BEGIN">>),
             execute_transaction(Conn, Fun, Args, infinity);
         ?EXCEPTION(throw, {implicit_rollback, 1, _}, _Stacktrace)
           when Retries > 0 ->
+            ok = query(Conn, <<"BEGIN">>),
             execute_transaction(Conn, Fun, Args, Retries - 1);
         ?EXCEPTION(throw, {implicit_rollback, 1, Reason}, Stacktrace)
           when Retries == 0 ->
             %% No more retries. Return 'aborted' along with the deadlock error
             %% and a the trace to the line where the deadlock occured.
             Trace = ?GET_STACK(Stacktrace),
+            %% In MySQL < 5.7, we are still in a transaction here, but in 5.7+
+            %% we're not.  The ROLLBACK executed here has no effect if no
+            %% transaction is ongoing.
             ok = gen_server:call(Conn, rollback, infinity),
             {aborted, {Reason, Trace}};
         ?EXCEPTION(throw, {implicit_rollback, N, Reason}, Stacktrace)
