@@ -17,9 +17,10 @@ Some of the features:
   * Transactions are automatically retried when deadlocks are detected.
 * Each connection is a gen_server, which makes it compatible with Poolboy (for
   connection pooling) and ordinary OTP supervisors.
-* No records in the public API.
 * SSL.
-* Parametrized queries using cached prepared statements
+* `caching_sha2_password` (default from MySQL 8.0.4) and
+  `mysql_native_password` (default from MySQL 4.1) auth methods.
+* Parametrized queries using cached unnamed prepared statements
   ([What?](https://github.com/mysql-otp/mysql-otp/wiki/Parametrized-queries-using-cached-prepared-statements))
 * Slow queries are interrupted without killing the connection (MySQL version
   ≥ 5.0.0)
@@ -30,11 +31,7 @@ Requirements:
 
 * Erlang/OTP version R16B or later
 * MySQL database version 4.1 or later or MariaDB
-* No other dependencies
-* Authentication method `caching_sha2_password` is not supported. This is the
-  default in MySQL 8.0.4 and later, so you need to add
-  `default_authentication_plugin=mysql_native_password` under `[mysqld]` in e.g.
-  `/etc/mysql/my.cnf`.
+* GNU Make *or* Rebar or any other tool for building Erlang/OTP applications
 
 Synopsis
 --------
