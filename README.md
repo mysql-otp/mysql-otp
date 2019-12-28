@@ -18,8 +18,8 @@ Some of the features:
 * Each connection is a gen_server, which makes it compatible with Poolboy (for
   connection pooling) and ordinary OTP supervisors.
 * SSL.
-* `caching_sha2_password` (default from MySQL 8.0.4) and
-  `mysql_native_password` (default from MySQL 4.1) auth methods.
+* Authentication methods `caching_sha2_password` (default from MySQL 8.0.4) and
+  `mysql_native_password` (default from MySQL 4.1).
 * Parametrized queries using cached unnamed prepared statements
   ([What?](https://github.com/mysql-otp/mysql-otp/wiki/Parametrized-queries-using-cached-prepared-statements))
 * Slow queries are interrupted without killing the connection (MySQL version
@@ -66,7 +66,7 @@ case Result of
         io:format("Inserted 2 rows.~n");
     {aborted, Reason} ->
         io:format("Inserted 0 rows.~n")
-end
+end,
 
 %% Multiple queries and multiple result sets
 {ok, [{[<<"foo">>], [[42]]}, {[<<"bar">>], [[<<"baz">>]]}]} =
@@ -86,18 +86,18 @@ Usage as a dependency
 Using *erlang.mk*:
 
     DEPS = mysql
-    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.5.1
+    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.6.0
 
 Using *rebar* (version 2 or 3):
 
     {deps, [
         {mysql, ".*", {git, "https://github.com/mysql-otp/mysql-otp",
-                       {tag, "1.5.1"}}}
+                       {tag, "1.6.0"}}}
     ]}.
 
 Using *mix*:
 
-    {:mysql, git: "https://github.com/mysql-otp/mysql-otp", tag: "1.5.1"},
+    {:mysql, git: "https://github.com/mysql-otp/mysql-otp", tag: "1.6.0"},
 
 There's also a Hex package called [mysql](//hex.pm/packages/mysql).
 
@@ -124,11 +124,11 @@ GRANT ALL PRIVILEGES ON otptest.* TO otptest@localhost;
 CREATE USER otptest2@localhost IDENTIFIED BY 'otptest2';
 GRANT ALL PRIVILEGES ON otptest.* TO otptest2@localhost;
 
-# in MySQL < 5.7, REQUIRE SSL must be given in GRANT
+-- in MySQL < 5.7, REQUIRE SSL must be given in GRANT
 CREATE USER otptestssl@localhost IDENTIFIED BY 'otptestssl';
 GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost REQUIRE SSL;
 
-# in MySQL >= 8.0, REQUIRE SSL must be given in CREATE USER
+-- in MySQL >= 8.0, REQUIRE SSL must be given in CREATE USER
 CREATE USER otptestssl@localhost IDENTIFIED BY 'otptestssl' REQUIRE SSL;
 GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost;
 ```
