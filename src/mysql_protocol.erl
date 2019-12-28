@@ -495,8 +495,7 @@ verify_server_capabilities(Handshake, CapabilityFlags) ->
 basic_capabilities(ConnectWithDB, SetFoundRows) ->
     CapabilityFlags0 = ?CLIENT_PROTOCOL_41 bor
                        ?CLIENT_TRANSACTIONS bor
-                       ?CLIENT_SECURE_CONNECTION bor
-                       ?CLIENT_LONG_PASSWORD,
+                       ?CLIENT_SECURE_CONNECTION,
     CapabilityFlags1 = case ConnectWithDB of
                            true -> CapabilityFlags0 bor ?CLIENT_CONNECT_WITH_DB;
                            _ -> CapabilityFlags0
@@ -512,7 +511,8 @@ add_client_capabilities(Caps) ->
     ?CLIENT_MULTI_STATEMENTS bor
     ?CLIENT_MULTI_RESULTS bor
     ?CLIENT_PS_MULTI_RESULTS bor
-    ?CLIENT_PLUGIN_AUTH.
+    ?CLIENT_PLUGIN_AUTH bor
+    ?CLIENT_LONG_PASSWORD.
 
 -spec character_set([integer()]) -> integer().
 character_set(ServerVersion) when ServerVersion >= [5, 5, 3] ->
