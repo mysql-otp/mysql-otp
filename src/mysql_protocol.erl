@@ -27,20 +27,26 @@
 %% @private
 -module(mysql_protocol).
 
--export([handshake/7, change_user/7, quit/2, ping/2,
+-export([handshake/7, change_user/8, quit/2, ping/2,
          query/4, query/5, fetch_query_response/3,
          fetch_query_response/4, prepare/3, unprepare/3,
          execute/5, execute/6, fetch_execute_response/3,
          fetch_execute_response/4, reset_connnection/2,
-	       valid_params/1]).
+         valid_params/1]).
 
 -type query_filtermap() :: no_filtermap_fun
                          | fun(([term()]) -> query_filtermap_res())
                          | fun(([term()], [term()]) -> query_filtermap_res()).
 -type query_filtermap_res() :: boolean() | {true, term()}.
 
+-type auth_more_data() :: fast_auth_completed
+                        | full_auth_requested
+                        | {public_key, term()}.
+
 %% How much data do we want per packet?
 -define(MAX_BYTES_PER_PACKET, 16#1000000).
+
+-include_lib("public_key/include/public_key.hrl").
 
 -include("records.hrl").
 -include("protocol.hrl").
@@ -50,6 +56,12 @@
 -define(ok_pattern, <<?OK, _/binary>>).
 -define(error_pattern, <<?ERROR, _/binary>>).
 -define(eof_pattern, <<?EOF, _:4/binary>>).
+
+%% Macros for auth methods.
+-define(authmethod_none, <<>>).
+-define(authmethod_mysql_native_password, <<"mysql_native_password">>).
+-define(authmethod_sha256_password, <<"sha256_password">>).
+-define(authmethod_caching_sha2_password, <<"caching_sha2_password">>).
 
 %% @doc Performs a handshake using the supplied socket and socket module for
 %% communication. Returns an ok or an error record. Raises errors when various
@@ -73,16 +85,21 @@ handshake(Username, Password, Database, SockModule0, SSLOpts, Socket0,
             Response = build_handshake_response(Handshake, Username, Password,
                                                 Database, SetFoundRows),
             {ok, SeqNum3} = send_packet(SockModule, Socket, Response, SeqNum2),
-            handshake_finish_or_switch_auth(Handshake, Password, SockModule,
-                                            Socket, SeqNum3);
+            handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket,
+                                            SeqNum3);
         #error{} = Error ->
             Error
     end.
 
-handshake_finish_or_switch_auth(Handshake = #handshake{status = Status}, Password,
-                                SockModule, Socket, SeqNum0) ->
-    {ok, ConfirmPacket, SeqNum1} = recv_packet(SockModule, Socket, SeqNum0),
-    case parse_handshake_confirm(ConfirmPacket) of
+
+handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket, SeqNum) ->
+    #handshake{auth_plugin_name = AuthPluginName,
+               auth_plugin_data = AuthPluginData,
+               server_version = ServerVersion,
+               status = Status} = Handshake,
+    AuthResult = auth_finish_or_switch(AuthPluginName, AuthPluginData, Password,
+                                       SockModule, Socket, ServerVersion, SeqNum),
+    case AuthResult of
         #ok{status = OkStatus} ->
             %% check status, ignoring bit 16#4000, SERVER_SESSION_STATE_CHANGED
             %% and bit 16#0002, SERVER_STATUS_AUTOCOMMIT.
@@ -90,20 +107,77 @@ handshake_finish_or_switch_auth(Handshake = #handshake{status = Status}, Passwor
             StatusMasked = Status band BitMask,
             StatusMasked = OkStatus band BitMask,
             {ok, Handshake, SockModule, Socket};
-        #auth_method_switch{auth_plugin_name = AuthPluginName,
-                            auth_plugin_data = AuthPluginData} ->
-            Hash = case AuthPluginName of
-                       <<>> ->
-                           hash_password(Password, AuthPluginData);
-                       <<"mysql_native_password">> ->
-                           hash_password(Password, AuthPluginData);
-                       UnknownAuthMethod ->
-                           error({auth_method, UnknownAuthMethod})
-                   end,
-            {ok, SeqNum2} = send_packet(SockModule, Socket, Hash, SeqNum1),
-            handshake_finish_or_switch_auth(Handshake, Password, SockModule,
-                                            Socket, SeqNum2);
         Error ->
+            Error
+    end.
+
+%% Finish the authentication, or switch to another auth method.
+%%
+%% An OK Packet signals authentication success.
+%%
+%% An Error Packet signals authentication failure.
+%%
+%% If the authentication process requires more data to be exchanged between
+%% the server and client, this is done via More Data Packets. The formats and
+%% meanings of the payloads in such packets depend on the auth method.
+%% 
+%% An Auth Method Switch Packet signals a request for transition to another
+%% auth method. The packet contains the name of the auth method to switch to,
+%% and new auth plugin data.
+auth_finish_or_switch(AuthPluginName, AuthPluginData, Password,
+                      SockModule, Socket, ServerVersion, SeqNum0) ->
+    {ok, ConfirmPacket, SeqNum1} = recv_packet(SockModule, Socket, SeqNum0),
+    case parse_handshake_confirm(ConfirmPacket) of
+        #ok{} = Ok ->
+            %% Authentication success.
+            Ok;
+        #auth_method_switch{auth_plugin_name = SwitchAuthPluginName,
+                            auth_plugin_data = SwitchAuthPluginData} ->
+            %% Server wants to transition to a different auth method.
+            %% Send hash of password, calculated according to the requested auth method.
+            %% (NOTE: Sending the password hash as a response to an auth method switch
+            %%        is the answer for both mysql_native_password and caching_sha2_password
+            %%        methods. It may be different for future other auth methods.)
+            Hash = hash_password(SwitchAuthPluginName, Password, SwitchAuthPluginData),
+            {ok, SeqNum2} = send_packet(SockModule, Socket, Hash, SeqNum1),
+            auth_finish_or_switch(SwitchAuthPluginName, SwitchAuthPluginData, Password,
+                                  SockModule, Socket, ServerVersion, SeqNum2);
+        fast_auth_completed ->
+            %% Server signals success by fast authentication (probably specific to
+            %% the caching_sha2_password method). This will be followed by an OK Packet.
+            auth_finish_or_switch(AuthPluginName, AuthPluginData, Password, SockModule,
+                                  Socket, ServerVersion, SeqNum1);
+        full_auth_requested when SockModule =:= ssl ->
+            %% Server wants full authentication (probably specific to the
+            %% caching_sha2_password method), and we are on a secure channel since
+            %% our connection is through SSL. We have to reply with the null-terminated
+            %% clear text password.
+            Password1 = case is_binary(Password) of
+                true -> Password;
+                false -> iolist_to_binary(Password)
+            end,
+            {ok, SeqNum2} = send_packet(SockModule, Socket, <<Password1/binary, 0>>, SeqNum1),
+            auth_finish_or_switch(AuthPluginName, AuthPluginData, Password, SockModule,
+                                  Socket, ServerVersion, SeqNum2);
+        full_auth_requested ->
+            %% Server wants full authentication (probably specific to the
+            %% caching_sha2_password method), and we are not on a secure channel.
+            %% Since we are not implementing the client-side caching of the server's
+            %% public key, we must ask for it by sending a single byte "2".
+            {ok, SeqNum2} = send_packet(SockModule, Socket, <<2:8>>, SeqNum1),
+            auth_finish_or_switch(AuthPluginName, AuthPluginData, Password, SockModule,
+                                  Socket, ServerVersion, SeqNum2);
+        {public_key, PubKey} ->
+            %% Serveri has sent its public key (certainly specific to the caching_sha2_password
+            %% method). We encrypt the password with the public key we received and send
+            %% it back to the server.
+            EncryptedPassword = encrypt_password(Password, AuthPluginData, PubKey,
+                                                 ServerVersion),
+            {ok, SeqNum2} = send_packet(SockModule, Socket, EncryptedPassword, SeqNum1),
+            auth_finish_or_switch(AuthPluginName, AuthPluginData, Password, SockModule,
+                                  Socket, ServerVersion, SeqNum2);
+        Error ->
+            %% Authentication failure.
             Error
     end.
 
@@ -233,26 +307,27 @@ fetch_execute_response(SockModule, Socket, FilterMap, Timeout) ->
     fetch_response(SockModule, Socket, Timeout, binary, FilterMap, []).
 
 %% @doc Changes the user of the connection.
--spec change_user(module(), term(), iodata(), iodata(), binary(),
+-spec change_user(module(), term(), iodata(), iodata(), binary(), binary(),
                   undefined | iodata(), [integer()]) -> #ok{} | #error{}.
-change_user(SockModule, Socket, Username, Password, Salt, Database,
-            ServerVersion) ->
+change_user(SockModule, Socket, Username, Password, AuthPluginName, AuthPluginData,
+            Database, ServerVersion) ->
     DbBin = case Database of
         undefined -> <<>>;
         _ -> iolist_to_binary(Database)
     end,
-    Hash = hash_password(Password, Salt),
-    Req = <<?COM_CHANGE_USER, (iolist_to_binary(Username))/binary, 0,
+    Hash = hash_password(AuthPluginName, Password, AuthPluginData),
+    Req0 = <<?COM_CHANGE_USER, (iolist_to_binary(Username))/binary, 0,
             (lenenc_str_encode(Hash))/binary,
             DbBin/binary, 0, (character_set(ServerVersion)):16/little>>,
-    {ok, _SeqNum1} = send_packet(SockModule, Socket, Req, 0),
-    {ok, Packet, _SeqNum2} = recv_packet(SockModule, Socket, infinity, any),
-    case Packet of
-        ?ok_pattern ->
-            parse_ok_packet(Packet);
-        ?error_pattern ->
-            parse_error_packet(Packet)
-    end.
+    Req1 = case AuthPluginName of
+        <<>> ->
+            Req0;
+        _ ->
+            <<Req0/binary, AuthPluginName/binary, 0>>
+    end,
+    {ok, SeqNum1} = send_packet(SockModule, Socket, Req1, 0),
+    auth_finish_or_switch(AuthPluginName, AuthPluginData, Password,
+                          SockModule, Socket, ServerVersion, SeqNum1).
 
 -spec reset_connnection(module(), term()) -> #ok{}|#error{}.
 reset_connnection(SockModule, Socket) ->
@@ -388,15 +463,8 @@ build_handshake_response(Handshake, Username, Password, Database,
     %% the client wants to do. The server doesn't say it handles them although
     %% it does. (http://bugs.mysql.com/bug.php?id=42268)
     ClientCapabilityFlags = add_client_capabilities(CapabilityFlags),
-    Hash = case Handshake#handshake.auth_plugin_name of
-        <<>> ->
-            %% Server doesn't know auth plugins
-            hash_password(Password, Handshake#handshake.auth_plugin_data);
-        <<"mysql_native_password">> ->
-            hash_password(Password, Handshake#handshake.auth_plugin_data);
-        UnknownAuthMethod ->
-            error({auth_method, UnknownAuthMethod})
-    end,
+    Hash = hash_password(Handshake#handshake.auth_plugin_name, Password,
+                         Handshake#handshake.auth_plugin_data),
     HashLength = size(Hash),
     CharacterSet = character_set(Handshake#handshake.server_version),
     UsernameUtf8 = unicode:characters_to_binary(Username),
@@ -427,7 +495,8 @@ verify_server_capabilities(Handshake, CapabilityFlags) ->
 basic_capabilities(ConnectWithDB, SetFoundRows) ->
     CapabilityFlags0 = ?CLIENT_PROTOCOL_41 bor
                        ?CLIENT_TRANSACTIONS bor
-                       ?CLIENT_SECURE_CONNECTION,
+                       ?CLIENT_SECURE_CONNECTION bor
+                       ?CLIENT_LONG_PASSWORD,
     CapabilityFlags1 = case ConnectWithDB of
                            true -> CapabilityFlags0 bor ?CLIENT_CONNECT_WITH_DB;
                            _ -> CapabilityFlags0
@@ -442,7 +511,8 @@ add_client_capabilities(Caps) ->
     Caps bor
     ?CLIENT_MULTI_STATEMENTS bor
     ?CLIENT_MULTI_RESULTS bor
-    ?CLIENT_PS_MULTI_RESULTS.
+    ?CLIENT_PS_MULTI_RESULTS bor
+    ?CLIENT_PLUGIN_AUTH.
 
 -spec character_set([integer()]) -> integer().
 character_set(ServerVersion) when ServerVersion >= [5, 5, 3] ->
@@ -455,28 +525,32 @@ character_set(_ServerVersion) ->
 %% @doc Handles the second packet from the server, when we have replied to the
 %% initial handshake. Returns an error if the server returns an error. Raises
 %% an error if unimplemented features are required.
--spec parse_handshake_confirm(binary()) -> #ok{} | #auth_method_switch{} |
-                                           #error{}.
-parse_handshake_confirm(Packet) ->
-    case Packet of
-        ?ok_pattern ->
-            %% Connection complete.
-            parse_ok_packet(Packet);
-        ?error_pattern ->
-            %% Access denied, insufficient client capabilities, etc.
-            parse_error_packet(Packet);
-        <<?EOF>> ->
-            %% "Old Authentication Method Switch Request Packet consisting of a
-            %% single 0xfe byte. It is sent by server to request client to
-            %% switch to Old Password Authentication if CLIENT_PLUGIN_AUTH
-            %% capability is not supported (by either the client or the server)"
-            error(old_auth);
-        <<?EOF, AuthMethodSwitch/binary>> ->
-            %% "Authentication Method Switch Request Packet. If both server and
-            %% client support CLIENT_PLUGIN_AUTH capability, server can send
-            %% this packet to ask client to use another authentication method."
-            parse_auth_method_switch(AuthMethodSwitch)
-    end.
+-spec parse_handshake_confirm(binary()) ->
+    #ok{} | #auth_method_switch{} | #error{} | auth_more_data().
+parse_handshake_confirm(Packet = ?ok_pattern) ->
+    %% Connection complete.
+    parse_ok_packet(Packet);
+parse_handshake_confirm(Packet = ?error_pattern) ->
+    %% Access denied, insufficient client capabilities, etc.
+    parse_error_packet(Packet);
+parse_handshake_confirm(<<?EOF>>) ->
+    %% "Old Authentication Method Switch Request Packet consisting of a
+    %% single 0xfe byte. It is sent by server to request client to
+    %% switch to Old Password Authentication if CLIENT_PLUGIN_AUTH
+    %% capability is not supported (by either the client or the server)"
+    error(old_auth);
+parse_handshake_confirm(<<?EOF, AuthMethodSwitch/binary>>) ->
+    %% "Authentication Method Switch Request Packet. If both server and
+    %% client support CLIENT_PLUGIN_AUTH capability, server can send
+    %% this packet to ask client to use another authentication method."
+    parse_auth_method_switch(AuthMethodSwitch);
+parse_handshake_confirm(<<?MORE_DATA, MoreData/binary>>) ->
+    %% More Data Packet consisting of a 0x01 byte and a payload. This
+    %% kind of packet may be used in the authentication process to
+    %% provide more data to the client. It is usually followed by
+    %% either an OK Packet, an Error Packet, or another More Data
+    %% packet.
+    parse_auth_more_data(MoreData).
 
 %% -- both text and binary protocol --
 
@@ -1220,6 +1294,27 @@ parse_auth_method_switch(AMSData) ->
        auth_plugin_data = AuthPluginData
       }.
 
+-spec parse_auth_more_data(binary()) -> auth_more_data().
+parse_auth_more_data(<<3>>) ->
+    %% With caching_sha2_password authentication, a single 0x03
+    %% byte signals Fast Auth Success.
+    fast_auth_completed;
+parse_auth_more_data(<<4>>) ->
+    %% With caching_sha2_password authentication, a single 0x04
+    %% byte signals a Full Auth Request.
+    full_auth_requested;
+parse_auth_more_data(Data) ->
+    %% With caching_sha2_password authentication, anything
+    %% other than the above should be the public key of the
+    %% server.
+    PubKey = case public_key:pem_decode(Data) of
+        [PemEntry = #'SubjectPublicKeyInfo'{}] ->
+            public_key:pem_entry_decode(PemEntry);
+        [PemEntry = #'RSAPublicKey'{}] ->
+            PemEntry
+    end,
+    {public_key, PubKey}.
+
 -spec get_null_terminated_binary(binary()) -> {Binary :: binary(),
                                                Rest :: binary()}.
 get_null_terminated_binary(In) ->
@@ -1230,37 +1325,89 @@ get_null_terminated_binary(<<0, Rest/binary>>, Acc) ->
 get_null_terminated_binary(<<Ch, Rest/binary>>, Acc) ->
     get_null_terminated_binary(Rest, <<Acc/binary, Ch>>).
 
--spec hash_password(Password :: iodata(), Salt :: binary()) -> Hash :: binary().
-hash_password(Password, Salt) ->
+-spec hash_password(AuthMethod, Password, Salt) -> Hash
+  when AuthMethod :: binary(),
+       Password :: iodata(),
+       Salt :: binary(),
+       Hash :: binary().
+hash_password(AuthMethod, Password, Salt) when not is_binary(Password) ->
+    hash_password(AuthMethod, iolist_to_binary(Password), Salt);
+hash_password(?authmethod_none, Password, Salt) ->
+    hash_password(?authmethod_mysql_native_password, Password, Salt);
+hash_password(?authmethod_mysql_native_password, <<>>, _Salt) ->
+    <<>>;
+hash_password(?authmethod_mysql_native_password, Password, Salt) ->
     %% From the "MySQL Internals" manual:
     %% SHA1( password ) XOR SHA1( "20-bytes random data from server" <concat>
     %%                            SHA1( SHA1( password ) ) )
-    %% ----
-    %% Make sure the salt is exactly 20 bytes.
-    %%
-    %% The auth data is obviously nul-terminated. For the "native" auth
-    %% method, it should be a 20 byte salt, so let's trim it in this case.
-    PasswordBin = case erlang:is_binary(Password) of
-        true -> Password;
-        false -> erlang:iolist_to_binary(Password)
-    end,
-    case PasswordBin =:= <<>> of
-        true -> <<>>;
-        false -> hash_non_empty_password(Password, Salt)
-    end.
-
--spec hash_non_empty_password(Password :: iodata(), Salt :: binary()) ->
-    Hash :: binary().
-hash_non_empty_password(Password, Salt) ->
-    Salt1 = case Salt of
-        <<SaltNoNul:20/binary-unit:8, 0>> -> SaltNoNul;
-        _ when size(Salt) == 20           -> Salt
-    end,
-    %% Hash as described above.
+    Salt1 = trim_salt(Salt),
     <<Hash1Num:160>> = Hash1 = crypto:hash(sha, Password),
     Hash2 = crypto:hash(sha, Hash1),
     <<Hash3Num:160>> = crypto:hash(sha, <<Salt1/binary, Hash2/binary>>),
-    <<(Hash1Num bxor Hash3Num):160>>.
+    <<(Hash1Num bxor Hash3Num):160>>;
+hash_password(?authmethod_caching_sha2_password, <<>>, _Salt) ->
+    <<>>;
+hash_password(?authmethod_caching_sha2_password, Password, Salt) ->
+    %% From https://dev.mysql.com/doc/dev/mysql-server/latest/page_caching_sha2_authentication_exchanges.html
+    %% (transcribed):
+    %% SHA256( password ) XOR SHA256( SHA256( SHA256( password ) ) <concat>
+    %%                                        "20-bytes random data from server" )
+    Salt1 = trim_salt(Salt),
+    <<Hash1Num:256>> = Hash1 = crypto:hash(sha256, Password),
+    Hash2 = crypto:hash(sha256, Hash1),
+    <<Hash3Num:256>> = crypto:hash(sha256, <<Hash2/binary, Salt1/binary>>),
+    <<(Hash1Num bxor Hash3Num):256>>;
+hash_password(?authmethod_sha256_password, Password, Salt) ->
+    %% sha256_password authentication is superseded by
+    %% caching_sha2_password.
+    hash_password(?authmethod_caching_sha2_password, Password, Salt);
+hash_password(UnknownAuthMethod, _, _) ->
+    error({auth_method, UnknownAuthMethod}).
+
+encrypt_password(Password, Salt, PubKey, ServerVersion)
+  when is_binary(Password) ->
+    %% From http://www.dataarchitect.cloud/preparing-your-community-connector-for-mysql-8-part-2-sha256/:
+    %% "The password is "obfuscated" first by employing a rotating "xor" against
+    %% the seed bytes that were given to the authentication plugin upon initial
+    %% handshake [the auth plugin data].
+    %% [...]
+    %% Buffer would then be encrypted using the RSA public key the server passed
+    %% to the client.  The resulting buffer would then be passed back to the
+    %% server."
+    Salt1 = trim_salt(Salt),
+
+    %% While the article does not mention it, the password must be null-terminated
+    %% before obfuscation.
+    Password1 = <<Password/binary, 0>>,
+    Salt2 = case byte_size(Salt1)<byte_size(Password1) of
+        true ->
+            binary:copy(Salt1, (byte_size(Password1) div byte_size(Salt1)) + 1);
+        false ->
+            Salt1
+    end,
+    Size = bit_size(Password1),
+    <<PasswordNum:Size>> = Password1,
+    <<SaltNum:Size, _/bitstring>> = Salt2,
+    Password2 = <<(PasswordNum bxor SaltNum):Size>>,
+
+    %% From http://www.dataarchitect.cloud/preparing-your-community-connector-for-mysql-8-part-2-sha256/:
+    %% "It's important to note that a incompatible change happened in server 8.0.5.
+    %% Prior to server 8.0.5 the encryption was done using RSA_PKCS1_PADDING.
+    %% With 8.0.5 it is done with RSA_PKCS1_OAEP_PADDING."
+    RsaPadding = case ServerVersion < [8, 0, 5] of
+        true -> rsa_pkcs1_padding;
+        false -> rsa_pkcs1_oaep_padding
+    end,
+    %% The option rsa_pad was renamed to rsa_padding in OTP/22, but rsa_pad
+    %% is being kept for backwards compatibility.
+    public_key:encrypt_public(Password2, PubKey, [{rsa_pad, RsaPadding}]);
+encrypt_password(Password, Salt, PubKey, ServerVersion) ->
+    encrypt_password(iolist_to_binary(Password), Salt, PubKey, ServerVersion).
+
+trim_salt(<<SaltNoNul:20/binary-unit:8, 0>>) ->
+    SaltNoNul;
+trim_salt(Salt = <<_:20/binary-unit:8>>) ->
+    Salt.
 
 %% --- Lowlevel: variable length integers and strings ---
 
@@ -1463,8 +1610,17 @@ parse_eof_test() ->
 hash_password_test() ->
     ?assertEqual(<<222,207,222,139,41,181,202,13,191,241,
                    234,234,73,127,244,101,205,3,28,251>>,
-                 hash_password(<<"foo">>, <<"abcdefghijklmnopqrst">>)),
-    ?assertEqual(<<>>, hash_password(<<>>, <<"abcdefghijklmnopqrst">>)).
+                 hash_password(?authmethod_mysql_native_password,
+                               <<"foo">>, <<"abcdefghijklmnopqrst">>)),
+    ?assertEqual(<<>>, hash_password(?authmethod_mysql_native_password,
+                                     <<>>, <<"abcdefghijklmnopqrst">>)),
+    ?assertEqual(<<125,155,142,2,20,139,6,254,65,126,239,
+                   146,107,77,17,8,120,55,247,33,87,16,76,
+                   63,128,131,60,188,58,81,171,242>>,
+                 hash_password(?authmethod_caching_sha2_password,
+                               <<"foo">>, <<"abcdefghijklmnopqrst">>)),
+    ?assertEqual(<<>>, hash_password(?authmethod_caching_sha2_password,
+                                     <<>>, <<"abcdefghijklmnopqrst">>)).
 
 valid_params_test() ->
     ValidParams = [
