@@ -1,7 +1,20 @@
+dist: xenial
+sudo: true
 language: erlang
 services:
   - mysql
+env:
+  - MYSQL8=0
+  - MYSQL8=1
 before_script:
+  - if [ $MYSQL8 = 1 ]; then
+      wget https://repo.mysql.com/mysql-apt-config_0.8.14-1_all.deb;
+      sudo dpkg -i mysql-apt-config_0.8.14-1_all.deb;
+      sudo apt-get update -q;
+      sudo apt-get install -q -y --allow-unauthenticated -o Dpkg::Options::=--force-confnew mysql-server;
+      sudo systemctl restart mysql;
+      sudo mysql_upgrade;
+    fi
   - sudo service mysql stop
   - SSLDIR=/etc/mysql/ make tests-prep
   - sudo cp test/ssl/*.pem /etc/mysql/
@@ -14,8 +27,8 @@ before_script:
   - mysql -uroot -e "GRANT ALL PRIVILEGES ON otptest.* TO otptest@localhost;"
   - mysql -uroot -e "CREATE USER otptest2@localhost IDENTIFIED BY 'otptest2';"
   - mysql -uroot -e "GRANT ALL PRIVILEGES ON otptest.* TO otptest2@localhost;"
-  - mysql -uroot -e "CREATE USER otptestssl@localhost IDENTIFIED BY 'otptestssl';"
-  - mysql -uroot -e "GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost REQUIRE SSL;"
+  - mysql -uroot -e "CREATE USER otptestssl@localhost IDENTIFIED BY 'otptestssl' REQUIRE SSL;"
+  - mysql -uroot -e "GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost;"
 script: 'make tests'
 otp_release:
   - 22.0
@@ -27,4 +40,3 @@ otp_release:
   - 17.3
   - 17.0
   - R16B03-1
-

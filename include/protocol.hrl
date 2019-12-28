@@ -19,6 +19,7 @@
 %% Response packet tag (first byte)
 -define(OK, 0).
 -define(EOF, 16#fe).
+-define(MORE_DATA, 16#01).
 -define(ERROR, 16#ff).
 
 %% Character sets
@@ -26,6 +27,10 @@
 -define(UTF8MB4, 16#2d). %% utf8mb4_general_ci
 
 %% --- Capability flags ---
+
+%% Use the improved version of Old Password Authentication.
+%% Assumed to be set since 4.1.1.
+-define(CLIENT_LONG_PASSWORD, 16#00000001).
 
 %% Server: sends found rows instead of affected rows in EOF_Packet
 -define(CLIENT_FOUND_ROWS, 16#00000002).
