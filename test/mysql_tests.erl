@@ -66,7 +66,9 @@ connect_asynchronous_failing_test() ->
             {ok, Pid} = mysql:start_link([{user, "dummy"}, {password, "junk"},
                                           {connect_mode, asynchronous}]),
             receive
-                {'EXIT', Pid, {error, {1045, <<"28000">>, _}}} -> ok
+                {'EXIT', Pid, {error, Error}} ->
+                    true = is_access_denied(Error),
+                    ok
             after 1000 ->
                 error(no_exit_message)
             end
@@ -93,14 +95,7 @@ failing_connect_test() ->
         end),
     ?assertMatch([_|_], Logged), % some errors logged
     {error, Error} = Ret,
-    case Error of
-        {1045, <<"28000">>, <<"Access denie", _/binary>>} ->
-            ok; % MySQL 5.x, etc.
-        {1251, <<"08004">>, <<"Client does not support authentication "
-                              "protocol requested by server; consider "
-                              "upgrading MariaDB client">>} ->
-            ok % MariaDB 10.3.13
-    end,
+    true = is_access_denied(Error),
     receive
         {'EXIT', _Pid, Error} -> ok
     after 1000 ->
@@ -1005,3 +1000,13 @@ parse_db_version(Version) ->
   [Version1 | _] = binary:split(Version, <<"-">>),
   lists:map(fun binary_to_integer/1,
             binary:split(Version1, <<".">>, [global])).
+
+is_access_denied({1045, <<"28000">>, <<"Access denie", _/binary>>}) ->
+    true; % MySQL 5.x, etc.
+is_access_denied({1698, <<"28000">>, <<"Access denie", _/binary>>}) ->
+    true; % MariaDB 10.3.15
+is_access_denied({1251, <<"08004">>, <<"Client does not support authentication "
+                                       "protocol requested", _/binary>>}) ->
+    true; % This has been observed with MariaDB 10.3.13
+is_access_denied(_) ->
+    false.
