@@ -1006,8 +1006,7 @@ is_access_denied({1045, <<"28000">>, <<"Access denie", _/binary>>}) ->
 is_access_denied({1698, <<"28000">>, <<"Access denie", _/binary>>}) ->
     true; % MariaDB 10.3.15
 is_access_denied({1251, <<"08004">>, <<"Client does not support authentication "
-                                       "protocol requested by server; consider "
-                                       "upgrading MariaDB client">>}) ->
+                                       "protocol requested", _/binary>>}) ->
     true; % This has been observed with MariaDB 10.3.13
 is_access_denied(_) ->
     false.
