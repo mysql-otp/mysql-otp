@@ -124,11 +124,11 @@ GRANT ALL PRIVILEGES ON otptest.* TO otptest@localhost;
 CREATE USER otptest2@localhost IDENTIFIED BY 'otptest2';
 GRANT ALL PRIVILEGES ON otptest.* TO otptest2@localhost;
 
-# in MySQL < 5.7, REQUIRE SSL must be given in GRANT
+-- in MySQL < 5.7, REQUIRE SSL must be given in GRANT
 CREATE USER otptestssl@localhost IDENTIFIED BY 'otptestssl';
 GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost REQUIRE SSL;
 
-# in MySQL >= 8.0, REQUIRE SSL must be given in CREATE USER
+-- in MySQL >= 8.0, REQUIRE SSL must be given in CREATE USER
 CREATE USER otptestssl@localhost IDENTIFIED BY 'otptestssl' REQUIRE SSL;
 GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost;
 ```
