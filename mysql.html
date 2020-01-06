@@ -70,11 +70,10 @@ query.</td></tr>
 <tr><td valign="top"><a href="#prepare-2">prepare/2</a></td><td>Creates a prepared statement from the passed query.</td></tr>
 <tr><td valign="top"><a href="#prepare-3">prepare/3</a></td><td>Creates a prepared statement from the passed query and associates it
   with the given name.</td></tr>
-<tr><td valign="top"><a href="#query-2">query/2</a></td><td></td></tr>
-<tr><td valign="top"><a href="#query-3">query/3</a></td><td></td></tr>
-<tr><td valign="top"><a href="#query-4">query/4</a></td><td></td></tr>
-<tr><td valign="top"><a href="#query-5">query/5</a></td><td>Executes a parameterized query with a timeout and applies a filter/map  
-function to the result rows.</td></tr>
+<tr><td valign="top"><a href="#query-2">query/2</a></td><td>Executes a plain query.</td></tr>
+<tr><td valign="top"><a href="#query-3">query/3</a></td><td>Executes a query.</td></tr>
+<tr><td valign="top"><a href="#query-4">query/4</a></td><td>Executes a query.</td></tr>
+<tr><td valign="top"><a href="#query-5">query/5</a></td><td>Executes a query.</td></tr>
 <tr><td valign="top"><a href="#reset_connection-1">reset_connection/1</a></td><td></td></tr>
 <tr><td valign="top"><a href="#start_link-1">start_link/1</a></td><td>Starts a connection gen_server process and connects to a database.</td></tr>
 <tr><td valign="top"><a href="#stop-1">stop/1</a></td><td></td></tr>
@@ -215,61 +214,74 @@ strings and binaries are escaped. Otherwise only single quotes are escaped.</p>
 <div class="spec">
 <p><tt>query(Conn, Query) -&gt; Result</tt>
 <ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
-</div>
+</div><p>Executes a plain query.</p>
 <p><b>See also:</b> <a href="#query-5">query/5</a>.</p>
 
 <h3 class="function"><a name="query-3">query/3</a></h3>
 <div class="spec">
 <p><tt>query(Conn, Query, Params::Params | FilterMap | Timeout) -&gt; Result</tt>
 <ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>Timeout = default_timeout | timeout()</tt></li><li><tt>Params = no_params | [term()]</tt></li><li><tt>FilterMap = no_filtermap_fun | <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
-</div>
+</div><p>Executes a query.</p>
 <p><b>See also:</b> <a href="#query-5">query/5</a>.</p>
 
 <h3 class="function"><a name="query-4">query/4</a></h3>
 <div class="spec">
 <p><tt>query(Conn, Query, Params, Timeout) -&gt; Result</tt>
 <ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>Timeout = default_timeout | timeout()</tt></li><li><tt>Params = no_params | [term()]</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
-</div>
+</div><p>Executes a query.</p>
 <p><b>See also:</b> <a href="#query-5">query/5</a>.</p>
 
 <h3 class="function"><a name="query-5">query/5</a></h3>
 <div class="spec">
 <p><tt>query(Conn, Query, Params, FilterMap, Timeout) -&gt; Result</tt>
 <ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>Timeout = default_timeout | timeout()</tt></li><li><tt>Params = no_params | [term()]</tt></li><li><tt>FilterMap = no_filtermap_fun | <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
-</div><p><p>Executes a parameterized query with a timeout and applies a filter/map  
-function to the result rows.</p>
+</div><p><p>Executes a query.</p>
  
-  <p>A prepared statement is created, executed and then cached for a certain  
-time. If the same query is executed again when it is already cached, it does  
-not need to be prepared again.</p>
+  <h4><a name="Parameters">Parameters</a></h4>
  
-  <p>The minimum time the prepared statement is cached can be specified using the
-  option <code>{query_cache_time, Milliseconds}</code> to start_link/1.</p>
+  <p><code>Conn</code> is identifying a connection process started using
+  <code>mysql:start_link/1</code>.</p>
+ 
+  <p><code>Query</code> is the query to execute, as a binary or a list.</p>
+ 
+  <p><code>Params</code>, <code>FilterMap</code> and <code>Timeout</code> are optional.</p>
+ 
+  <p>If <code>Params</code> (a list) is specified, the query is performed as a prepared
+  statement. A prepared statement is created, executed and then cached for a
+  certain time (specified using the option <code>{query_cache_time, Milliseconds}</code>
+  to <code>start_link/1</code>). If the same query is executed again during this time,
+  it does not need to be prepared again. If <code>Params</code> is omitted (or specified
+  as <code>no_params</code>), the query is executed as a plain query. To force a query
+  without parameters to be executed as a prepared statement, an empty list can
+  be used for <code>Params</code>.</p>
+ 
+  <p>If <code>FilterMap</code> (a fun) is specified, the function is applied to each row to
+  filter or perform other actions on the rows, in a way similar to how
+  <code>lists:filtermap/2</code> works, before the result is returned to the caller. See  
+below for details.</p>
+ 
+  <p><code>Timeout</code> specifies the time to wait for a response from the database. If
+  omitted (or specified as <code>default_timeout</code>), the timeout given in
+  <code>start_link/1</code> is used.</p>
+ 
+  <h4><a name="Return_value">Return value</a></h4>
  
   <p>Results are returned in the form <code>{ok, ColumnNames, Rows}</code> if there is one
   result set. If there are more than one result sets, they are returned in the
-  form <code>{ok, [{ColumnNames, Rows}, ...]}</code>.</p>
+  form <code>{ok, [{ColumnNames, Rows}, ...]}</code>. This is typically the case if  
+multiple queries are specified at the same time, separated by semicolons.</p>
  
   <p>For queries that don't return any rows (INSERT, UPDATE, etc.) only the atom
   <code>ok</code> is returned.</p>
  
-  The <code>Params</code>, <code>FilterMap</code> and <code>Timeout</code> arguments are optional.
-  <ul>
-    <li>If the <code>Params</code> argument is the atom <code>no_params</code> or is omitted, a plain
-        query will be executed instead of a parameterized one.</li>
-    <li>If the <code>FilterMap</code> argument is the atom <code>no_filtermap_fun</code> or is
-        omitted, no row filtering/mapping will be applied and all result rows
-        will be returned unchanged.</li>
-    <li>If the <code>Timeout</code> argument is the atom <code>default_timeout</code> or is omitted,
-        the timeout given in <code>start_link/1</code> is used.</li>
-  </ul>
+  <h4><a name="FilterMap_details">FilterMap details</a></h4>
  
   <p>If the <code>FilterMap</code> argument is used, it must be a function of arity 1 or 2
   that returns either <code>true</code>, <code>false</code>, or <code>{true, Value}</code>.</p>
  
   <p>Each result row is handed to the given function as soon as it is received
   from the server, and only when the function has returned, the next row is
-  fetched. This provides the ability to prevent memory exhaustion; on the
+  fetched. This provides the ability to prevent memory exhaustion. On the
   other hand, it can cause the server to time out on sending if your function
   is doing something slow (see the MySQL documentation on <code>NET_WRITE_TIMEOUT</code>).</p>
  
@@ -282,6 +294,8 @@ in as the first argument and the row as the second.</p>
 else is to be included in the result instead (mapping). You may also use  
 this function for side effects, like writing rows to disk or sending them  
 to another process etc.</p>
+ 
+  <h4><a name="Examples">Examples</a></h4>
  
   Here is an example showing some of the things that are possible:
   <pre>  Query = "SELECT a, b, c FROM foo",
@@ -323,7 +337,7 @@ to another process etc.</p>
 <h3 class="function"><a name="start_link-1">start_link/1</a></h3>
 <div class="spec">
 <p><tt>start_link(Options) -&gt; {ok, pid()} | ignore | {error, term()}</tt>
-<ul class="definitions"><li><tt>Options = [Option]</tt></li><li><tt>Option = {name, ServerName} | {host, <a href="inet.html#type-socket_address">inet:socket_address()</a> | <a href="inet.html#type-hostname">inet:hostname()</a>} | {port, integer()} | {user, iodata()} | {password, iodata()} | {database, iodata()} | {connect_timeout, timeout()} | {log_warnings, boolean()} | {keep_alive, boolean() | timeout()} | {prepare, NamedStatements} | {queries, [iodata()]} | {query_timeout, timeout()} | {found_rows, boolean()} | {query_cache_time, non_neg_integer()} | {tcp_options, [<a href="gen_tcp.html#type-connect_option">gen_tcp:connect_option()</a>]} | {ssl, term()}</tt></li><li><tt>ServerName = {local, Name::atom()} | {global, GlobalName::term()} | {via, Module::atom(), ViaName::term()}</tt></li><li><tt>NamedStatements = [{StatementName::atom(), Statement::iodata()}]</tt></li></ul></p>
+<ul class="definitions"><li><tt>Options = [Option]</tt></li><li><tt>Option = {name, ServerName} | {host, <a href="inet.html#type-socket_address">inet:socket_address()</a> | <a href="inet.html#type-hostname">inet:hostname()</a>} | {port, integer()} | {user, iodata()} | {password, iodata()} | {database, iodata()} | {connect_mode, synchronous | asynchronous | lazy} | {connect_timeout, timeout()} | {log_warnings, boolean()} | {log_slow_queries, boolean()} | {keep_alive, boolean() | timeout()} | {prepare, NamedStatements} | {queries, [iodata()]} | {query_timeout, timeout()} | {found_rows, boolean()} | {query_cache_time, non_neg_integer()} | {tcp_options, [<a href="gen_tcp.html#type-connect_option">gen_tcp:connect_option()</a>]} | {ssl, term()}</tt></li><li><tt>ServerName = {local, Name::atom()} | {global, GlobalName::term()} | {via, Module::atom(), ViaName::term()}</tt></li><li><tt>NamedStatements = [{StatementName::atom(), Statement::iodata()}]</tt></li></ul></p>
 </div><p><p>Starts a connection gen_server process and connects to a database. To
   disconnect use <code>mysql:stop/1,2</code>.</p>
  
@@ -347,11 +361,37 @@ to another process etc.</p>
     <dt><code>{database, Database}</code></dt>
     <dd>The name of the database AKA schema to use. This can be changed later
         using the query <code>USE &lt;database&gt;</code>.</dd>
+    <dt><code>{connect_mode, synchronous | asynchronous | lazy}</code></dt>
+    <dd>Specifies how and when the connection process should establish a connection
+        to the MySQL server.
+        <dl>
+          <dt><code>synchronous</code> (default)</dt>
+          <dd>The connection will be established as part of the connection process'
+              start routine, ie the returned connection process will already be
+              connected and ready to use, and any on-connect prepares and queries
+              will have been executed.</dd>
+          <dt><code>asynchronous</code></dt>
+          <dd>The connection process will be started and returned to the caller
+              before really establishing a connection to the server and executing
+              the on-connect prepares and executes. This will instead be done
+              immediately afterwards as the first action of the connection
+              process.</dd>
+          <dt><code>lazy</code></dt>
+          <dd>Similar to <code>asynchronous</code> mode, but an actual connection will be
+              established and the on-connect prepares and queries executed only
+              when a connection is needed for the first time, eg. to execute a
+              query.</dd>
+       </dl>
+    </dd>
     <dt><code>{connect_timeout, Timeout}</code></dt>
     <dd>The maximum time to spend for start_link/1.</dd>
     <dt><code>{log_warnings, boolean()}</code></dt>
     <dd>Whether to fetch warnings and log them using error_logger; default
         true.</dd>
+    <dt><code>{log_slow_queries, boolean()}</code></dt>
+    <dd>Whether to log slow queries using error_logger; default false. Queries
+        are flagged as slow by the server if their execution time exceeds the
+        value in the <code>long_query_time</code> variable.</dd>
     <dt><code>{keep_alive, boolean() | timeout()}</code></dt>
     <dd>Send ping when unused for a certain time. Possible values are <code>true</code>,
         <code>false</code> and <code>integer() &gt; 0</code> for an explicit interval in milliseconds.
