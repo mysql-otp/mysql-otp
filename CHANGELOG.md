@@ -2,6 +2,29 @@ Change log
 ==========
 
 
+1.6.0
+-----
+* Update version [2020-01-06 19:21:50 +0100]
+* Travis tests for MySQL 5.6, 5.7, 8.0 and MariaDB 10.3 [2020-01-06 11:02:23 +0100]
+* Update tests to pass with MariaDB 10.3 [2020-01-03 17:00:15 +0100]
+* Workaround for changed deadlock handling in MySQL 5.7+ [2019-12-29 00:26:14 +0100]
+* Fix MariaDB by not checking server capability CLIENT_LONG_PASSWORD [2019-12-28 22:54:03 +0100]
+* Update README.md [2019-12-28 14:53:32 +0100]
+* Edit documentation (edoc) [2019-12-28 14:53:32 +0100]
+* Implement caching_sha2_password authentication [2019-12-28 14:38:46 +0100]
+* Log slow queries [2019-12-21 20:03:15 +0100]
+* Fix race conditions in change user tests [2019-12-17 18:54:28 +0100]
+* Examine final EOF packet following resultset rows [2019-12-11 17:12:03 +0100]
+* Override mode, packet and active TCP options (#148) [2019-12-10 13:08:13 +0100]
+* Add kernel, stdlib and ssl to .app applications [2019-11-25 15:10:03 +0100]
+* Enable connect modes: synchronous (default), asynchronous and lazy [2019-11-14 17:31:31 +0100]
+* Normal exit when tcp_closed (#139) [2019-10-23 01:26:44 +0200]
+* Check logged errors in tests and hide them from the output [2019-10-16 01:18:02 +0200]
+* support 'COM_RESET_CONNECTION' (#138) [2019-10-15 10:32:58 +0200]
+* Disable the deadlock test for MySQL 5.7.x [2019-10-14 21:24:27 +0200]
+* Fix 'Access denied' test case failing on MariaDB [2019-09-21 23:12:31 +0200]
+* Update CHANGELOG.md [2019-09-20 20:51:36 +0200]
+
 1.5.1
 -----
 * Info about hex and mix in README and update version [2019-09-20 20:50:05 +0200]
