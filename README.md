@@ -176,12 +176,9 @@ Tagging a new version:
   * Update the online documentation and coverage reports using `make gh-pages`.
     Then push the gh-pages branch using `git push origin gh-pages`.
 
-Updating the Hex package using rebar3:
+Updating the Hex package (requires Mix):
 
-1. Setup the rebar3 hex plugin and authentication;
-    see [rebar3_hex](https://github.com/tsloughter/rebar3_hex).
-2. `rebar3 hex publish`
-3. `rebar3 hex docs`
+    make publish-hex
 
 License
 -------
@@ -190,7 +187,3 @@ GNU Lesser General Public License (LGPL) version 3 or any later version.
 Since the LGPL is a set of additional permissions on top of the GPL, both
 license texts are included in the files [COPYING](COPYING) and
 [COPYING.LESSER](COPYING.LESSER) respectively.
-
-We hope this license should be permissive enough while remaining copyleft. If
-you're having issues with this license, please create an issue in the issue
-tracker!

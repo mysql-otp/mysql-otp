@@ -13,6 +13,7 @@ ebin
 rel/example_project
 .concrete/DEV_MODE
 .rebar
+mix.exs
 cover
 *.coverdata
 tests.output
