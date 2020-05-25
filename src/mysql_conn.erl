@@ -512,9 +512,9 @@ handle_info({'DOWN', _MRef, _, Pid, _Info}, State) ->
     stop_server({application_process_died, Pid}, State);
 handle_info(ping, #state{socket = Socket, sockmod = SockMod} = State) ->
     setopts(SockMod, Socket, [{active, false}]),
-    Ok = mysql_protocol:ping(SockMod, Socket),
+    #ok{} = mysql_protocol:ping(SockMod, Socket),
     setopts(SockMod, Socket, [{active, once}]),
-    {noreply, update_state(Ok, State)};
+    {noreply, schedule_ping(State)};
 handle_info({tcp_closed, _Socket}, State) ->
     {stop, normal, State#state{socket = undefined, connection_id = undefined}}; 
 handle_info({tcp_error, _Socket, Reason}, State) ->
