@@ -168,6 +168,11 @@ connect_socket(#state{tcp_opts = TcpOpts, host = Host, port = Port} = State) ->
 
     {ok, State#state{socket = Socket}}.
 
+sanitize_tcp_opts([{inet_backend, _} = InetBackend | TcpOpts0]) ->
+    %% This option is be used to turn on the experimental socket backend for
+    %% gen_tcp/inet (OTP/23). If given, it must remain the first option in the
+    %% list.
+    [InetBackend | sanitize_tcp_opts(TcpOpts0)];
 sanitize_tcp_opts(TcpOpts0) ->
     TcpOpts1 = lists:filter(
         fun
