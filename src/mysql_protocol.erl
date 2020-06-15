@@ -27,7 +27,7 @@
 %% @private
 -module(mysql_protocol).
 
--export([handshake/7, change_user/8, quit/2, ping/2,
+-export([handshake/8, change_user/8, quit/2, ping/2,
          query/4, query/5, fetch_query_response/3,
          fetch_query_response/4, prepare/3, unprepare/3,
          execute/5, execute/6, fetch_execute_response/3,
@@ -66,21 +66,22 @@
 %% @doc Performs a handshake using the supplied socket and socket module for
 %% communication. Returns an ok or an error record. Raises errors when various
 %% unimplemented features are requested.
--spec handshake(Username :: iodata(), Password :: iodata(),
+-spec handshake(Host :: inet:socket_address() | inet:hostname(),
+                Username :: iodata(), Password :: iodata(),
                 Database :: iodata() | undefined,
                 SockModule :: module(), SSLOpts :: list() | undefined,
                 Socket :: term(),
                 SetFoundRows :: boolean()) ->
     {ok, #handshake{}, SockModule :: module(), Socket :: term()} |
     #error{}.
-handshake(Username, Password, Database, SockModule0, SSLOpts, Socket0,
+handshake(Host, Username, Password, Database, SockModule0, SSLOpts, Socket0,
           SetFoundRows) ->
     SeqNum0 = 0,
     {ok, HandshakePacket, SeqNum1} = recv_packet(SockModule0, Socket0, SeqNum0),
     case parse_handshake(HandshakePacket) of
         #handshake{} = Handshake ->
             {ok, SockModule, Socket, SeqNum2} =
-                maybe_do_ssl_upgrade(SockModule0, Socket0, SeqNum1, Handshake,
+                maybe_do_ssl_upgrade(Host, SockModule0, Socket0, SeqNum1, Handshake,
                                      SSLOpts, Database, SetFoundRows),
             Response = build_handshake_response(Handshake, Username, Password,
                                                 Database, SetFoundRows),
@@ -397,7 +398,8 @@ server_version_to_list(ServerVersion) ->
                             [{capture, all_but_first, binary}]),
     lists:map(fun binary_to_integer/1, Parts).
 
--spec maybe_do_ssl_upgrade(SockModule0 :: module(),
+-spec maybe_do_ssl_upgrade(Host :: inet:socket_address() | inet:hostname(),
+                           SockModule0 :: module(),
                            Socket0 :: term(),
                            SeqNum1 :: non_neg_integer(),
                            Handshake :: #handshake{},
@@ -406,24 +408,29 @@ server_version_to_list(ServerVersion) ->
                            SetFoundRows :: boolean()) ->
     {ok, SockModule :: module(), Socket :: term(),
      SeqNum2 :: non_neg_integer()}.
-maybe_do_ssl_upgrade(SockModule0, Socket0, SeqNum1, _Handshake, undefined,
-                     _Database, _SetFoundRows) ->
+maybe_do_ssl_upgrade(_Host, SockModule0, Socket0, SeqNum1, _Handshake,
+                     undefined, _Database, _SetFoundRows) ->
     {ok, SockModule0, Socket0, SeqNum1};
-maybe_do_ssl_upgrade(gen_tcp, Socket0, SeqNum1, Handshake, SSLOpts,
+maybe_do_ssl_upgrade(Host, gen_tcp, Socket0, SeqNum1, Handshake, SSLOpts,
                      Database, SetFoundRows) ->
     Response = build_handshake_response(Handshake, Database, SetFoundRows),
     {ok, SeqNum2} = send_packet(gen_tcp, Socket0, Response, SeqNum1),
-    case ssl_connect(Socket0, SSLOpts, 5000) of
+    case ssl_connect(Host, Socket0, SSLOpts, 5000) of
         {ok, SSLSocket} ->
             {ok, ssl, SSLSocket, SeqNum2};
         {error, Reason} ->
             exit({failed_to_upgrade_socket, Reason})
     end.
 
-ssl_connect(Port, ConfigSSLOpts, Timeout) ->
-    DefaultSSLOpts = [{versions, [tlsv1]}, {verify, verify_peer}],
+ssl_connect(Host, Port, ConfigSSLOpts, Timeout) ->
+    DefaultSSLOpts0 = [{versions, [tlsv1]}, {verify, verify_peer}],
+    DefaultSSLOpts1 = case is_list(Host) andalso inet:parse_address(Host) of
+        false -> DefaultSSLOpts0;
+        {ok, _} -> DefaultSSLOpts0;
+        {error, einval} -> [{server_name_indication, Host} | DefaultSSLOpts0]
+    end,
     MandatorySSLOpts = [{active, false}],
-    MergedSSLOpts = merge_ssl_options(DefaultSSLOpts, MandatorySSLOpts, ConfigSSLOpts),
+    MergedSSLOpts = merge_ssl_options(DefaultSSLOpts1, MandatorySSLOpts, ConfigSSLOpts),
     ssl:connect(Port, MergedSSLOpts, Timeout).
 
 -spec merge_ssl_options(list(), list(), list()) -> list().

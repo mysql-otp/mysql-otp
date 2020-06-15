@@ -192,11 +192,11 @@ sanitize_tcp_opts(TcpOpts0) ->
     [binary, {packet, raw}, {active, false} | TcpOpts2].
 
 handshake(#state{socket = Socket0, ssl_opts = SSLOpts,
-        user = User, password = Password, database = Database,
-        cap_found_rows = SetFoundRows} = State0) ->
+          host = Host, user = User, password = Password, database = Database,
+          cap_found_rows = SetFoundRows} = State0) ->
     %% Exchange handshake communication.
-    Result = mysql_protocol:handshake(User, Password, Database, gen_tcp, SSLOpts,
-                                      Socket0, SetFoundRows),
+    Result = mysql_protocol:handshake(Host, User, Password, Database, gen_tcp,
+                                      SSLOpts, Socket0, SetFoundRows),
     case Result of
         {ok, Handshake, SockMod, Socket} ->
             setopts(SockMod, Socket, [{active, once}]),
@@ -741,7 +741,7 @@ kill_query(#state{connection_id = ConnId, host = Host, port = Port,
     {ok, Socket0} = gen_tcp:connect(Host, Port, SockOpts),
 
     %% Exchange handshake communication.
-    Result = mysql_protocol:handshake(User, Password, undefined, gen_tcp,
+    Result = mysql_protocol:handshake(Host, User, Password, undefined, gen_tcp,
                                       SSLOpts, Socket0, SetFoundRows),
     case Result of
         {ok, #handshake{}, SockMod, Socket} ->

@@ -147,7 +147,12 @@
 %%       `{recbuf, Size}' and `{sndbuf, Size}' if you send or receive more than
 %%       the default (typically 8K) per query.</dd>
 %%   <dt>`{ssl, Options}'</dt>
-%%   <dd>Additional options for `ssl:connect/3'.</dd>
+%%   <dd>Additional options for `ssl:connect/3'.<br />
+%%       The `verify' option, if not given explicitly, defaults to
+%%       `verify_peer'.<br />
+%%       The `server_name_indication' option, if omitted, defaults to the value
+%%       of the `host' option if it is a hostname string, otherwise no default
+%%       value is set.</dd>
 %% </dl>
 -spec start_link(Options) -> {ok, pid()} | ignore | {error, term()}
     when Options :: [Option],
