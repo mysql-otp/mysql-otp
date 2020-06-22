@@ -576,7 +576,7 @@ in_transaction(Conn) ->
 %% @see transaction/4
 -spec transaction(Conn, TransactionFun) -> TransactionResult
     when Conn :: connection(),
-         TransactionFun :: fun((...) -> Result),
+         TransactionFun :: fun(() -> Result),
          TransactionResult :: transaction_result(Result).
 transaction(Conn, Fun) ->
     transaction(Conn, Fun, [], infinity).
@@ -585,7 +585,7 @@ transaction(Conn, Fun) ->
 %% @see transaction/4
 -spec transaction(Conn, TransactionFun, Retries) -> TransactionResult
     when Conn :: connection(),
-         TransactionFun :: fun((...) -> Result),
+         TransactionFun :: fun(() -> Result),
          Retries :: non_neg_integer() | infinity,
          TransactionResult :: transaction_result(Result).
 transaction(Conn, Fun, Retries) ->
