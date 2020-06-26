@@ -35,7 +35,9 @@
          transaction/2, transaction/3, transaction/4,
          change_user/3, change_user/4, reset_connection/1]).
 
--export_type([connection/0, server_reason/0, query_result/0]).
+-export_type([option/0, connection/0, query/0, statement_name/0,
+              statement_ref/0, query_param/0, query_filtermap_fun/0,
+              query_result/0, transaction_result/1, server_reason/0]).
 
 %% A connection is a ServerRef as in gen_server:call/2,3.
 -type connection() :: Name :: atom() |
@@ -48,19 +50,48 @@
 -type server_reason() :: {Code :: integer(), SQLState :: binary() | undefined,
                           Message :: binary()}.
 
--type column_names() :: [binary()].
+-type column_name() :: binary().
+-type query() :: iodata().
 -type row() :: [term()].
--type rows() :: [row()].
+
+-type query_param() :: term().
 
 -type query_filtermap_fun() :: fun((row()) -> query_filtermap_res())
-                             | fun((column_names(), row()) -> query_filtermap_res()).
+                             | fun(([column_name()], row()) -> query_filtermap_res()).
 -type query_filtermap_res() :: boolean()
                              | {true, term()}.
 
+-type statement_id() :: integer().
+-type statement_name() :: atom().
+-type statement_ref() :: statement_id() | statement_name().
+
 -type query_result() :: ok
-                      | {ok, column_names(), rows()}
-                      | {ok, [{column_names(), rows()}, ...]}
+                      | {ok, [column_name()], [row()]}
+                      | {ok, [{[column_name()], [row()]}, ...]}
                       | {error, server_reason()}.
+
+-type transaction_result(Result) :: {atomic, Result} | {aborted, Reason :: term()}.
+
+-type server_name() :: {local, Name :: atom()}
+                     | {global, GlobalName :: term()}
+                     | {via, Via :: module(), ViaName :: term()}.
+
+-type option() :: {name, ServerName :: server_name()}
+                | {host, inet:socket_address() | inet:hostname()} | {port, integer()}
+                | {user, iodata()} | {password, iodata()}
+                | {database, iodata()}
+                | {connect_mode, synchronous | asynchronous | lazy}
+                | {connect_timeout, timeout()}
+                | {log_warnings, boolean()}
+                | {log_slow_queries, boolean()}
+                | {keep_alive, boolean() | timeout()}
+                | {prepare, [{StatementName :: statement_name(), Statement :: query()}]}
+                | {queries, [query()]}
+                | {query_timeout, timeout()}
+                | {found_rows, boolean()}
+                | {query_cache_time, non_neg_integer()}
+                | {tcp_options, [gen_tcp:connect_option()]}
+                | {ssl, term()}.
 
 -include("exception.hrl").
 
@@ -154,28 +185,7 @@
 %%       of the `host' option if it is a hostname string, otherwise no default
 %%       value is set.</dd>
 %% </dl>
--spec start_link(Options) -> {ok, pid()} | ignore | {error, term()}
-    when Options :: [Option],
-         Option :: {name, ServerName} |
-                   {host, inet:socket_address() | inet:hostname()} | {port, integer()} |
-                   {user, iodata()} | {password, iodata()} |
-                   {database, iodata()} |
-                   {connect_mode, synchronous | asynchronous | lazy} |
-                   {connect_timeout, timeout()} |
-                   {log_warnings, boolean()} |
-                   {log_slow_queries, boolean()} |
-                   {keep_alive, boolean() | timeout()} |
-                   {prepare, NamedStatements} |
-                   {queries, [iodata()]} |
-                   {query_timeout, timeout()} |
-                   {found_rows, boolean()} |
-                   {query_cache_time, non_neg_integer()} |
-                   {tcp_options, [gen_tcp:connect_option()]} |
-                   {ssl, term()},
-         ServerName :: {local, Name :: atom()} |
-                       {global, GlobalName :: term()} |
-                       {via, Module :: atom(), ViaName :: term()},
-         NamedStatements :: [{StatementName :: atom(), Statement :: iodata()}].
+-spec start_link(Options :: [option()]) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Options) ->
     case proplists:get_value(name, Options) of
         undefined ->
@@ -241,68 +251,68 @@ is_connected(Conn) ->
          Query :: iodata(),
          Result :: query_result().
 query(Conn, Query) ->
-    query(Conn, Query, no_params, no_filtermap_fun, default_timeout).
+    query_helper(Conn, Query, no_params, no_filtermap_fun, default_timeout).
 
 %% @doc Executes a query.
 %% @see query/5.
 -spec query(Conn, Query, Params | FilterMap | Timeout) -> Result
     when Conn :: connection(),
-         Query :: iodata(),
-         Timeout :: default_timeout | timeout(),
-         Params :: no_params | [term()],
-         FilterMap :: no_filtermap_fun | query_filtermap_fun(),
+         Query :: query(),
+         Timeout :: timeout(),
+         Params :: [query_param()],
+         FilterMap :: query_filtermap_fun(),
          Result :: query_result().
 query(Conn, Query, Params) when Params == no_params;
                                 is_list(Params) ->
-    query(Conn, Query, Params, no_filtermap_fun, default_timeout);
+    query_helper(Conn, Query, Params, no_filtermap_fun, default_timeout);
 query(Conn, Query, FilterMap) when FilterMap == no_filtermap_fun;
                                    is_function(FilterMap, 1);
                                    is_function(FilterMap, 2) ->
-    query(Conn, Query, no_params, FilterMap, default_timeout);
+    query_helper(Conn, Query, no_params, FilterMap, default_timeout);
 query(Conn, Query, Timeout) when Timeout == default_timeout;
                                  is_integer(Timeout);
                                  Timeout == infinity ->
-    query(Conn, Query, no_params, no_filtermap_fun, Timeout).
+    query_helper(Conn, Query, no_params, no_filtermap_fun, Timeout).
 
 %% @doc Executes a query.
 %% @see query/5.
 -spec query(Conn, Query, Params, Timeout) -> Result
         when Conn :: connection(),
-             Query :: iodata(),
-             Timeout :: default_timeout | timeout(),
-             Params :: no_params | [term()],
+             Query :: query(),
+             Timeout :: timeout(),
+             Params :: [query_param()],
              Result :: query_result();
     (Conn, Query, FilterMap, Timeout) -> Result
         when Conn :: connection(),
-             Query :: iodata(),
-             Timeout :: default_timeout | timeout(),
-             FilterMap :: no_filtermap_fun | query_filtermap_fun(),
+             Query :: query(),
+             Timeout :: timeout(),
+             FilterMap :: query_filtermap_fun(),
              Result :: query_result();
     (Conn, Query, Params, FilterMap) -> Result
         when Conn :: connection(),
-             Query :: iodata(),
-             Params :: no_params | [term()],
-             FilterMap :: no_filtermap_fun | query_filtermap_fun(),
+             Query :: query(),
+             Params :: [query_param()],
+             FilterMap :: query_filtermap_fun(),
              Result :: query_result().
 query(Conn, Query, Params, Timeout) when (Params == no_params orelse
                                           is_list(Params)) andalso
                                          (Timeout == default_timeout orelse
                                           is_integer(Timeout) orelse
                                           Timeout == infinity) ->
-    query(Conn, Query, Params, no_filtermap_fun, Timeout);
+    query_helper(Conn, Query, Params, no_filtermap_fun, Timeout);
 query(Conn, Query, FilterMap, Timeout) when (FilterMap == no_filtermap_fun orelse
                                              is_function(FilterMap, 1) orelse
                                              is_function(FilterMap, 2)) andalso
                                             (Timeout == default_timeout orelse
                                              is_integer(Timeout) orelse
                                              Timeout=:=infinity) ->
-    query(Conn, Query, no_params, FilterMap, Timeout);
+    query_helper(Conn, Query, no_params, FilterMap, Timeout);
 query(Conn, Query, Params, FilterMap) when (Params == no_params orelse
                                             is_list(Params)) andalso
                                            (FilterMap == no_filtermap_fun orelse
                                             is_function(FilterMap, 1) orelse
                                             is_function(FilterMap, 2)) ->
-    query(Conn, Query, Params, FilterMap, default_timeout).
+    query_helper(Conn, Query, Params, FilterMap, default_timeout).
 
 %% @doc Executes a query.
 %%
@@ -319,10 +329,9 @@ query(Conn, Query, Params, FilterMap) when (Params == no_params orelse
 %% statement. A prepared statement is created, executed and then cached for a
 %% certain time (specified using the option `{query_cache_time, Milliseconds}'
 %% to `start_link/1'). If the same query is executed again during this time,
-%% it does not need to be prepared again. If `Params' is omitted (or specified
-%% as `no_params'), the query is executed as a plain query. To force a query
-%% without parameters to be executed as a prepared statement, an empty list can
-%% be used for `Params'.
+%% it does not need to be prepared again. If `Params' is omitted, the query
+%% is executed as a plain query. To force a query without parameters to be
+%% executed as a prepared statement, an empty list can be used for `Params'.
 %%
 %% If `FilterMap' (a fun) is specified, the function is applied to each row to
 %% filter or perform other actions on the rows, in a way similar to how
@@ -330,8 +339,7 @@ query(Conn, Query, Params, FilterMap) when (Params == no_params orelse
 %% below for details.
 %%
 %% `Timeout' specifies the time to wait for a response from the database. If
-%% omitted (or specified as `default_timeout'), the timeout given in
-%% `start_link/1' is used.
+%% omitted, the timeout given in `start_link/1' is used.
 %%
 %% === Return value ===
 %%
@@ -396,18 +404,28 @@ query(Conn, Query, Params, FilterMap) when (Params == no_params orelse
 %%     (_) ->
 %%         false
 %% end,
-%% query(Conn, Query, no_params, FilterMap, default_timeout).
+%% query(Conn, Query, FilterMap).
 %% '''
 -spec query(Conn, Query, Params, FilterMap, Timeout) -> Result
     when Conn :: connection(),
-         Query :: iodata(),
+         Query :: query(),
+         Timeout :: timeout(),
+         Params :: [query_param()],
+         FilterMap :: query_filtermap_fun(),
+         Result :: query_result().
+query(Conn, Query, Params, FilterMap, Timeout) ->
+    query_helper(Conn, Query, Params, FilterMap, Timeout).
+
+-spec query_helper(Conn, Query, Params, FilterMap, Timeout) -> Result
+    when Conn :: connection(),
+         Query :: query(),
          Timeout :: default_timeout | timeout(),
-         Params :: no_params | [term()],
+         Params :: no_params | [query_param()],
          FilterMap :: no_filtermap_fun | query_filtermap_fun(),
          Result :: query_result().
-query(Conn, Query, no_params, FilterMap, Timeout) ->
+query_helper(Conn, Query, no_params, FilterMap, Timeout) ->
     query_call(Conn, {query, Query, FilterMap, Timeout});
-query(Conn, Query, Params, FilterMap, Timeout) ->
+query_helper(Conn, Query, Params, FilterMap, Timeout) ->
     case mysql_protocol:valid_params(Params) of
         true ->
             query_call(Conn,
@@ -424,11 +442,11 @@ query(Conn, Query, Params, FilterMap, Timeout) ->
 %% @see execute/5
 -spec execute(Conn, StatementRef, Params) -> Result | {error, not_prepared}
   when Conn :: connection(),
-       StatementRef :: atom() | integer(),
-       Params :: [term()],
+       StatementRef :: statement_ref(),
+       Params :: [query_param()],
        Result :: query_result().
 execute(Conn, StatementRef, Params) ->
-    execute(Conn, StatementRef, Params, no_filtermap_fun, default_timeout).
+    execute_helper(Conn, StatementRef, Params, no_filtermap_fun, default_timeout).
 
 %% @doc Executes a prepared statement.
 %% @see prepare/2
@@ -438,19 +456,19 @@ execute(Conn, StatementRef, Params) ->
 -spec execute(Conn, StatementRef, Params, FilterMap | Timeout) ->
     Result | {error, not_prepared}
   when Conn :: connection(),
-       StatementRef :: atom() | integer(),
-       Params :: [term()],
-       FilterMap :: no_filtermap_fun | query_filtermap_fun(),
-       Timeout :: default_timeout | timeout(),
+       StatementRef :: statement_ref(),
+       Params :: [query_param()],
+       FilterMap :: query_filtermap_fun(),
+       Timeout :: timeout(),
        Result :: query_result().
 execute(Conn, StatementRef, Params, Timeout) when Timeout == default_timeout;
                                                   is_integer(Timeout);
                                                   Timeout=:=infinity ->
-    execute(Conn, StatementRef, Params, no_filtermap_fun, Timeout);
+    execute_helper(Conn, StatementRef, Params, no_filtermap_fun, Timeout);
 execute(Conn, StatementRef, Params, FilterMap) when FilterMap == no_filtermap_fun;
                                                     is_function(FilterMap, 1);
                                                     is_function(FilterMap, 2) ->
-    execute(Conn, StatementRef, Params, FilterMap, default_timeout).
+    execute_helper(Conn, StatementRef, Params, FilterMap, default_timeout).
 
 %% @doc Executes a prepared statement.
 %%
@@ -472,12 +490,23 @@ execute(Conn, StatementRef, Params, FilterMap) when FilterMap == no_filtermap_fu
 -spec execute(Conn, StatementRef, Params, FilterMap, Timeout) ->
     Result | {error, not_prepared}
   when Conn :: connection(),
-       StatementRef :: atom() | integer(),
-       Params :: [term()],
+       StatementRef :: statement_ref(),
+       Params :: [query_param()],
+       FilterMap :: query_filtermap_fun(),
+       Timeout :: timeout(),
+       Result :: query_result().
+execute(Conn, StatementRef, Params, FilterMap, Timeout) ->
+    execute_helper(Conn, StatementRef, Params, FilterMap, Timeout).
+
+-spec execute_helper(Conn, StatementRef, Params, FilterMap, Timeout) ->
+    Result | {error, not_prepared}
+  when Conn :: connection(),
+       StatementRef :: statement_ref(),
+       Params :: [query_param()],
        FilterMap :: no_filtermap_fun | query_filtermap_fun(),
        Timeout :: default_timeout | timeout(),
        Result :: query_result().
-execute(Conn, StatementRef, Params, FilterMap, Timeout) ->
+execute_helper(Conn, StatementRef, Params, FilterMap, Timeout) ->
     case mysql_protocol:valid_params(Params) of
         true ->
             query_call(Conn,
@@ -490,8 +519,8 @@ execute(Conn, StatementRef, Params, FilterMap, Timeout) ->
 %% @see prepare/3
 -spec prepare(Conn, Query) -> {ok, StatementId} | {error, Reason}
   when Conn :: connection(),
-       Query :: iodata(),
-       StatementId :: integer(),
+       Query :: query(),
+       StatementId :: statement_id(),
        Reason :: server_reason().
 prepare(Conn, Query) ->
     gen_server:call(Conn, {prepare, Query}).
@@ -501,8 +530,8 @@ prepare(Conn, Query) ->
 %% @see prepare/2
 -spec prepare(Conn, Name, Query) -> {ok, Name} | {error, Reason}
   when Conn :: connection(),
-       Name :: atom(),
-       Query :: iodata(),
+       Name :: statement_name(),
+       Query :: query(),
        Reason :: server_reason().
 prepare(Conn, Name, Query) ->
     gen_server:call(Conn, {prepare, Name, Query}).
@@ -510,7 +539,7 @@ prepare(Conn, Name, Query) ->
 %% @doc Deallocates a prepared statement.
 -spec unprepare(Conn, StatementRef) -> ok | {error, Reason}
   when Conn :: connection(),
-       StatementRef :: atom() | integer(),
+       StatementRef :: statement_ref(),
        Reason :: server_reason() | not_prepared.
 unprepare(Conn, StatementRef) ->
     gen_server:call(Conn, {unprepare, StatementRef}).
@@ -550,15 +579,20 @@ in_transaction(Conn) ->
 
 %% @doc This function executes the functional object Fun as a transaction.
 %% @see transaction/4
--spec transaction(connection(), fun()) -> {atomic, term()} | {aborted, term()}.
+-spec transaction(Conn, TransactionFun) -> TransactionResult
+    when Conn :: connection(),
+         TransactionFun :: fun(() -> Result),
+         TransactionResult :: transaction_result(Result).
 transaction(Conn, Fun) ->
     transaction(Conn, Fun, [], infinity).
 
 %% @doc This function executes the functional object Fun as a transaction.
 %% @see transaction/4
--spec transaction(connection(), fun(), Retries) -> {atomic, term()} |
-                                                   {aborted, term()}
-    when Retries :: non_neg_integer() | infinity.
+-spec transaction(Conn, TransactionFun, Retries) -> TransactionResult
+    when Conn :: connection(),
+         TransactionFun :: fun(() -> Result),
+         Retries :: non_neg_integer() | infinity,
+         TransactionResult :: transaction_result(Result).
 transaction(Conn, Fun, Retries) ->
     transaction(Conn, Fun, [], Retries).
 
@@ -606,9 +640,12 @@ transaction(Conn, Fun, Retries) ->
 %%     <tr><td>`throw(Term)'</td><td>`{aborted, {throw, Term}}'</td></tr>
 %%   </tbody>
 %% </table>
--spec transaction(connection(), fun(), list(), Retries) -> {atomic, term()} |
-                                                           {aborted, term()}
-    when Retries :: non_neg_integer() | infinity.
+-spec transaction(Conn, TransactionFun, Args, Retries) -> TransactionResult
+    when Conn :: connection(),
+         TransactionFun :: fun((...) -> Result),
+         Args :: list(),
+         Retries :: non_neg_integer() | infinity,
+         TransactionResult :: transaction_result(Result).
 transaction(Conn, Fun, Args, Retries) when is_list(Args),
                                            is_function(Fun, length(Args)) ->
     %% The guard makes sure that we can apply Fun to Args. Any error we catch
@@ -743,9 +780,9 @@ change_user(Conn, Username, Password) ->
          Options :: [Option],
          Result :: ok,
          Option :: {database, iodata()}
-                 | {queries, [iodata()]}
+                 | {queries, [query()]}
                  | {prepare, [NamedStatement]},
-         NamedStatement :: {StatementName :: atom(), Statement :: iodata()}.
+         NamedStatement :: {StatementName :: statement_name(), Statement :: query()}.
 change_user(Conn, Username, Password, Options) ->
     case in_transaction(Conn) of
         true -> error(change_user_in_transaction);
