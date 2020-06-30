@@ -317,25 +317,47 @@ query_test_() ->
          mysql:stop(Pid)
      end,
      fun (Pid) ->
-         [{"Select db on connect", fun () -> connect_with_db(Pid) end},
-          {"Autocommit",           fun () -> autocommit(Pid) end},
-          {"Encode",               fun () -> encode(Pid) end},
-          {"Basic queries",        fun () -> basic_queries(Pid) end},
-          {"Filtermap queries",    fun () -> filtermap_queries(Pid) end},
-          {"FOUND_ROWS option",    fun () -> found_rows(Pid) end},
-          {"Multi statements",     fun () -> multi_statements(Pid) end},
-          {"Text protocol",        fun () -> text_protocol(Pid) end},
-          {"Binary protocol",      fun () -> binary_protocol(Pid) end},
-          {"FLOAT rounding",       fun () -> float_rounding(Pid) end},
-          {"DECIMAL",              fun () -> decimal(Pid) end},
-          {"INT",                  fun () -> int(Pid) end},
-          {"BIT(N)",               fun () -> bit(Pid) end},
-          {"DATE",                 fun () -> date(Pid) end},
-          {"TIME",                 fun () -> time(Pid) end},
-          {"DATETIME",             fun () -> datetime(Pid) end},
-          {"JSON",                 fun () -> json(Pid) end},
-          {"Microseconds",         fun () -> microseconds(Pid) end},
-          {"Invalid params",       fun () -> invalid_params(Pid) end}]
+         [{"Select db on connect",  fun () -> connect_with_db(Pid) end},
+          {"Autocommit",            fun () -> autocommit(Pid) end},
+          {"Encode",                fun () -> encode(Pid) end},
+          {"Basic queries",         fun () -> basic_queries(Pid) end},
+          {"Filtermap queries",     fun () -> filtermap_queries(Pid) end},
+          {"FOUND_ROWS option",     fun () -> found_rows(Pid) end},
+          {"Multi statements",      fun () -> multi_statements(Pid) end},
+          {"Text protocol",         fun () -> text_protocol(Pid) end},
+          {"Binary protocol",       fun () -> binary_protocol(Pid) end},
+          {"FLOAT rounding",        fun () -> float_rounding(Pid) end},
+          {"DECIMAL",               fun () -> decimal(Pid) end},
+          {"INT",                   fun () -> int(Pid) end},
+          {"BIT(N)",                fun () -> bit(Pid) end},
+          {"DATE",                  fun () -> date(Pid) end},
+          {"TIME",                  fun () -> time(Pid) end},
+          {"DATETIME",              fun () -> datetime(Pid) end},
+          {"JSON",                  fun () -> json(Pid) end},
+          {"Microseconds",          fun () -> microseconds(Pid) end},
+          {"Invalid params",        fun () -> invalid_params(Pid) end}]
+     end}.
+
+local_files_test_() ->
+    {setup,
+     fun () ->
+         {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
+                                       {log_warnings, false},
+                                       {keep_alive, true}, {local_files, allow}]),
+         ok = mysql:query(Pid, <<"DROP DATABASE IF EXISTS otptest">>),
+         ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
+         ok = mysql:query(Pid, <<"USE otptest">>),
+         ok = mysql:query(Pid, <<"SET autocommit = 1">>),
+         ok = mysql:query(Pid, <<"SET SESSION sql_mode = ?">>, [?SQL_MODE]),
+         Pid
+     end,
+     fun (Pid) ->
+         ok = mysql:query(Pid, <<"DROP DATABASE otptest">>),
+         mysql:stop(Pid)
+     end,
+     fun (Pid) ->
+          [{"Single statement", fun () -> load_data_local_infile(Pid) end},
+          {"Multi statements", fun () -> load_data_local_infile_multi(Pid) end}]
      end}.
 
 connect_with_db(_Pid) ->
@@ -860,6 +882,44 @@ invalid_params(Pid) ->
     ?assertError(badarg, mysql:execute(Pid, StmtId, [x])),
     ?assertError(badarg, mysql:query(Pid, "SELECT ?", [x])),
     ok = mysql:unprepare(Pid, StmtId).
+
+load_data_local_infile(Pid) ->
+    ok = mysql:query(Pid, <<"CREATE TABLE load_local_test (id int, value blob)">>),
+    {ok, Cwd} = file:get_cwd(),
+    Filename = iolist_to_binary([Cwd, "load_local_files.csv"]),
+    ok = file:write_file(Filename, <<"1;value 1\n2;value 2\n">>),
+    ok = mysql:query(Pid, <<"LOAD DATA LOCAL "
+                            "INFILE '", Filename/binary, "' "
+                            "INTO TABLE load_local_test "
+                            "FIELDS TERMINATED BY ';' "
+                            "LINES TERMINATED BY '\\n'">>),
+    {ok, Columns, Rows} = mysql:query(Pid,
+                                      <<"SELECT * FROM load_local_test ORDER BY id">>),
+    ?assertEqual([<<"id">>, <<"value">>], Columns),
+    ?assertEqual([[1, <<"value 1">>], [2, <<"value 2">>]], Rows),
+    ok = file:delete(Filename),
+    ok = mysql:query(Pid, <<"DROP TABLE load_local_test">>).
+
+load_data_local_infile_multi(Pid) ->
+    ok = mysql:query(Pid, <<"CREATE TABLE load_local_test (id int, value blob)">>),
+    {ok, Cwd} = file:get_cwd(),
+    Filename = iolist_to_binary([Cwd, "load_local_files.csv"]),
+    ok = file:write_file(Filename, <<"1;value 1\n2;value 2\n">>),
+    {ok, [Res1, Res2]} = mysql:query(Pid, <<"SELECT 'foo'; "
+                                            "LOAD DATA LOCAL "
+                                            "INFILE '", Filename/binary, "' "
+                                            "INTO TABLE load_local_test "
+                                            "FIELDS TERMINATED BY ';' "
+                                            "LINES TERMINATED BY '\\n'; "
+                                            "SELECT 'bar'">>),
+    ?assertEqual({[<<"foo">>], [[<<"foo">>]]}, Res1),
+    ?assertEqual({[<<"bar">>], [[<<"bar">>]]}, Res2),
+    {ok, Columns, Rows} = mysql:query(Pid,
+                                      <<"SELECT * FROM load_local_test ORDER BY id">>),
+    ?assertEqual([<<"id">>, <<"value">>], Columns),
+    ?assertEqual([[1, <<"value 1">>], [2, <<"value 2">>]], Rows),
+    ok = file:delete(Filename),
+    ok = mysql:query(Pid, <<"DROP TABLE load_local_test">>).
 
 %% @doc Tests write and read in text and the binary protocol, all combinations.
 %% This helper function assumes an empty table with a single column.

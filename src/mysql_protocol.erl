@@ -27,17 +27,15 @@
 %% @private
 -module(mysql_protocol).
 
--export([handshake/8, change_user/8, quit/2, ping/2,
-         query/4, query/5, fetch_query_response/3,
-         fetch_query_response/4, prepare/3, unprepare/3,
-         execute/5, execute/6, fetch_execute_response/3,
-         fetch_execute_response/4, reset_connnection/2,
+-export([handshake/9, change_user/8, quit/2, ping/2,
+         query/6, fetch_query_response/5, prepare/3, unprepare/3,
+         execute/7, fetch_execute_response/5, reset_connnection/2,
          valid_params/1]).
 
--type query_filtermap() :: no_filtermap_fun
-                         | fun(([term()]) -> query_filtermap_res())
-                         | fun(([term()], [term()]) -> query_filtermap_res()).
--type query_filtermap_res() :: boolean() | {true, term()}.
+-type query_filtermap() :: no_filtermap_fun | mysql:query_filtermap_fun().
+
+-type local_files_policy() :: allow_local_files
+                            | disallow_local_files.
 
 -type auth_more_data() :: fast_auth_completed
                         | full_auth_requested
@@ -56,6 +54,7 @@
 -define(ok_pattern, <<?OK, _/binary>>).
 -define(error_pattern, <<?ERROR, _/binary>>).
 -define(eof_pattern, <<?EOF, _:4/binary>>).
+-define(local_infile_pattern, <<?LOCAL_INFILE_REQUEST, _/binary>>).
 
 %% Macros for auth methods.
 -define(authmethod_none, <<>>).
@@ -71,20 +70,21 @@
                 Database :: iodata() | undefined,
                 SockModule :: module(), SSLOpts :: list() | undefined,
                 Socket :: term(),
+                LocalFilesPolicy :: local_files_policy(),
                 SetFoundRows :: boolean()) ->
     {ok, #handshake{}, SockModule :: module(), Socket :: term()} |
     #error{}.
 handshake(Host, Username, Password, Database, SockModule0, SSLOpts, Socket0,
-          SetFoundRows) ->
+          LocalFilesPolicy, SetFoundRows) ->
     SeqNum0 = 0,
     {ok, HandshakePacket, SeqNum1} = recv_packet(SockModule0, Socket0, SeqNum0),
     case parse_handshake(HandshakePacket) of
         #handshake{} = Handshake ->
             {ok, SockModule, Socket, SeqNum2} =
                 maybe_do_ssl_upgrade(Host, SockModule0, Socket0, SeqNum1, Handshake,
-                                     SSLOpts, Database, SetFoundRows),
+                                     SSLOpts, Database, LocalFilesPolicy, SetFoundRows),
             Response = build_handshake_response(Handshake, Username, Password,
-                                                Database, SetFoundRows),
+                                                Database, LocalFilesPolicy, SetFoundRows),
             {ok, SeqNum3} = send_packet(SockModule, Socket, Response, SeqNum2),
             handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket,
                                             SeqNum3);
@@ -196,26 +196,19 @@ ping(SockModule, Socket) ->
     {ok, OkPacket, _SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
     parse_ok_packet(OkPacket).
 
--spec query(Query :: iodata(), module(), term(), timeout()) ->
+-spec query(Query :: iodata(), module(), term(), local_files_policy(), query_filtermap(),
+            timeout()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
-query(Query, SockModule, Socket, Timeout) ->
-    query(Query, SockModule, Socket, no_filtermap_fun, Timeout).
-
--spec query(Query :: iodata(), module(), term(), query_filtermap(), timeout()) ->
-    {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
-query(Query, SockModule, Socket, FilterMap, Timeout) ->
+query(Query, SockModule, Socket, LocalFilesPolicy, FilterMap, Timeout) ->
     Req = <<?COM_QUERY, (iolist_to_binary(Query))/binary>>,
     SeqNum0 = 0,
     {ok, _SeqNum1} = send_packet(SockModule, Socket, Req, SeqNum0),
-    fetch_query_response(SockModule, Socket, FilterMap, Timeout).
+    fetch_query_response(SockModule, Socket, LocalFilesPolicy, FilterMap, Timeout).
 
 %% @doc This is used by query/4. If query/4 returns {error, timeout}, this
 %% function can be called to retry to fetch the results of the query.
-fetch_query_response(SockModule, Socket, Timeout) ->
-    fetch_query_response(SockModule, Socket, no_filtermap_fun, Timeout).
-
-fetch_query_response(SockModule, Socket, FilterMap, Timeout) ->
-    fetch_response(SockModule, Socket, Timeout, text, FilterMap, []).
+fetch_query_response(SockModule, Socket, LocalFilesPolicy, FilterMap, Timeout) ->
+    fetch_response(SockModule, Socket, Timeout, text, LocalFilesPolicy, FilterMap, []).
 
 %% @doc Prepares a statement.
 -spec prepare(iodata(), module(), term()) -> #error{} | #prepared{}.
@@ -260,16 +253,11 @@ unprepare(#prepared{statement_id = Id}, SockModule, Socket) ->
     ok.
 
 %% @doc Executes a prepared statement.
--spec execute(#prepared{}, [term()], module(), term(), timeout()) ->
-    {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
-execute(PrepStmt, ParamValues, SockModule, Socket, Timeout) ->
-    execute(PrepStmt, ParamValues, SockModule, Socket, no_filtermap_fun,
-            Timeout).
--spec execute(#prepared{}, [term()], module(), term(), query_filtermap(),
-              timeout()) ->
+-spec execute(#prepared{}, [term()], module(), term(), local_files_policy(),
+              query_filtermap(), timeout()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
 execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
-        SockModule, Socket, FilterMap, Timeout)
+        SockModule, Socket, LocalFilesPolicy, FilterMap, Timeout)
   when ParamCount == length(ParamValues) ->
     %% Flags Constant Name
     %% 0x00 CURSOR_TYPE_NO_CURSOR
@@ -297,15 +285,12 @@ execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
             iolist_to_binary([Req1, TypesAndSigns, EncValues])
     end,
     {ok, _SeqNum1} = send_packet(SockModule, Socket, Req, 0),
-    fetch_execute_response(SockModule, Socket, FilterMap, Timeout).
+    fetch_execute_response(SockModule, Socket, LocalFilesPolicy, FilterMap, Timeout).
 
 %% @doc This is used by execute/5. If execute/5 returns {error, timeout}, this
 %% function can be called to retry to fetch the results of the query.
-fetch_execute_response(SockModule, Socket, Timeout) ->
-    fetch_execute_response(SockModule, Socket, no_filtermap_fun, Timeout).
-
-fetch_execute_response(SockModule, Socket, FilterMap, Timeout) ->
-    fetch_response(SockModule, Socket, Timeout, binary, FilterMap, []).
+fetch_execute_response(SockModule, Socket, LocalFilesPolicy, FilterMap, Timeout) ->
+    fetch_response(SockModule, Socket, Timeout, binary, LocalFilesPolicy, FilterMap, []).
 
 %% @doc Changes the user of the connection.
 -spec change_user(module(), term(), iodata(), iodata(), binary(), binary(),
@@ -405,15 +390,17 @@ server_version_to_list(ServerVersion) ->
                            Handshake :: #handshake{},
                            SSLOpts :: undefined | list(),
                            Database :: iodata() | undefined,
+                           LocalFilesPolicy :: local_files_policy(),
                            SetFoundRows :: boolean()) ->
     {ok, SockModule :: module(), Socket :: term(),
      SeqNum2 :: non_neg_integer()}.
 maybe_do_ssl_upgrade(_Host, SockModule0, Socket0, SeqNum1, _Handshake,
-                     undefined, _Database, _SetFoundRows) ->
+                     undefined, _Database, _LocalFilesPolicy, _SetFoundRows) ->
     {ok, SockModule0, Socket0, SeqNum1};
 maybe_do_ssl_upgrade(Host, gen_tcp, Socket0, SeqNum1, Handshake, SSLOpts,
-                     Database, SetFoundRows) ->
-    Response = build_handshake_response(Handshake, Database, SetFoundRows),
+                     Database, LocalFilesPolicy, SetFoundRows) ->
+    Response = build_handshake_response(Handshake, Database, LocalFilesPolicy,
+                                        SetFoundRows),
     {ok, SeqNum2} = send_packet(gen_tcp, Socket0, Response, SeqNum1),
     case ssl_connect(Host, Socket0, SSLOpts, 5000) of
         {ok, SSLSocket} ->
@@ -445,12 +432,13 @@ merge_ssl_options(DefaultSSLOpts, MandatorySSLOpts, ConfigSSLOpts) ->
 
 %% @doc This function is used when upgrading to encrypted socket. In other,
 %% cases, build_handshake_response/5 is used.
--spec build_handshake_response(#handshake{}, iodata() | undefined, boolean()) ->
+-spec build_handshake_response(#handshake{}, iodata() | undefined,
+                               local_files_policy(), boolean()) ->
     binary().
-build_handshake_response(Handshake, Database, SetFoundRows) ->
+build_handshake_response(Handshake, Database, LocalFilesPolicy, SetFoundRows) ->
     CapabilityFlags = basic_capabilities(Database /= undefined, SetFoundRows),
     verify_server_capabilities(Handshake, CapabilityFlags),
-    ClientCapabilities = add_client_capabilities(CapabilityFlags),
+    ClientCapabilities = add_client_capabilities(CapabilityFlags, LocalFilesPolicy),
     ClientSSLCapabilities = ClientCapabilities bor ?CLIENT_SSL,
     CharacterSet = character_set(Handshake#handshake.server_version),
     <<ClientSSLCapabilities:32/little,
@@ -461,15 +449,17 @@ build_handshake_response(Handshake, Database, SetFoundRows) ->
 %% @doc The response sent by the client to the server after receiving the
 %% initial handshake from the server
 -spec build_handshake_response(#handshake{}, iodata(), iodata(),
-                               iodata() | undefined, boolean()) -> binary().
+                               iodata() | undefined, local_files_policy(),
+                               boolean()) ->
+    binary().
 build_handshake_response(Handshake, Username, Password, Database,
-                         SetFoundRows) ->
+                         LocalFilesPolicy, SetFoundRows) ->
     CapabilityFlags = basic_capabilities(Database /= undefined, SetFoundRows),
     verify_server_capabilities(Handshake, CapabilityFlags),
     %% Add some extra capability flags only for signalling to the server what
     %% the client wants to do. The server doesn't say it handles them although
     %% it does. (http://bugs.mysql.com/bug.php?id=42268)
-    ClientCapabilityFlags = add_client_capabilities(CapabilityFlags),
+    ClientCapabilityFlags = add_client_capabilities(CapabilityFlags, LocalFilesPolicy),
     Hash = hash_password(Handshake#handshake.auth_plugin_name, Password,
                          Handshake#handshake.auth_plugin_data),
     HashLength = size(Hash),
@@ -512,14 +502,19 @@ basic_capabilities(ConnectWithDB, SetFoundRows) ->
         _    -> CapabilityFlags1
     end.
 
--spec add_client_capabilities(Caps :: integer()) -> integer().
-add_client_capabilities(Caps) ->
-    Caps bor
-    ?CLIENT_MULTI_STATEMENTS bor
-    ?CLIENT_MULTI_RESULTS bor
-    ?CLIENT_PS_MULTI_RESULTS bor
-    ?CLIENT_PLUGIN_AUTH bor
-    ?CLIENT_LONG_PASSWORD.
+-spec add_client_capabilities(Caps :: integer(),
+                              local_files_policy()) -> integer().
+add_client_capabilities(Caps0, LocalFilesPolicy) ->
+    Caps1 = Caps0 bor
+        ?CLIENT_MULTI_STATEMENTS bor
+        ?CLIENT_MULTI_RESULTS bor
+        ?CLIENT_PS_MULTI_RESULTS bor
+        ?CLIENT_PLUGIN_AUTH bor
+        ?CLIENT_LONG_PASSWORD, 
+    case LocalFilesPolicy of
+        allow_local_files -> Caps1 bor ?CLIENT_LOCAL_FILES;
+        disallow_local_files -> Caps1
+    end.
 
 -spec character_set([integer()]) -> integer().
 character_set(ServerVersion) when ServerVersion >= [5, 5, 3] ->
@@ -564,11 +559,17 @@ parse_handshake_confirm(<<?MORE_DATA, MoreData/binary>>) ->
 %% @doc Fetches one or more results and and parses the result set(s) using
 %% either the text format (for plain queries) or the binary format (for
 %% prepared statements).
--spec fetch_response(module(), term(), timeout(), text | binary,
+-spec fetch_response(module(), term(), timeout(), text | binary, local_files_policy(),
                      query_filtermap(), list()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
-fetch_response(SockModule, Socket, Timeout, Proto, FilterMap, Acc) ->
+fetch_response(SockModule, Socket, Timeout, Proto, LocalFilesPolicy, FilterMap, Acc) ->
     case recv_packet(SockModule, Socket, Timeout, any) of
+        {ok, ?local_infile_pattern = Packet, SeqNum2} when LocalFilesPolicy=:=allow_local_files ->
+            Filename = parse_local_infile_packet(Packet),
+            {ok, _SeqNum3} = send_file(SockModule, Socket, Filename, SeqNum2),
+            fetch_response(SockModule, Socket, Timeout, Proto, LocalFilesPolicy, FilterMap, Acc);
+        {ok, ?local_infile_pattern, _} ->
+            exit(unexpected_local_infile_request);
         {ok, Packet, SeqNum2} ->
             Result = case Packet of
                 ?ok_pattern ->
@@ -584,7 +585,7 @@ fetch_response(SockModule, Socket, Timeout, Proto, FilterMap, Acc) ->
             Acc1 = [Result | Acc],
             case more_results_exists(Result) of
                 true ->
-                    fetch_response(SockModule, Socket, Timeout, Proto,
+                    fetch_response(SockModule, Socket, Timeout, Proto, LocalFilesPolicy,
                                    FilterMap, Acc1);
                 false ->
                     {ok, lists:reverse(Acc1)}
@@ -641,7 +642,7 @@ fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs, Proto,
     end.
 
 -spec filtermap_resultset_row(query_filtermap(), [#col{}], [term()]) ->
-    query_filtermap_res().
+    boolean() | {true, term()}.
 filtermap_resultset_row(no_filtermap_fun, _, _) ->
     true;
 filtermap_resultset_row(Fun, _, Row) when is_function(Fun, 1) ->
@@ -1220,6 +1221,32 @@ recv_packet(SockModule, Socket, Timeout, ExpectSeqNum, Acc) ->
             {error, Reason}
     end.
 
+-spec send_file(module(), term(), Filename :: file:name_all(), SeqNum :: integer()) ->
+    {ok, NextSeqNum :: integer()}.
+send_file(SockModule, Socket, Filename, SeqNum0) ->
+    SeqNum1 = case file:open(Filename, [read, raw, binary]) of
+        {ok, Handle} ->
+            {ok, SeqNum2} = send_file_chunk(SockModule, Socket, Handle, SeqNum0),
+            ok = file:close(Handle),
+            SeqNum2;
+        {error, _Reason} ->
+            SeqNum0
+    end,
+    send_packet(SockModule, Socket, <<>>, SeqNum1).
+
+-spec send_file_chunk(module(), term(), Handle :: file:io_device(), SeqNum :: integer()) ->
+    {ok, NextSeqNum :: integer()}.
+send_file_chunk(SockModule, Socket, Handle, SeqNum0) ->
+    case file:read(Handle, 16#ffffff) of
+        eof ->
+            {ok, SeqNum0};
+        {ok, <<>>} ->
+            send_file_chunk(SockModule, Socket, Handle, SeqNum0);
+        {ok, Data} ->
+            {ok, SeqNum1} = send_packet(SockModule, Socket, Data, SeqNum0),
+            send_file_chunk(SockModule, Socket, Handle, SeqNum1)
+    end.
+
 %% @doc Parses a packet header (32 bits) and returns a tuple.
 %%
 %% The client should first read a header and parse it. Then read PacketLength
@@ -1292,6 +1319,9 @@ parse_eof_packet(<<?EOF:8, NumWarnings:16/little, StatusFlags:16/little>>) ->
     %% EOF packet, 4.1 protocol.
     %% (Older protocol: <<?EOF:8>>)
     #eof{status = StatusFlags, warning_count = NumWarnings}.
+
+parse_local_infile_packet(<<?LOCAL_INFILE_REQUEST:8, FileName/binary>>) ->
+    FileName.
 
 -spec parse_auth_method_switch(binary()) -> #auth_method_switch{}.
 parse_auth_method_switch(AMSData) ->

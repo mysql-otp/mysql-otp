@@ -82,6 +82,7 @@
                 | {database, iodata()}
                 | {connect_mode, synchronous | asynchronous | lazy}
                 | {connect_timeout, timeout()}
+                | {local_files, disallow | allow}
                 | {log_warnings, boolean()}
                 | {log_slow_queries, boolean()}
                 | {keep_alive, boolean() | timeout()}
@@ -142,6 +143,14 @@
 %%   </dd>
 %%   <dt>`{connect_timeout, Timeout}'</dt>
 %%   <dd>The maximum time to spend for start_link/1.</dd>
+%%   <dt>`{local_files, disallow | allow}'</dt>
+%%   <dd>If set to `allow', the client will advertise the `CLIENT_LOCAL_FILES'
+%%       capability in the handshake and send local data on request, for example
+%%       as part of a `LOAD DATA LOCAL INFILE' query. As this is a potential threat
+%%       that would allow hijacked servers to request any file from the client machine
+%%       to which the client has access to, the default is `disallow', so the capability
+%%       is not advertised and any such requests from the server result in an `exit'
+%%       exception with reason `unexpected_local_infile_request'.</dd>
 %%   <dt>`{log_warnings, boolean()}'</dt>
 %%   <dd>Whether to fetch warnings and log them using error_logger; default
 %%       true.</dd>

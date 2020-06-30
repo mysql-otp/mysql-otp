@@ -15,6 +15,7 @@ before_script:
   - sudo chmod -R 660 /etc/mysql/*.pem
   - sudo chown -R mysql:mysql /etc/mysql/*.pem
   - cat test/ssl/my-ssl.cnf | sudo tee -a /etc/mysql/conf.d/my-ssl.cnf
+  - (echo '[mysqld]'; echo 'local_infile=ON') | sudo tee -a /etc/mysql/conf.d/my-otp.cnf
   - sudo service mysql start
   - sleep 5
   - sudo mysql -uroot -e "CREATE USER otptest@localhost IDENTIFIED BY 'otptest';"

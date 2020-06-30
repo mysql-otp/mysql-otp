@@ -21,6 +21,7 @@
 -define(EOF, 16#fe).
 -define(MORE_DATA, 16#01).
 -define(ERROR, 16#ff).
+-define(LOCAL_INFILE_REQUEST, 16#fb).
 
 %% Character sets
 -define(UTF8MB3, 16#21). %% utf8_general_ci
@@ -38,6 +39,10 @@
 %% Server: supports schema-name in Handshake Response Packet
 %% Client: Handshake Response Packet contains a schema-name
 -define(CLIENT_CONNECT_WITH_DB, 16#00000008).
+
+%% Server: Enables the LOCAL INFILE request of LOAD DATA|XML
+%% Client: Will handle LOCAL INFILE request
+-define(CLIENT_LOCAL_FILES, 16#00000080).
 
 %% Server: supports the 4.1 protocol
 %% Client: uses the 4.1 protocol
