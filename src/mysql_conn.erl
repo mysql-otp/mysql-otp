@@ -38,7 +38,6 @@
 -define(default_query_timeout, infinity).
 -define(default_query_cache_time, 60000). %% for query/3.
 -define(default_ping_timeout, 60000).
--define(default_local_files_policy, disallow).
 
 -define(cmd_timeout, 3000). %% Timeout used for various commands to the server
 
@@ -53,7 +52,7 @@
 %% Gen_server state
 -record(state, {server_version, connection_id, socket, sockmod, tcp_opts, ssl_opts,
                 host, port, user, password, database, queries, prepares,
-                auth_plugin_name, auth_plugin_data, local_files_policy,
+                auth_plugin_name, auth_plugin_data, allowed_local_paths,
                 log_warnings, log_slow_queries,
                 connect_timeout, ping_timeout, query_timeout, query_cache_time,
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
@@ -69,37 +68,40 @@ init(Opts) ->
         {local, _LocalAddr} -> 0;
         _NonLocalAddr -> ?default_port
     end,
-    Port           = proplists:get_value(port, Opts, DefaultPort),
+    Port              = proplists:get_value(port, Opts, DefaultPort),
 
-    User           = proplists:get_value(user, Opts, ?default_user),
-    Password       = proplists:get_value(password, Opts, ?default_password),
-    Database       = proplists:get_value(database, Opts, undefined),
-    LocalFiles      = proplists:get_value(local_files, Opts, ?default_local_files_policy),
-    LogWarn        = proplists:get_value(log_warnings, Opts, true),
-    LogSlow        = proplists:get_value(log_slow_queries, Opts, false),
-    KeepAlive      = proplists:get_value(keep_alive, Opts, false),
-    ConnectTimeout = proplists:get_value(connect_timeout, Opts,
-                                         ?default_connect_timeout),
-    QueryTimeout   = proplists:get_value(query_timeout, Opts,
-                                         ?default_query_timeout),
-    QueryCacheTime = proplists:get_value(query_cache_time, Opts,
-                                         ?default_query_cache_time),
-    TcpOpts        = proplists:get_value(tcp_options, Opts, []),
-    SetFoundRows   = proplists:get_value(found_rows, Opts, false),
-    SSLOpts        = proplists:get_value(ssl, Opts, undefined),
+    User              = proplists:get_value(user, Opts, ?default_user),
+    Password          = proplists:get_value(password, Opts, ?default_password),
+    Database          = proplists:get_value(database, Opts, undefined),
+    AllowedLocalPaths = proplists:get_value(allowed_local_paths, Opts, []),
+    LogWarn           = proplists:get_value(log_warnings, Opts, true),
+    LogSlow           = proplists:get_value(log_slow_queries, Opts, false),
+    KeepAlive         = proplists:get_value(keep_alive, Opts, false),
+    ConnectTimeout    = proplists:get_value(connect_timeout, Opts,
+                                            ?default_connect_timeout),
+    QueryTimeout      = proplists:get_value(query_timeout, Opts,
+                                            ?default_query_timeout),
+    QueryCacheTime    = proplists:get_value(query_cache_time, Opts,
+                                            ?default_query_cache_time),
+    TcpOpts           = proplists:get_value(tcp_options, Opts, []),
+    SetFoundRows      = proplists:get_value(found_rows, Opts, false),
+    SSLOpts           = proplists:get_value(ssl, Opts, undefined),
 
-    Queries        = proplists:get_value(queries, Opts, []),
-    Prepares       = proplists:get_value(prepare, Opts, []),
+    Queries           = proplists:get_value(queries, Opts, []),
+    Prepares          = proplists:get_value(prepare, Opts, []),
+
+    true = lists:all(
+        fun (AllowedLocalPath) ->
+            PathType = filename:pathtype(AllowedLocalPath),
+            PathType =:= absolute orelse PathType =:= volumerelative
+        end,
+        AllowedLocalPaths
+    ),
 
     PingTimeout = case KeepAlive of
         true         -> ?default_ping_timeout;
         false        -> infinity;
         N when N > 0 -> N
-    end,
-
-    LocalFilesPolicy = case LocalFiles of
-        allow -> allow_local_files;
-        _ ->     disallow_local_files
     end,
 
     State0 = #state{
@@ -108,7 +110,7 @@ init(Opts) ->
         host = Host, port = Port,
         user = User, password = Password,
         database = Database,
-        local_files_policy = LocalFilesPolicy,
+        allowed_local_paths = AllowedLocalPaths,
         queries = Queries, prepares = Prepares,
         log_warnings = LogWarn, log_slow_queries = LogSlow,
         connect_timeout = ConnectTimeout,
@@ -201,12 +203,10 @@ sanitize_tcp_opts(TcpOpts0) ->
 
 handshake(#state{socket = Socket0, ssl_opts = SSLOpts,
           host = Host, user = User, password = Password, database = Database,
-          local_files_policy = LocalFilesPolicy,
           cap_found_rows = SetFoundRows} = State0) ->
     %% Exchange handshake communication.
     Result = mysql_protocol:handshake(Host, User, Password, Database, gen_tcp,
-                                      SSLOpts, Socket0, LocalFilesPolicy,
-                                      SetFoundRows),
+                                      SSLOpts, Socket0, SetFoundRows),
     case Result of
         {ok, Handshake, SockMod, Socket} ->
             setopts(SockMod, Socket, [{active, once}]),
@@ -458,8 +458,8 @@ handle_call(start_transaction, {FromPid, _},
     end,
     setopts(SockMod, Socket, [{active, false}]),
     {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
-                                               disallow_local_files,
-                                               no_filtermap_fun, ?cmd_timeout),
+                                               [], no_filtermap_fun,
+                                               ?cmd_timeout),
     setopts(SockMod, Socket, [{active, once}]),
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_levels = [{FromPid, MRef} | L]}};
@@ -474,8 +474,8 @@ handle_call(rollback, {FromPid, _},
     end,
     setopts(SockMod, Socket, [{active, false}]),
     {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
-                                               disallow_local_files,
-                                               no_filtermap_fun, ?cmd_timeout),
+                                               [], no_filtermap_fun,
+                                               ?cmd_timeout),
     setopts(SockMod, Socket, [{active, once}]),
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_levels = L}};
@@ -490,8 +490,8 @@ handle_call(commit, {FromPid, _},
     end,
     setopts(SockMod, Socket, [{active, false}]),
     {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
-                                               disallow_local_files,
-                                               no_filtermap_fun, ?cmd_timeout),
+                                               [], no_filtermap_fun,
+                                               ?cmd_timeout),
     setopts(SockMod, Socket, [{active, once}]),
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_levels = L}}.
@@ -560,16 +560,15 @@ code_change(_OldVsn, _State, _Extra) ->
 %% @doc Executes a prepared statement and returns {Reply, NewState}.
 execute_stmt(Stmt, Args, FilterMap, Timeout, State) ->
     #state{socket = Socket, sockmod = SockMod,
-           local_files_policy = LocalFilesPolicy} = State,
+           allowed_local_paths = AllowedPaths} = State,
     setopts(SockMod, Socket, [{active, false}]),
     {ok, Recs} = case mysql_protocol:execute(Stmt, Args, SockMod, Socket,
-                                             LocalFilesPolicy, FilterMap,
+                                             AllowedPaths, FilterMap,
                                              Timeout) of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
             kill_query(State),
             mysql_protocol:fetch_execute_response(SockMod, Socket,
-                                                  disallow_local_files,
-                                                  FilterMap, ?cmd_timeout);
+                                                  [], FilterMap, ?cmd_timeout);
         {error, timeout} ->
             %% For MySQL 4.x.x there is no way to recover from timeout except
             %% killing the connection itself.
@@ -613,15 +612,15 @@ query(Query, FilterMap, default_timeout,
     query(Query, FilterMap, DefaultTimeout, State);
 query(Query, FilterMap, Timeout, State) ->
     #state{sockmod = SockMod, socket = Socket,
-           local_files_policy = LocalFilesPolicy} = State,
+           allowed_local_paths = AllowedPaths} = State,
     setopts(SockMod, Socket, [{active, false}]),
-    Result = mysql_protocol:query(Query, SockMod, Socket, LocalFilesPolicy,
+    Result = mysql_protocol:query(Query, SockMod, Socket, AllowedPaths,
                                   FilterMap, Timeout),
     {ok, Recs} = case Result of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
             kill_query(State),
             mysql_protocol:fetch_query_response(SockMod, Socket,
-                                                disallow_local_files, FilterMap,
+                                                [], FilterMap,
                                                 ?cmd_timeout);
         {error, timeout} ->
             %% For MySQL 4.x.x there is no way to recover from timeout except
@@ -722,8 +721,7 @@ log_warnings(#state{socket = Socket, sockmod = SockMod}, Query) ->
     setopts(SockMod, Socket, [{active, false}]),
     {ok, [#resultset{rows = Rows}]} = mysql_protocol:query(<<"SHOW WARNINGS">>,
                                                            SockMod, Socket,
-                                                           disallow_local_files,
-                                                           no_filtermap_fun,
+                                                           [], no_filtermap_fun,
                                                            ?cmd_timeout),
     setopts(SockMod, Socket, [{active, once}]),
     Lines = [[Level, " ", integer_to_binary(Code), ": ", Message, "\n"]
@@ -763,16 +761,15 @@ kill_query(#state{connection_id = ConnId, host = Host, port = Port,
 
     %% Exchange handshake communication.
     Result = mysql_protocol:handshake(Host, User, Password, undefined, gen_tcp,
-                                      SSLOpts, Socket0, disallow_local_files,
-                                      SetFoundRows),
+                                      SSLOpts, Socket0, SetFoundRows),
     case Result of
         {ok, #handshake{}, SockMod, Socket} ->
             %% Kill and disconnect
             IdBin = integer_to_binary(ConnId),
             {ok, [#ok{}]} = mysql_protocol:query(<<"KILL QUERY ", IdBin/binary>>,
                                                  SockMod, Socket,
-                                                 disallow_local_files,
-                                                 no_filtermap_fun, ?cmd_timeout),
+                                                 [], no_filtermap_fun,
+                                                 ?cmd_timeout),
             mysql_protocol:quit(SockMod, Socket);
         #error{} = E ->
             error_logger:error_msg("Failed to connect to kill query: ~p",

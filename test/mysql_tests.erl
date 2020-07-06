@@ -341,23 +341,26 @@ query_test_() ->
 local_files_test_() ->
     {setup,
      fun () ->
+         {ok, Cwd} = file:get_cwd(),
          {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
                                        {log_warnings, false},
-                                       {keep_alive, true}, {local_files, allow}]),
+                                       {keep_alive, true}, {allowed_local_paths, [Cwd]}]),
          ok = mysql:query(Pid, <<"DROP DATABASE IF EXISTS otptest">>),
          ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
          ok = mysql:query(Pid, <<"USE otptest">>),
          ok = mysql:query(Pid, <<"SET autocommit = 1">>),
          ok = mysql:query(Pid, <<"SET SESSION sql_mode = ?">>, [?SQL_MODE]),
-         Pid
+         {Pid, Cwd}
      end,
-     fun (Pid) ->
+     fun ({Pid, _Cwd}) ->
          ok = mysql:query(Pid, <<"DROP DATABASE otptest">>),
          mysql:stop(Pid)
      end,
-     fun (Pid) ->
-          [{"Single statement", fun () -> load_data_local_infile(Pid) end},
-          {"Multi statements", fun () -> load_data_local_infile_multi(Pid) end}]
+     fun ({Pid, Cwd}) ->
+          [{"Single statement", fun () -> load_data_local_infile(Pid, Cwd) end},
+          {"Missing file", fun () -> load_data_local_infile_missing(Pid, Cwd) end},
+          {"Not allowed", fun () -> load_data_local_infile_not_allowed(Pid, Cwd) end},
+          {"Multi statements", fun () -> load_data_local_infile_multi(Pid, Cwd) end}]
      end}.
 
 connect_with_db(_Pid) ->
@@ -883,42 +886,62 @@ invalid_params(Pid) ->
     ?assertError(badarg, mysql:query(Pid, "SELECT ?", [x])),
     ok = mysql:unprepare(Pid, StmtId).
 
-load_data_local_infile(Pid) ->
+load_data_local_infile(Pid, Cwd) ->
+    File = iolist_to_binary(filename:join([Cwd, "load_local_infile_test.csv"])),
+    ok = file:write_file(File, <<"1;value 1\n2;value 2\n">>),
     ok = mysql:query(Pid, <<"CREATE TABLE load_local_test (id int, value blob)">>),
-    {ok, Cwd} = file:get_cwd(),
-    Filename = iolist_to_binary([Cwd, "load_local_files.csv"]),
-    ok = file:write_file(Filename, <<"1;value 1\n2;value 2\n">>),
     ok = mysql:query(Pid, <<"LOAD DATA LOCAL "
-                            "INFILE '", Filename/binary, "' "
+                            "INFILE '", File/binary, "' "
                             "INTO TABLE load_local_test "
                             "FIELDS TERMINATED BY ';' "
                             "LINES TERMINATED BY '\\n'">>),
+    ok = file:delete(File),
     {ok, Columns, Rows} = mysql:query(Pid,
                                       <<"SELECT * FROM load_local_test ORDER BY id">>),
     ?assertEqual([<<"id">>, <<"value">>], Columns),
     ?assertEqual([[1, <<"value 1">>], [2, <<"value 2">>]], Rows),
-    ok = file:delete(Filename),
     ok = mysql:query(Pid, <<"DROP TABLE load_local_test">>).
 
-load_data_local_infile_multi(Pid) ->
+load_data_local_infile_missing(Pid, Cwd) ->
+    File = iolist_to_binary(filename:join([Cwd, "load_local_infile_missing_test.csv"])),
     ok = mysql:query(Pid, <<"CREATE TABLE load_local_test (id int, value blob)">>),
-    {ok, Cwd} = file:get_cwd(),
-    Filename = iolist_to_binary([Cwd, "load_local_files.csv"]),
-    ok = file:write_file(Filename, <<"1;value 1\n2;value 2\n">>),
+    Result = mysql:query(Pid, <<"LOAD DATA LOCAL "
+                                "INFILE '", File/binary, "' "
+                                "INTO TABLE load_local_test "
+                                "FIELDS TERMINATED BY ';' "
+                                "LINES TERMINATED BY '\\n'">>),
+    ?assertEqual({error, {undefined, undefined, {error, enoent}}}, Result),
+    ok = mysql:query(Pid, <<"DROP TABLE load_local_test">>).
+
+load_data_local_infile_not_allowed(Pid, Cwd) ->
+    File = iolist_to_binary(filename:join([Cwd, "../load_local_infile_not_allowed_test.csv"])),
+    ok = mysql:query(Pid, <<"CREATE TABLE load_local_test (id int, value blob)">>),
+    Result = mysql:query(Pid, <<"LOAD DATA LOCAL "
+                                "INFILE '", File/binary, "' "
+                                "INTO TABLE load_local_test "
+                                "FIELDS TERMINATED BY ';' "
+                                "LINES TERMINATED BY '\\n'">>),
+    ?assertEqual({error, {undefined, undefined, {error, not_allowed}}}, Result),
+    ok = mysql:query(Pid, <<"DROP TABLE load_local_test">>).
+
+load_data_local_infile_multi(Pid, Cwd) ->
+    File = iolist_to_binary(filename:join([Cwd, "load_local_infile_test.csv"])),
+    ok = file:write_file(File, <<"1;value 1\n2;value 2\n">>),
+    ok = mysql:query(Pid, <<"CREATE TABLE load_local_test (id int, value blob)">>),
     {ok, [Res1, Res2]} = mysql:query(Pid, <<"SELECT 'foo'; "
                                             "LOAD DATA LOCAL "
-                                            "INFILE '", Filename/binary, "' "
+                                            "INFILE '", File/binary, "' "
                                             "INTO TABLE load_local_test "
                                             "FIELDS TERMINATED BY ';' "
                                             "LINES TERMINATED BY '\\n'; "
                                             "SELECT 'bar'">>),
+    ok = file:delete(File),
     ?assertEqual({[<<"foo">>], [[<<"foo">>]]}, Res1),
     ?assertEqual({[<<"bar">>], [[<<"bar">>]]}, Res2),
     {ok, Columns, Rows} = mysql:query(Pid,
                                       <<"SELECT * FROM load_local_test ORDER BY id">>),
     ?assertEqual([<<"id">>, <<"value">>], Columns),
     ?assertEqual([[1, <<"value 1">>], [2, <<"value 2">>]], Rows),
-    ok = file:delete(Filename),
     ok = mysql:query(Pid, <<"DROP TABLE load_local_test">>).
 
 %% @doc Tests write and read in text and the binary protocol, all combinations.

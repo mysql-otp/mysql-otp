@@ -44,8 +44,7 @@ resultset_test() ->
     ExpectedCommunication = [{send, ExpectedReq},
                              {recv, ExpectedResponse}],
     Sock = mock_tcp:create(ExpectedCommunication),
-    {ok, [ResultSet]} = mysql_protocol:query(Query, mock_tcp, Sock,
-                                             disallow_local_files,
+    {ok, [ResultSet]} = mysql_protocol:query(Query, mock_tcp, Sock, [],
                                              no_filtermap_fun, infinity),
     mock_tcp:close(Sock),
     ?assertMatch(#resultset{cols = [#col{name = <<"@@version_comment">>}],
@@ -83,21 +82,9 @@ resultset_error_test() ->
         "48 04 23 48 59 30 30 30    4e 6f 20 74 61 62 6c 65    H.#HY000No table"
         "73 20 75 73 65 64                                     s used"),
     Sock = mock_tcp:create([{send, ExpectedReq}, {recv, ExpectedResponse}]),
-    {ok, [Result]} = mysql_protocol:query(Query, mock_tcp, Sock,
-                                          disallow_local_files,
+    {ok, [Result]} = mysql_protocol:query(Query, mock_tcp, Sock, [],
                                           no_filtermap_fun, infinity),
     ?assertMatch(#error{}, Result),
-    mock_tcp:close(Sock),
-    ok.
-
-unexpected_local_infile_request_test() ->
-    Query = <<"SELECT 1">>,
-    ExpectedReq = <<(size(Query)+1):24/little, 0, ?COM_QUERY, Query/binary>>,
-    UnexpectedResponse = <<16#09:24/little, 16#01, 16#fb, "/tmp/foo">>,
-    Sock = mock_tcp:create([{send, ExpectedReq}, {recv, UnexpectedResponse}]),
-    ?assertExit(unexpected_local_infile_request,
-                mysql_protocol:query(Query, mock_tcp, Sock, disallow_local_files,
-                                     no_filtermap_fun, infinity)),
     mock_tcp:close(Sock),
     ok.
 
@@ -132,8 +119,7 @@ bad_protocol_version_test() ->
     SSLOpts = undefined,
     ?assertError(unknown_protocol,
                  mysql_protocol:handshake("foo", "bar", "baz", "db", mock_tcp,
-                                          SSLOpts, Sock, disallow_local_files,
-                                          false)),
+                                          SSLOpts, Sock, false)),
     mock_tcp:close(Sock).
 
 error_as_initial_packet_test() ->
@@ -146,8 +132,7 @@ error_as_initial_packet_test() ->
     SSLOpts = undefined,
     ?assertMatch(#error{code = 1040, msg = <<"Too many connections">>},
                  mysql_protocol:handshake("foo", "bar", "baz", "db", mock_tcp,
-                                          SSLOpts, Sock, disallow_local_files,
-                                          false)),
+                                          SSLOpts, Sock, false)),
     mock_tcp:close(Sock).
 
 %% --- Helper functions for the above tests ---
