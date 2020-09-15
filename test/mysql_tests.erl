@@ -341,16 +341,21 @@ query_test_() ->
 local_files_test_() ->
     {setup,
      fun () ->
-         {ok, Cwd} = file:get_cwd(),
+         {ok, Cwd0} = file:get_cwd(),
+         Cwd1 = iolist_to_binary(Cwd0),
+         Cwd2 = case binary:last(Cwd1) of
+             $/ -> Cwd1;
+             _ -> <<Cwd1/binary, $/>>
+         end,
          {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
                                        {log_warnings, false},
-                                       {keep_alive, true}, {allowed_local_paths, [Cwd]}]),
+                                       {keep_alive, true}, {allowed_local_paths, [Cwd2]}]),
          ok = mysql:query(Pid, <<"DROP DATABASE IF EXISTS otptest">>),
          ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
          ok = mysql:query(Pid, <<"USE otptest">>),
          ok = mysql:query(Pid, <<"SET autocommit = 1">>),
          ok = mysql:query(Pid, <<"SET SESSION sql_mode = ?">>, [?SQL_MODE]),
-         {Pid, Cwd}
+         {Pid, Cwd2}
      end,
      fun ({Pid, _Cwd}) ->
          ok = mysql:query(Pid, <<"DROP DATABASE otptest">>),
@@ -910,7 +915,11 @@ load_data_local_infile_missing(Pid, Cwd) ->
                                 "INTO TABLE load_local_test "
                                 "FIELDS TERMINATED BY ';' "
                                 "LINES TERMINATED BY '\\n'">>),
-    ?assertEqual({error, {undefined, undefined, {error, enoent}}}, Result),
+    FilenameSize=byte_size(File),
+    ?assertMatch({error, {-2, undefined, <<"The server requested a file which could "
+                                           "not be opened by the client: ",
+                                           File:FilenameSize/binary, _/binary>>}},
+                 Result),
     ok = mysql:query(Pid, <<"DROP TABLE load_local_test">>).
 
 load_data_local_infile_not_allowed(Pid, Cwd) ->
@@ -921,7 +930,8 @@ load_data_local_infile_not_allowed(Pid, Cwd) ->
                                 "INTO TABLE load_local_test "
                                 "FIELDS TERMINATED BY ';' "
                                 "LINES TERMINATED BY '\\n'">>),
-    ?assertEqual({error, {undefined, undefined, {error, not_allowed}}}, Result),
+    ?assertEqual({error, {-1, undefined, <<"The server requested a file not permitted "
+                                           "by the client: ", File/binary>>}}, Result),
     ok = mysql:query(Pid, <<"DROP TABLE load_local_test">>).
 
 load_data_local_infile_multi(Pid, Cwd) ->

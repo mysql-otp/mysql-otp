@@ -30,8 +30,7 @@
 -export([handshake/8, change_user/8, quit/2, ping/2,
          query/6, fetch_query_response/5, prepare/3, unprepare/3,
          execute/7, fetch_execute_response/5, reset_connnection/2,
-         valid_params/1]).
--export([normalize_split_path/1]).
+         valid_params/1, valid_path/1]).
 
 -type query_filtermap() :: no_filtermap_fun | mysql:query_filtermap_fun().
 
@@ -559,8 +558,16 @@ fetch_response(SockModule, Socket, Timeout, Proto, AllowedPaths, FilterMap, Acc)
             Acc1 = case send_file(SockModule, Socket, Filename, AllowedPaths, SeqNum2) of
                 {ok, _SeqNum3} ->
                     Acc;
-                {{error, _Reason} = E, _SeqNum3} ->
-                    [#error{source = client, msg = E}|Acc]
+                {{error, not_allowed}, _SeqNum3} ->
+                    ErrorMsg = <<"The server requested a file not permitted by the client: ",
+                                 Filename/binary>>,
+                    [#error{code = -1, msg = ErrorMsg}|Acc];
+                {{error, FileError}, _SeqNum3} ->
+                    FileErrorMsg = list_to_binary(file:format_error(FileError)),
+                    ErrorMsg = <<"The server requested a file which could not be opened "
+                                 "by the client: ", Filename/binary,
+                                 " (", FileErrorMsg/binary, ")">>,
+                    [#error{code = -2, msg = ErrorMsg}|Acc]
             end,
             fetch_response(SockModule, Socket, Timeout, Proto, AllowedPaths,
                            FilterMap, Acc1);
@@ -1217,9 +1224,13 @@ recv_packet(SockModule, Socket, Timeout, ExpectSeqNum, Acc) ->
 
 -spec send_file(module(), term(), Filename :: binary(), AllowedPaths :: [binary()],
                 SeqNum :: integer()) ->
-    {ok | {error, term()}, NextSeqNum :: integer()}.
+    {ok | {error, Reason}, NextSeqNum :: integer()}
+    when Reason :: not_allowed
+	         | file:posix()
+		 | badarg
+		 | system_limit.
 send_file(SockModule, Socket, Filename, AllowedPaths, SeqNum0) ->
-    {Result, SeqNum1} = case is_allowed_path(Filename, AllowedPaths) andalso
+    {Result, SeqNum1} = case allowed_path(Filename, AllowedPaths) andalso
                              file:open(Filename, [read, raw, binary]) of
         false ->
             {{error, not_allowed}, SeqNum0};
@@ -1233,49 +1244,58 @@ send_file(SockModule, Socket, Filename, AllowedPaths, SeqNum0) ->
     {ok, SeqNum3} = send_packet(SockModule, Socket, <<>>, SeqNum1),
     {Result, SeqNum3}.
 
--spec is_allowed_path(file:name_all(), [file:name_all()]) -> boolean().
-is_allowed_path(Path, AllowedPaths) ->
-    Path1 = normalize_split_path(Path),
+-spec allowed_path(binary(), [binary()]) -> boolean().
+allowed_path(Path, AllowedPaths) ->
+    valid_path(Path) andalso
+    binary:last(Path) =/= $/ andalso
     lists:any(
-        fun (AllowedPath) ->
-            AllowedPath1 = normalize_split_path(AllowedPath),
-            lists:prefix(AllowedPath1, Path1)
+        fun
+            (AllowedPath) when Path =:= AllowedPath ->
+                true;
+            (AllowedPath) ->
+                Size = byte_size(AllowedPath),
+                HasSlash = binary:last(AllowedPath) =:= $/,
+                case Path of
+                    <<AllowedPath:Size/binary, _/binary>> when HasSlash -> true;
+                    <<AllowedPath:Size/binary, $/, _/binary>> -> true;
+                    _ -> false
+                end
         end,
         AllowedPaths
     ).
 
--spec normalize_split_path(file:name_all()) -> list().
-normalize_split_path(Path) ->
-    Path1 = case filename:pathtype(Path) of
+%% @doc Checks if the argument is a valid path.
+%%
+%% Returns `true' if the argument is an absolute path that does not contain
+%% any relative components like `..' or `.', otherwise `false'.
+-spec valid_path(term()) -> boolean().
+valid_path(Path) when is_binary(Path), byte_size(Path) > 0 ->
+    case filename:pathtype(Path) of
         absolute ->
-            Path;
-        relative ->
-            {ok, Cwd} = file:get_cwd(),
-            filename:absname_join(Cwd, Path);
+            valid_abspath(Path);
         volumerelative ->
-            Volume = hd(filename:split(Path)),
-            {ok, Cwd} = file:get_cwd(Volume),
-            filename:absname_join(Cwd, Path)
-    end,
-    [Root|RelPath] = filename:split(Path1),
-    Root1 = case is_binary(Root) of
-        true -> binary_to_list(Root);
-        false -> Root
-    end,
-    [Root1|normalize_split_path(RelPath, [])].
+            case Path of
+                <<$/, _/binary>> ->
+                    false;
+                _ ->
+                    valid_abspath(Path)
+            end;
+        relative ->
+            false
+    end;
+valid_path(_Path) ->
+    false.
 
-normalize_split_path([], Acc) ->
-    lists:reverse(Acc);
-normalize_split_path(["."|More], Acc) ->
-    normalize_split_path(More, Acc);
-normalize_split_path([".."|More], []) ->
-    normalize_split_path(More, []);
-normalize_split_path([".."|More], [_|Acc]) ->
-    normalize_split_path(More, Acc);
-normalize_split_path([Segment|More], Acc) when is_list(Segment) ->
-    normalize_split_path(More, [Segment|Acc]);
-normalize_split_path([Segment|More], Acc) ->
-    normalize_split_path([binary_to_list(Segment)|More], Acc).
+-spec valid_abspath(<<_:8, _:_*8>>) -> boolean().
+valid_abspath(Path) ->
+    lists:all(
+        fun
+            (<<".">>) -> false;
+            (<<"..">>) -> false;
+            (_) -> true
+        end,
+        filename:split(Path)
+    ).
 
 -spec send_file_chunk(module(), term(), Handle :: file:io_device(), SeqNum :: integer()) ->
     {ok, NextSeqNum :: integer()}.
@@ -1761,49 +1781,66 @@ valid_params_test() ->
     ?assertNot(valid_params(InvalidParams)),
     ?assertNot(valid_params(ValidParams ++ InvalidParams)).
 
-normalize_split_path_test() ->
-    Paths = [
-        {"/tmp", ["/", "tmp"]},
-        {"/tmp/./foo", ["/", "tmp", "foo"]},
-        {"/tmp/foo", ["/", "tmp", "foo"]},
-        {"/tmp/foo/..", ["/", "tmp"]},
-        {"/tmp/foo/../bar", ["/", "tmp", "bar"]}
-    ],
-    lists:foreach(
-        fun ({Path, Expected}) ->
-            ?assertEqual(Expected, normalize_split_path(Path))
-        end,
-        Paths
-    ).
-
-is_allowed_path_test() ->
-    AllowedPaths = [
-        "/tmp/foo",
-        "/tmp/foo/../bar"
-    ],
+valid_path_test() ->
     ValidPaths = [
-        "/tmp/foo/x.csv",
-        "/tmp/foo/a/../x.csv",
-        "/tmp/foo/a/b/../../x.csv",
-        "/tmp/foo/b/x.csv",
-        "/tmp/foo/a/../b/x.csv",
-        "/tmp/foo/../bar/x.csv"
+        <<"/">>,
+        <<"/tmp">>,
+        <<"/tmp/">>,
+        <<"/tmp/foo">>
     ],
     InvalidPaths = [
-        "/tmp/x.csv",
-        "/tmp/baz/x.csv",
-        "/tmp/foo/../x.csv",
-        "/tmp/foo/../baz/x.csv"
+        <<>>,
+        <<"tmp">>,
+        <<"tmp/">>,
+        <<"tmp/foo">>,
+        <<"../tmp">>,
+        <<"/tmp/..">>,
+        <<"/tmp/foo/../bar">>,
+        "/tmp"
     ],
     lists:foreach(
         fun (ValidPath) ->
-            ?assert(is_allowed_path(ValidPath, AllowedPaths))
+            ?assert(valid_path(ValidPath))
         end,
         ValidPaths
     ),
     lists:foreach(
         fun (InvalidPath) ->
-            ?assertNot(is_allowed_path(InvalidPath, AllowedPaths))
+            ?assertNot(valid_path(InvalidPath))
+        end,
+        InvalidPaths
+    ).
+
+allowed_path_test() ->
+    AllowedPaths = [
+        <<"/tmp/foo/file.csv">>,
+        <<"/tmp/foo/bar/">>,
+        <<"/tmp/foo/baz">>
+    ],
+    ValidPaths = [
+        <<"/tmp/foo/file.csv">>,
+        <<"/tmp/foo/bar/file.csv">>,
+        <<"/tmp/foo/baz/file.csv">>,
+        <<"/tmp/foo/baz">>
+    ],
+    InvalidPaths = [
+        <<"/tmp/file.csv">>,
+        <<"/tmp/foo/other_file.csv">>,
+        <<"/tmp/foo/other_dir/file.csv">>,
+        <<"/tmp/foo/../file.csv">>,
+        <<"/tmp/foo/../bar/file.csv">>,
+        <<"/tmp/foo/bar/">>,
+        <<"/tmp/foo/barbaz">>
+    ],
+    lists:foreach(
+        fun (ValidPath) ->
+            ?assert(allowed_path(ValidPath, AllowedPaths))
+        end,
+        ValidPaths
+    ),
+    lists:foreach(
+        fun (InvalidPath) ->
+            ?assertNot(allowed_path(InvalidPath, AllowedPaths))
         end,
         InvalidPaths
     ).

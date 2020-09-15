@@ -90,13 +90,7 @@ init(Opts) ->
     Queries           = proplists:get_value(queries, Opts, []),
     Prepares          = proplists:get_value(prepare, Opts, []),
 
-    true = lists:all(
-        fun (AllowedLocalPath) ->
-            PathType = filename:pathtype(AllowedLocalPath),
-            PathType =:= absolute orelse PathType =:= volumerelative
-        end,
-        AllowedLocalPaths
-    ),
+    true = lists:all(fun mysql_protocol:valid_path/1, AllowedLocalPaths),
 
     PingTimeout = case KeepAlive of
         true         -> ?default_ping_timeout;

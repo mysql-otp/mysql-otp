@@ -39,8 +39,8 @@
              warning_count :: integer(),
              msg :: binary()}).
 %% Error packet, commonly used in the protocol.
--record(error, {source = server :: server | client, code :: integer(),
-		state :: binary() | undefined, msg :: binary()}).
+-record(error, {code :: integer(), state :: binary() | undefined,
+                msg :: binary()}).
 
 %% EOF packet, commonly used in the protocol.
 -record(eof, {status, warning_count}).
