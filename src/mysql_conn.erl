@@ -52,7 +52,7 @@
 %% Gen_server state
 -record(state, {server_version, connection_id, socket, sockmod, tcp_opts, ssl_opts,
                 host, port, user, password, database, queries, prepares,
-                auth_plugin_name, auth_plugin_data,
+                auth_plugin_name, auth_plugin_data, allowed_local_paths,
                 log_warnings, log_slow_queries,
                 connect_timeout, ping_timeout, query_timeout, query_cache_time,
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
@@ -68,26 +68,29 @@ init(Opts) ->
         {local, _LocalAddr} -> 0;
         _NonLocalAddr -> ?default_port
     end,
-    Port           = proplists:get_value(port, Opts, DefaultPort),
+    Port              = proplists:get_value(port, Opts, DefaultPort),
 
-    User           = proplists:get_value(user, Opts, ?default_user),
-    Password       = proplists:get_value(password, Opts, ?default_password),
-    Database       = proplists:get_value(database, Opts, undefined),
-    LogWarn        = proplists:get_value(log_warnings, Opts, true),
-    LogSlow        = proplists:get_value(log_slow_queries, Opts, false),
-    KeepAlive      = proplists:get_value(keep_alive, Opts, false),
-    ConnectTimeout = proplists:get_value(connect_timeout, Opts,
-                                         ?default_connect_timeout),
-    QueryTimeout   = proplists:get_value(query_timeout, Opts,
-                                         ?default_query_timeout),
-    QueryCacheTime = proplists:get_value(query_cache_time, Opts,
-                                         ?default_query_cache_time),
-    TcpOpts        = proplists:get_value(tcp_options, Opts, []),
-    SetFoundRows   = proplists:get_value(found_rows, Opts, false),
-    SSLOpts        = proplists:get_value(ssl, Opts, undefined),
+    User              = proplists:get_value(user, Opts, ?default_user),
+    Password          = proplists:get_value(password, Opts, ?default_password),
+    Database          = proplists:get_value(database, Opts, undefined),
+    AllowedLocalPaths = proplists:get_value(allowed_local_paths, Opts, []),
+    LogWarn           = proplists:get_value(log_warnings, Opts, true),
+    LogSlow           = proplists:get_value(log_slow_queries, Opts, false),
+    KeepAlive         = proplists:get_value(keep_alive, Opts, false),
+    ConnectTimeout    = proplists:get_value(connect_timeout, Opts,
+                                            ?default_connect_timeout),
+    QueryTimeout      = proplists:get_value(query_timeout, Opts,
+                                            ?default_query_timeout),
+    QueryCacheTime    = proplists:get_value(query_cache_time, Opts,
+                                            ?default_query_cache_time),
+    TcpOpts           = proplists:get_value(tcp_options, Opts, []),
+    SetFoundRows      = proplists:get_value(found_rows, Opts, false),
+    SSLOpts           = proplists:get_value(ssl, Opts, undefined),
 
-    Queries        = proplists:get_value(queries, Opts, []),
-    Prepares       = proplists:get_value(prepare, Opts, []),
+    Queries           = proplists:get_value(queries, Opts, []),
+    Prepares          = proplists:get_value(prepare, Opts, []),
+
+    true = lists:all(fun mysql_protocol:valid_path/1, AllowedLocalPaths),
 
     PingTimeout = case KeepAlive of
         true         -> ?default_ping_timeout;
@@ -101,6 +104,7 @@ init(Opts) ->
         host = Host, port = Port,
         user = User, password = Password,
         database = Database,
+        allowed_local_paths = AllowedLocalPaths,
         queries = Queries, prepares = Prepares,
         log_warnings = LogWarn, log_slow_queries = LogSlow,
         connect_timeout = ConnectTimeout,
@@ -448,6 +452,7 @@ handle_call(start_transaction, {FromPid, _},
     end,
     setopts(SockMod, Socket, [{active, false}]),
     {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
+                                               [], no_filtermap_fun,
                                                ?cmd_timeout),
     setopts(SockMod, Socket, [{active, once}]),
     State1 = update_state(Res, State),
@@ -463,6 +468,7 @@ handle_call(rollback, {FromPid, _},
     end,
     setopts(SockMod, Socket, [{active, false}]),
     {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
+                                               [], no_filtermap_fun,
                                                ?cmd_timeout),
     setopts(SockMod, Socket, [{active, once}]),
     State1 = update_state(Res, State),
@@ -478,6 +484,7 @@ handle_call(commit, {FromPid, _},
     end,
     setopts(SockMod, Socket, [{active, false}]),
     {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
+                                               [], no_filtermap_fun,
                                                ?cmd_timeout),
     setopts(SockMod, Socket, [{active, once}]),
     State1 = update_state(Res, State),
@@ -545,15 +552,17 @@ code_change(_OldVsn, _State, _Extra) ->
 %% --- Helpers ---
 
 %% @doc Executes a prepared statement and returns {Reply, NewState}.
-execute_stmt(Stmt, Args, FilterMap, Timeout,
-             State = #state{socket = Socket, sockmod = SockMod}) ->
+execute_stmt(Stmt, Args, FilterMap, Timeout, State) ->
+    #state{socket = Socket, sockmod = SockMod,
+           allowed_local_paths = AllowedPaths} = State,
     setopts(SockMod, Socket, [{active, false}]),
     {ok, Recs} = case mysql_protocol:execute(Stmt, Args, SockMod, Socket,
-                                             FilterMap, Timeout) of
+                                             AllowedPaths, FilterMap,
+                                             Timeout) of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
             kill_query(State),
             mysql_protocol:fetch_execute_response(SockMod, Socket,
-                                                  FilterMap, ?cmd_timeout);
+                                                  [], FilterMap, ?cmd_timeout);
         {error, timeout} ->
             %% For MySQL 4.x.x there is no way to recover from timeout except
             %% killing the connection itself.
@@ -595,14 +604,17 @@ update_state(Rec, State) ->
 query(Query, FilterMap, default_timeout,
       #state{query_timeout = DefaultTimeout} = State) ->
     query(Query, FilterMap, DefaultTimeout, State);
-query(Query, FilterMap, Timeout,
-      #state{sockmod = SockMod, socket = Socket} = State) ->
+query(Query, FilterMap, Timeout, State) ->
+    #state{sockmod = SockMod, socket = Socket,
+           allowed_local_paths = AllowedPaths} = State,
     setopts(SockMod, Socket, [{active, false}]),
-    Result = mysql_protocol:query(Query, SockMod, Socket, FilterMap, Timeout),
+    Result = mysql_protocol:query(Query, SockMod, Socket, AllowedPaths,
+                                  FilterMap, Timeout),
     {ok, Recs} = case Result of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
             kill_query(State),
-            mysql_protocol:fetch_query_response(SockMod, Socket, FilterMap,
+            mysql_protocol:fetch_query_response(SockMod, Socket,
+                                                [], FilterMap,
                                                 ?cmd_timeout);
         {error, timeout} ->
             %% For MySQL 4.x.x there is no way to recover from timeout except
@@ -703,6 +715,7 @@ log_warnings(#state{socket = Socket, sockmod = SockMod}, Query) ->
     setopts(SockMod, Socket, [{active, false}]),
     {ok, [#resultset{rows = Rows}]} = mysql_protocol:query(<<"SHOW WARNINGS">>,
                                                            SockMod, Socket,
+                                                           [], no_filtermap_fun,
                                                            ?cmd_timeout),
     setopts(SockMod, Socket, [{active, once}]),
     Lines = [[Level, " ", integer_to_binary(Code), ": ", Message, "\n"]
@@ -748,7 +761,9 @@ kill_query(#state{connection_id = ConnId, host = Host, port = Port,
             %% Kill and disconnect
             IdBin = integer_to_binary(ConnId),
             {ok, [#ok{}]} = mysql_protocol:query(<<"KILL QUERY ", IdBin/binary>>,
-                                                 SockMod, Socket, ?cmd_timeout),
+                                                 SockMod, Socket,
+                                                 [], no_filtermap_fun,
+                                                 ?cmd_timeout),
             mysql_protocol:quit(SockMod, Socket);
         #error{} = E ->
             error_logger:error_msg("Failed to connect to kill query: ~p",

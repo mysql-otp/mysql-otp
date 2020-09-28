@@ -82,6 +82,7 @@
                 | {database, iodata()}
                 | {connect_mode, synchronous | asynchronous | lazy}
                 | {connect_timeout, timeout()}
+                | {allowed_local_paths, [binary()]}
                 | {log_warnings, boolean()}
                 | {log_slow_queries, boolean()}
                 | {keep_alive, boolean() | timeout()}
@@ -142,6 +143,13 @@
 %%   </dd>
 %%   <dt>`{connect_timeout, Timeout}'</dt>
 %%   <dd>The maximum time to spend for start_link/1.</dd>
+%%   <dt>`{allowed_local_paths, [binary()]}'</dt>
+%%   <dd>This option allows you to specify a list of directories or individual
+%%       files on the client machine which the server may request, for example
+%%       when executing a `LOAD DATA LOCAL INFILE' query. Only absolute paths
+%%       without relative components such as `..' and `.' are allowed.
+%%       The default is an empty list, meaning the client will not send any
+%%       local files to the server.</dd>
 %%   <dt>`{log_warnings, boolean()}'</dt>
 %%   <dd>Whether to fetch warnings and log them using error_logger; default
 %%       true.</dd>
