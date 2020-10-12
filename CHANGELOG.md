@@ -2,6 +2,16 @@ Change log
 ==========
 
 
+1.7.0
+-----
+* Update version [2020-10-12 10:39:45 +0200]
+* Support LOAD DATA LOCAL revised (#168) [2020-09-28 11:49:41 +0200]
+* Improve typing [2020-06-26 16:35:09 +0200]
+* Default SNI to hostname for SSL connections [2020-06-15 14:05:48 +0200]
+* Allow activation of experimental socket backend for inet/gen_tcp [2020-06-05 15:15:23 +0200]
+* Ping response should not change connection state [2020-05-25 17:04:06 +0200]
+* Update CHANGELOG.md [2020-01-06 19:34:09 +0100]
+
 1.6.0
 -----
 * Update version [2020-01-06 19:21:50 +0100]
