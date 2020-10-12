@@ -86,18 +86,18 @@ Usage as a dependency
 Using *erlang.mk*:
 
     DEPS = mysql
-    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.6.0
+    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.7.0
 
 Using *rebar* (version 2 or 3):
 
     {deps, [
         {mysql, ".*", {git, "https://github.com/mysql-otp/mysql-otp",
-                       {tag, "1.6.0"}}}
+                       {tag, "1.7.0"}}}
     ]}.
 
 Using *mix*:
 
-    {:mysql, git: "https://github.com/mysql-otp/mysql-otp", tag: "1.6.0"},
+    {:mysql, git: "https://github.com/mysql-otp/mysql-otp", tag: "1.7.0"},
 
 There's also a Hex package called [mysql](//hex.pm/packages/mysql).
 
