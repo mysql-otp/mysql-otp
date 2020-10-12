@@ -20,36 +20,64 @@
   gen_server is locally registered.
 <h2><a name="types">Data Types</a></h2>
 
-<h3 class="typedecl"><a name="type-column_names">column_names()</a></h3>
-<p><tt>column_names() = [binary()]</tt></p>
+<h3 class="typedecl"><a name="type-column_name">column_name()</a></h3>
+<p><tt>column_name() = binary()</tt></p>
 
 
 <h3 class="typedecl"><a name="type-connection">connection()</a></h3>
 <p><tt>connection() = atom() | {Name::atom(), Node::atom()} | {global, GlobalName::term()} | {via, Module::atom(), ViaName::term()} | pid()</tt></p>
 
 
+<h3 class="typedecl"><a name="type-option">option()</a></h3>
+<p><tt>option() = {name, ServerName::<a href="#type-server_name">server_name()</a>} | {host, <a href="inet.html#type-socket_address">inet:socket_address()</a> | <a href="inet.html#type-hostname">inet:hostname()</a>} | {port, integer()} | {user, iodata()} | {password, iodata()} | {database, iodata()} | {connect_mode, synchronous | asynchronous | lazy} | {connect_timeout, timeout()} | {allowed_local_paths, [binary()]} | {log_warnings, boolean()} | {log_slow_queries, boolean()} | {keep_alive, boolean() | timeout()} | {prepare, [{StatementName::<a href="#type-statement_name">statement_name()</a>, Statement::<a href="#type-query">query()</a>}]} | {queries, [<a href="#type-query">query()</a>]} | {query_timeout, timeout()} | {found_rows, boolean()} | {query_cache_time, non_neg_integer()} | {tcp_options, [<a href="gen_tcp.html#type-connect_option">gen_tcp:connect_option()</a>]} | {ssl, term()}</tt></p>
+
+
+<h3 class="typedecl"><a name="type-query">query()</a></h3>
+<p><tt>query() = iodata()</tt></p>
+
+
 <h3 class="typedecl"><a name="type-query_filtermap_fun">query_filtermap_fun()</a></h3>
-<p><tt>query_filtermap_fun() = fun((<a href="#type-row">row()</a>) -&gt; <a href="#type-query_filtermap_res">query_filtermap_res()</a>) | fun((<a href="#type-column_names">column_names()</a>, <a href="#type-row">row()</a>) -&gt; <a href="#type-query_filtermap_res">query_filtermap_res()</a>)</tt></p>
+<p><tt>query_filtermap_fun() = fun((<a href="#type-row">row()</a>) -&gt; <a href="#type-query_filtermap_res">query_filtermap_res()</a>) | fun(([<a href="#type-column_name">column_name()</a>], <a href="#type-row">row()</a>) -&gt; <a href="#type-query_filtermap_res">query_filtermap_res()</a>)</tt></p>
 
 
 <h3 class="typedecl"><a name="type-query_filtermap_res">query_filtermap_res()</a></h3>
 <p><tt>query_filtermap_res() = boolean() | {true, term()}</tt></p>
 
 
+<h3 class="typedecl"><a name="type-query_param">query_param()</a></h3>
+<p><tt>query_param() = term()</tt></p>
+
+
 <h3 class="typedecl"><a name="type-query_result">query_result()</a></h3>
-<p><tt>query_result() = ok | {ok, <a href="#type-column_names">column_names()</a>, <a href="#type-rows">rows()</a>} | {ok, [{<a href="#type-column_names">column_names()</a>, <a href="#type-rows">rows()</a>}, ...]} | {error, <a href="#type-server_reason">server_reason()</a>}</tt></p>
+<p><tt>query_result() = ok | {ok, [<a href="#type-column_name">column_name()</a>], [<a href="#type-row">row()</a>]} | {ok, [{[<a href="#type-column_name">column_name()</a>], [<a href="#type-row">row()</a>]}, ...]} | {error, <a href="#type-server_reason">server_reason()</a>}</tt></p>
 
 
 <h3 class="typedecl"><a name="type-row">row()</a></h3>
 <p><tt>row() = [term()]</tt></p>
 
 
-<h3 class="typedecl"><a name="type-rows">rows()</a></h3>
-<p><tt>rows() = [<a href="#type-row">row()</a>]</tt></p>
+<h3 class="typedecl"><a name="type-server_name">server_name()</a></h3>
+<p><tt>server_name() = {local, Name::atom()} | {global, GlobalName::term()} | {via, Via::module(), ViaName::term()}</tt></p>
 
 
 <h3 class="typedecl"><a name="type-server_reason">server_reason()</a></h3>
 <p><tt>server_reason() = {Code::integer(), SQLState::binary() | undefined, Message::binary()}</tt></p>
+
+
+<h3 class="typedecl"><a name="type-statement_id">statement_id()</a></h3>
+<p><tt>statement_id() = integer()</tt></p>
+
+
+<h3 class="typedecl"><a name="type-statement_name">statement_name()</a></h3>
+<p><tt>statement_name() = atom()</tt></p>
+
+
+<h3 class="typedecl"><a name="type-statement_ref">statement_ref()</a></h3>
+<p><tt>statement_ref() = <a href="#type-statement_id">statement_id()</a> | <a href="#type-statement_name">statement_name()</a></tt></p>
+
+
+<h3 class="typedecl"><a name="type-transaction_result">transaction_result()</a></h3>
+<p><tt>transaction_result(Result) = {atomic, Result} | {aborted, Reason::term()}</tt></p>
 
 
 <h2><a name="index">Function Index</a></h2>
@@ -92,6 +120,7 @@ a transaction.</td></tr>
 <h3 class="function"><a name="affected_rows-1">affected_rows/1</a></h3>
 <div class="spec">
 <p><tt>affected_rows(Conn::<a href="#type-connection">connection()</a>) -&gt; integer()</tt><br></p>
+<p> </p>
 </div><p>Returns the number of inserted, updated and deleted rows of the last
   executed query or prepared statement. If found_rows is set on the
   connection, for update operation the return value will equal to the number
@@ -100,19 +129,22 @@ a transaction.</td></tr>
 <h3 class="function"><a name="autocommit-1">autocommit/1</a></h3>
 <div class="spec">
 <p><tt>autocommit(Conn::<a href="#type-connection">connection()</a>) -&gt; boolean()</tt><br></p>
+<p> </p>
 </div><p>Returns true if auto-commit is enabled and false otherwise.</p>
 
 <h3 class="function"><a name="change_user-3">change_user/3</a></h3>
 <div class="spec">
 <p><tt>change_user(Conn, Username, Password) -&gt; Result</tt>
 <ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Username = iodata()</tt></li><li><tt>Password = iodata()</tt></li><li><tt>Result = ok</tt></li></ul></p>
+<p> </p>
 </div><p>Equivalent to <code>change_user(Conn, Username, Password, [])</code>.</p>
 <p><b>See also:</b> <a href="#change_user-4">change_user/4</a>.</p>
 
 <h3 class="function"><a name="change_user-4">change_user/4</a></h3>
 <div class="spec">
 <p><tt>change_user(Conn, Username, Password, Options) -&gt; Result</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Username = iodata()</tt></li><li><tt>Password = iodata()</tt></li><li><tt>Options = [Option]</tt></li><li><tt>Result = ok</tt></li><li><tt>Option = {database, iodata()} | {queries, [iodata()]} | {prepare, [NamedStatement]}</tt></li><li><tt>NamedStatement = {StatementName::atom(), Statement::iodata()}</tt></li></ul></p>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Username = iodata()</tt></li><li><tt>Password = iodata()</tt></li><li><tt>Options = [Option]</tt></li><li><tt>Result = ok</tt></li><li><tt>Option = {database, iodata()} | {queries, [<a href="#type-query">query()</a>]} | {prepare, [NamedStatement]}</tt></li><li><tt>NamedStatement = {StatementName::<a href="#type-statement_name">statement_name()</a>, Statement::<a href="#type-query">query()</a>}</tt></li></ul></p>
+<p> </p>
 </div><p><p>Changes the user of the active connection without closing and  
 and re-opening it. The currently active session will be reset (ie,  
 user variables, temporary tables, prepared statements, etc will  
@@ -139,6 +171,7 @@ process will exit with the same reason and cannot be used any longer.</p>
 <h3 class="function"><a name="encode-2">encode/2</a></h3>
 <div class="spec">
 <p><tt>encode(Conn::<a href="#type-connection">connection()</a>, Term::term()) -&gt; iodata()</tt><br></p>
+<p> </p>
 </div><p><p>Encodes a term as a MySQL literal so that it can be used to inside a  
 query. If backslash escapes are enabled, backslashes and single quotes in  
 strings and binaries are escaped. Otherwise only single quotes are escaped.</p>
@@ -151,7 +184,8 @@ strings and binaries are escaped. Otherwise only single quotes are escaped.</p>
 <h3 class="function"><a name="execute-3">execute/3</a></h3>
 <div class="spec">
 <p><tt>execute(Conn, StatementRef, Params) -&gt; Result | {error, not_prepared}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = atom() | integer()</tt></li><li><tt>Params = [term()]</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = <a href="#type-statement_ref">statement_ref()</a></tt></li><li><tt>Params = [<a href="#type-query_param">query_param()</a>]</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<p> </p>
 </div><p>Executes a prepared statement with the default query timeout as given
   to start_link/1.</p>
 <p><b>See also:</b> <a href="#execute-5">execute/5</a>, <a href="#prepare-2">prepare/2</a>, <a href="#prepare-3">prepare/3</a>, <a href="#prepare-4">prepare/4</a>.</p>
@@ -159,14 +193,16 @@ strings and binaries are escaped. Otherwise only single quotes are escaped.</p>
 <h3 class="function"><a name="execute-4">execute/4</a></h3>
 <div class="spec">
 <p><tt>execute(Conn, StatementRef, Params, Timeout::FilterMap | Timeout) -&gt; Result | {error, not_prepared}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = atom() | integer()</tt></li><li><tt>Params = [term()]</tt></li><li><tt>FilterMap = no_filtermap_fun | <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Timeout = default_timeout | timeout()</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = <a href="#type-statement_ref">statement_ref()</a></tt></li><li><tt>Params = [<a href="#type-query_param">query_param()</a>]</tt></li><li><tt>FilterMap = <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<p> </p>
 </div><p>Executes a prepared statement.</p>
 <p><b>See also:</b> <a href="#execute-5">execute/5</a>, <a href="#prepare-2">prepare/2</a>, <a href="#prepare-3">prepare/3</a>, <a href="#prepare-4">prepare/4</a>.</p>
 
 <h3 class="function"><a name="execute-5">execute/5</a></h3>
 <div class="spec">
 <p><tt>execute(Conn, StatementRef, Params, FilterMap, Timeout) -&gt; Result | {error, not_prepared}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = atom() | integer()</tt></li><li><tt>Params = [term()]</tt></li><li><tt>FilterMap = no_filtermap_fun | <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Timeout = default_timeout | timeout()</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = <a href="#type-statement_ref">statement_ref()</a></tt></li><li><tt>Params = [<a href="#type-query_param">query_param()</a>]</tt></li><li><tt>FilterMap = <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<p> </p>
 </div><p><p>Executes a prepared statement.</p>
  
   The <code>FilterMap</code> and <code>Timeout</code> arguments are optional.
@@ -185,6 +221,7 @@ strings and binaries are escaped. Otherwise only single quotes are escaped.</p>
 <h3 class="function"><a name="in_transaction-1">in_transaction/1</a></h3>
 <div class="spec">
 <p><tt>in_transaction(Conn::<a href="#type-connection">connection()</a>) -&gt; boolean()</tt><br></p>
+<p> </p>
 </div><p>Returns true if the connection is in a transaction and false otherwise.
   This works regardless of whether the transaction has been started using
   transaction/2,3 or using a plain <code>mysql:query(Connection, "BEGIN")</code>.</p>
@@ -193,19 +230,22 @@ strings and binaries are escaped. Otherwise only single quotes are escaped.</p>
 <h3 class="function"><a name="insert_id-1">insert_id/1</a></h3>
 <div class="spec">
 <p><tt>insert_id(Conn::<a href="#type-connection">connection()</a>) -&gt; integer()</tt><br></p>
+<p> </p>
 </div><p>Returns the last insert-id.</p>
 
 <h3 class="function"><a name="prepare-2">prepare/2</a></h3>
 <div class="spec">
 <p><tt>prepare(Conn, Query) -&gt; {ok, StatementId} | {error, Reason}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>StatementId = integer()</tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a></tt></li></ul></p>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = <a href="#type-query">query()</a></tt></li><li><tt>StatementId = <a href="#type-statement_id">statement_id()</a></tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a></tt></li></ul></p>
+<p> </p>
 </div><p>Creates a prepared statement from the passed query.</p>
 <p><b>See also:</b> <a href="#prepare-3">prepare/3</a>.</p>
 
 <h3 class="function"><a name="prepare-3">prepare/3</a></h3>
 <div class="spec">
 <p><tt>prepare(Conn, Name, Query) -&gt; {ok, Name} | {error, Reason}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Name = atom()</tt></li><li><tt>Query = iodata()</tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a></tt></li></ul></p>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Name = <a href="#type-statement_name">statement_name()</a></tt></li><li><tt>Query = <a href="#type-query">query()</a></tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a></tt></li></ul></p>
+<p> </p>
 </div><p>Creates a prepared statement from the passed query and associates it
   with the given name.</p>
 <p><b>See also:</b> <a href="#prepare-2">prepare/2</a>.</p>
@@ -214,27 +254,35 @@ strings and binaries are escaped. Otherwise only single quotes are escaped.</p>
 <div class="spec">
 <p><tt>query(Conn, Query) -&gt; Result</tt>
 <ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<p> </p>
 </div><p>Executes a plain query.</p>
 <p><b>See also:</b> <a href="#query-5">query/5</a>.</p>
 
 <h3 class="function"><a name="query-3">query/3</a></h3>
 <div class="spec">
 <p><tt>query(Conn, Query, Params::Params | FilterMap | Timeout) -&gt; Result</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>Timeout = default_timeout | timeout()</tt></li><li><tt>Params = no_params | [term()]</tt></li><li><tt>FilterMap = no_filtermap_fun | <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = <a href="#type-query">query()</a></tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>Params = [<a href="#type-query_param">query_param()</a>]</tt></li><li><tt>FilterMap = <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<p> </p>
 </div><p>Executes a query.</p>
 <p><b>See also:</b> <a href="#query-5">query/5</a>.</p>
 
 <h3 class="function"><a name="query-4">query/4</a></h3>
 <div class="spec">
 <p><tt>query(Conn, Query, Params, Timeout) -&gt; Result</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>Timeout = default_timeout | timeout()</tt></li><li><tt>Params = no_params | [term()]</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = <a href="#type-query">query()</a></tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>Params = [<a href="#type-query_param">query_param()</a>]</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p><p><tt>query(Conn, Query, FilterMap, Timeout) -&gt; Result</tt>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = <a href="#type-query">query()</a></tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>FilterMap = <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p><p><tt>query(Conn, Query, Params, FilterMap) -&gt; Result</tt>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = <a href="#type-query">query()</a></tt></li><li><tt>Params = [<a href="#type-query_param">query_param()</a>]</tt></li><li><tt>FilterMap = <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<p> </p>
+<p> </p>
+<p> </p>
 </div><p>Executes a query.</p>
 <p><b>See also:</b> <a href="#query-5">query/5</a>.</p>
 
 <h3 class="function"><a name="query-5">query/5</a></h3>
 <div class="spec">
 <p><tt>query(Conn, Query, Params, FilterMap, Timeout) -&gt; Result</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>Timeout = default_timeout | timeout()</tt></li><li><tt>Params = no_params | [term()]</tt></li><li><tt>FilterMap = no_filtermap_fun | <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = <a href="#type-query">query()</a></tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>Params = [<a href="#type-query_param">query_param()</a>]</tt></li><li><tt>FilterMap = <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<p> </p>
 </div><p><p>Executes a query.</p>
  
   <h4><a name="Parameters">Parameters</a></h4>
@@ -250,10 +298,9 @@ strings and binaries are escaped. Otherwise only single quotes are escaped.</p>
   statement. A prepared statement is created, executed and then cached for a
   certain time (specified using the option <code>{query_cache_time, Milliseconds}</code>
   to <code>start_link/1</code>). If the same query is executed again during this time,
-  it does not need to be prepared again. If <code>Params</code> is omitted (or specified
-  as <code>no_params</code>), the query is executed as a plain query. To force a query
-  without parameters to be executed as a prepared statement, an empty list can
-  be used for <code>Params</code>.</p>
+  it does not need to be prepared again. If <code>Params</code> is omitted, the query
+  is executed as a plain query. To force a query without parameters to be
+  executed as a prepared statement, an empty list can be used for <code>Params</code>.</p>
  
   <p>If <code>FilterMap</code> (a fun) is specified, the function is applied to each row to
   filter or perform other actions on the rows, in a way similar to how
@@ -261,8 +308,7 @@ strings and binaries are escaped. Otherwise only single quotes are escaped.</p>
 below for details.</p>
  
   <p><code>Timeout</code> specifies the time to wait for a response from the database. If
-  omitted (or specified as <code>default_timeout</code>), the timeout given in
-  <code>start_link/1</code> is used.</p>
+  omitted, the timeout given in <code>start_link/1</code> is used.</p>
  
   <h4><a name="Return_value">Return value</a></h4>
  
@@ -326,18 +372,19 @@ to another process etc.</p>
       (_) -&gt;
           false
   end,
-  query(Conn, Query, no_params, FilterMap, default_timeout).</pre></p>
+  query(Conn, Query, FilterMap).</pre></p>
 
 <h3 class="function"><a name="reset_connection-1">reset_connection/1</a></h3>
 <div class="spec">
 <p><tt>reset_connection(Conn) -&gt; ok | {error, Reason}</tt>
 <ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a></tt></li></ul></p>
+<p> </p>
 </div>
 
 <h3 class="function"><a name="start_link-1">start_link/1</a></h3>
 <div class="spec">
-<p><tt>start_link(Options) -&gt; {ok, pid()} | ignore | {error, term()}</tt>
-<ul class="definitions"><li><tt>Options = [Option]</tt></li><li><tt>Option = {name, ServerName} | {host, <a href="inet.html#type-socket_address">inet:socket_address()</a> | <a href="inet.html#type-hostname">inet:hostname()</a>} | {port, integer()} | {user, iodata()} | {password, iodata()} | {database, iodata()} | {connect_mode, synchronous | asynchronous | lazy} | {connect_timeout, timeout()} | {log_warnings, boolean()} | {log_slow_queries, boolean()} | {keep_alive, boolean() | timeout()} | {prepare, NamedStatements} | {queries, [iodata()]} | {query_timeout, timeout()} | {found_rows, boolean()} | {query_cache_time, non_neg_integer()} | {tcp_options, [<a href="gen_tcp.html#type-connect_option">gen_tcp:connect_option()</a>]} | {ssl, term()}</tt></li><li><tt>ServerName = {local, Name::atom()} | {global, GlobalName::term()} | {via, Module::atom(), ViaName::term()}</tt></li><li><tt>NamedStatements = [{StatementName::atom(), Statement::iodata()}]</tt></li></ul></p>
+<p><tt>start_link(Options::[<a href="#type-option">option()</a>]) -&gt; {ok, pid()} | ignore | {error, term()}</tt><br></p>
+<p> </p>
 </div><p><p>Starts a connection gen_server process and connects to a database. To
   disconnect use <code>mysql:stop/1,2</code>.</p>
  
@@ -385,6 +432,13 @@ to another process etc.</p>
     </dd>
     <dt><code>{connect_timeout, Timeout}</code></dt>
     <dd>The maximum time to spend for start_link/1.</dd>
+    <dt><code>{allowed_local_paths, [binary()]}</code></dt>
+    <dd>This option allows you to specify a list of directories or individual
+        files on the client machine which the server may request, for example
+        when executing a <code>LOAD DATA LOCAL INFILE</code> query. Only absolute paths
+        without relative components such as <code>..</code> and <code>.</code> are allowed.
+        The default is an empty list, meaning the client will not send any
+        local files to the server.</dd>
     <dt><code>{log_warnings, boolean()}</code></dt>
     <dd>Whether to fetch warnings and log them using error_logger; default
         true.</dd>
@@ -421,13 +475,19 @@ to another process etc.</p>
         <code>{recbuf, Size}</code> and <code>{sndbuf, Size}</code> if you send or receive more than
         the default (typically 8K) per query.</dd>
     <dt><code>{ssl, Options}</code></dt>
-    <dd>Additional options for <code>ssl:connect/3</code>.</dd>
+    <dd>Additional options for <code>ssl:connect/3</code>.<br>
+        The <code>verify</code> option, if not given explicitly, defaults to
+        <code>verify_peer</code>.<br>
+        The <code>server_name_indication</code> option, if omitted, defaults to the value
+        of the <code>host</code> option if it is a hostname string, otherwise no default
+        value is set.</dd>
   </dl></p>
 
 <h3 class="function"><a name="stop-1">stop/1</a></h3>
 <div class="spec">
 <p><tt>stop(Conn) -&gt; ok</tt>
 <ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li></ul></p>
+<p> </p>
 </div>
 <p><b>See also:</b> <a href="#stop-2">stop/2</a>.</p>
 
@@ -435,6 +495,7 @@ to another process etc.</p>
 <div class="spec">
 <p><tt>stop(Conn, Timeout) -&gt; ok</tt>
 <ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Timeout = timeout()</tt></li></ul></p>
+<p> </p>
 </div><p><p>Stops a connection process and closes the connection. The
   process calling <code>stop</code> will be blocked until the connection  
 process stops or the given timeout expires.</p>
@@ -447,21 +508,25 @@ process stops or the given timeout expires.</p>
 
 <h3 class="function"><a name="transaction-2">transaction/2</a></h3>
 <div class="spec">
-<p><tt>transaction(Conn::<a href="#type-connection">connection()</a>, Fun::function()) -&gt; {atomic, term()} | {aborted, term()}</tt><br></p>
+<p><tt>transaction(Conn, TransactionFun) -&gt; TransactionResult</tt>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>TransactionFun = fun(() -&gt; Result)</tt></li><li><tt>TransactionResult = <a href="#type-transaction_result">transaction_result</a>(Result)</tt></li></ul></p>
+<p> </p>
 </div><p>This function executes the functional object Fun as a transaction.</p>
 <p><b>See also:</b> <a href="#transaction-4">transaction/4</a>.</p>
 
 <h3 class="function"><a name="transaction-3">transaction/3</a></h3>
 <div class="spec">
-<p><tt>transaction(Conn::<a href="#type-connection">connection()</a>, Fun::function(), Retries) -&gt; {atomic, term()} | {aborted, term()}</tt>
-<ul class="definitions"><li><tt>Retries = non_neg_integer() | infinity</tt></li></ul></p>
+<p><tt>transaction(Conn, TransactionFun, Retries) -&gt; TransactionResult</tt>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>TransactionFun = fun(() -&gt; Result)</tt></li><li><tt>Retries = non_neg_integer() | infinity</tt></li><li><tt>TransactionResult = <a href="#type-transaction_result">transaction_result</a>(Result)</tt></li></ul></p>
+<p> </p>
 </div><p>This function executes the functional object Fun as a transaction.</p>
 <p><b>See also:</b> <a href="#transaction-4">transaction/4</a>.</p>
 
 <h3 class="function"><a name="transaction-4">transaction/4</a></h3>
 <div class="spec">
-<p><tt>transaction(Conn::<a href="#type-connection">connection()</a>, Fun::function(), Args::list(), Retries) -&gt; {atomic, term()} | {aborted, term()}</tt>
-<ul class="definitions"><li><tt>Retries = non_neg_integer() | infinity</tt></li></ul></p>
+<p><tt>transaction(Conn, TransactionFun, Args, Retries) -&gt; TransactionResult</tt>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>TransactionFun = fun((...) -&gt; Result)</tt></li><li><tt>Args = list()</tt></li><li><tt>Retries = non_neg_integer() | infinity</tt></li><li><tt>TransactionResult = <a href="#type-transaction_result">transaction_result</a>(Result)</tt></li></ul></p>
+<p> </p>
 </div><p><p>This function executes the functional object Fun with arguments Args as  
 a transaction.</p>
  
@@ -510,12 +575,14 @@ executed as a plain query within a managed transaction. (Don't do that!)</p>
 <h3 class="function"><a name="unprepare-2">unprepare/2</a></h3>
 <div class="spec">
 <p><tt>unprepare(Conn, StatementRef) -&gt; ok | {error, Reason}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = atom() | integer()</tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a> | not_prepared</tt></li></ul></p>
+<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = <a href="#type-statement_ref">statement_ref()</a></tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a> | not_prepared</tt></li></ul></p>
+<p> </p>
 </div><p>Deallocates a prepared statement.</p>
 
 <h3 class="function"><a name="warning_count-1">warning_count/1</a></h3>
 <div class="spec">
 <p><tt>warning_count(Conn::<a href="#type-connection">connection()</a>) -&gt; integer()</tt><br></p>
+<p> </p>
 </div><p>Returns the number of warnings generated by the last query/2 or
   execute/3 calls.</p>
 <hr>
