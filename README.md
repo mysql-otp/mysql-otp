@@ -91,16 +91,16 @@ Using *erlang.mk*:
 Using *rebar* (version 2 or 3):
 
 ```erlang
-    {deps, [
-        {mysql, ".*", {git, "https://github.com/mysql-otp/mysql-otp",
-                       {tag, "1.7.0"}}}
-    ]}.
+{deps, [
+  {mysql, ".*", {git, "https://github.com/mysql-otp/mysql-otp",
+                {tag, "1.7.0"}}}
+]}.
 ```
 
 Using *mix*:
 
 ```elixir
-    {:mysql, git: "https://github.com/mysql-otp/mysql-otp", tag: "1.7.0"},
+{:mysql, git: "https://github.com/mysql-otp/mysql-otp", tag: "1.7.0"},
 ```
 
 There's also a Hex package called [mysql](//hex.pm/packages/mysql).
