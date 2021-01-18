@@ -28,7 +28,7 @@
 -module(mysql_protocol).
 
 -export([handshake/8, change_user/8, quit/2, ping/2,
-         query/6, fetch_query_response/5, prepare/3, unprepare/3,
+         query/6, fetch_query_response/5, prepare/3, unprepare/3, prepare/4,
          execute/7, fetch_execute_response/5, reset_connnection/2,
          valid_params/1, valid_path/1]).
 
@@ -210,9 +210,19 @@ fetch_query_response(SockModule, Socket, AllowedPaths, FilterMap, Timeout) ->
 %% @doc Prepares a statement.
 -spec prepare(iodata(), module(), term()) -> #error{} | #prepared{}.
 prepare(Query, SockModule, Socket) ->
+    prepare(Query, SockModule, Socket, infinity).
+
+%% @doc Prepares a statement.
+-spec prepare(iodata(), module(), term(), infinity | timeout()) -> #error{} | #prepared{}.
+prepare(Query, SockModule, Socket, Timeout) ->
     Req = <<?COM_STMT_PREPARE, (iolist_to_binary(Query))/binary>>,
     {ok, SeqNum1} = send_packet(SockModule, Socket, Req, 0),
-    {ok, Resp, SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
+    {ok, Resp, SeqNum2} = case recv_packet(SockModule, Socket, Timeout, SeqNum1) of
+                              {error, timeout} ->
+                                  %% drastic measure, so kill the connection
+                                  _ = query(<<"kill connection connection_id()">>, SockModule, Socket, no_filtermap_fun, Timeout),
+                               Result -> Result
+                          end,
     case Resp of
         ?error_pattern ->
             parse_error_packet(Resp);
@@ -1226,9 +1236,9 @@ recv_packet(SockModule, Socket, Timeout, ExpectSeqNum, Acc) ->
                 SeqNum :: integer()) ->
     {ok | {error, Reason}, NextSeqNum :: integer()}
     when Reason :: not_allowed
-	         | file:posix()
-		 | badarg
-		 | system_limit.
+                | file:posix()
+                | badarg
+                | system_limit.
 send_file(SockModule, Socket, Filename, AllowedPaths, SeqNum0) ->
     {Result, SeqNum1} = case allowed_path(Filename, AllowedPaths) andalso
                              file:open(Filename, [read, raw, binary]) of
