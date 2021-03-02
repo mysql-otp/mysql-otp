@@ -118,7 +118,7 @@ handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket, SeqNum)
 %% If the authentication process requires more data to be exchanged between
 %% the server and client, this is done via More Data Packets. The formats and
 %% meanings of the payloads in such packets depend on the auth method.
-%% 
+%%
 %% An Auth Method Switch Packet signals a request for transition to another
 %% auth method. The packet contains the name of the auth method to switch to,
 %% and new auth plugin data.
@@ -550,7 +550,7 @@ parse_handshake_confirm(<<?MORE_DATA, MoreData/binary>>) ->
 %% prepared statements).
 -spec fetch_response(module(), term(), timeout(), text | binary, [binary()],
                      query_filtermap(), list()) ->
-    {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
+    {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout} | {error, closed} .
 fetch_response(SockModule, Socket, Timeout, Proto, AllowedPaths, FilterMap, Acc) ->
     case recv_packet(SockModule, Socket, Timeout, any) of
         {ok, ?local_infile_pattern = Packet, SeqNum2} ->
@@ -592,7 +592,9 @@ fetch_response(SockModule, Socket, Timeout, Proto, AllowedPaths, FilterMap, Acc)
                     {ok, lists:reverse(Acc1)}
             end;
         {error, timeout} ->
-            {error, timeout}
+            {error, timeout};
+        {error, closed} ->
+            {error, closed}
     end.
 
 %% @doc Fetches a result set.
