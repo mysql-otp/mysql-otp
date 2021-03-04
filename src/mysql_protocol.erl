@@ -550,7 +550,7 @@ parse_handshake_confirm(<<?MORE_DATA, MoreData/binary>>) ->
 %% prepared statements).
 -spec fetch_response(module(), term(), timeout(), text | binary, [binary()],
                      query_filtermap(), list()) ->
-    {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout} | {error, closed} .
+    {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
 fetch_response(SockModule, Socket, Timeout, Proto, AllowedPaths, FilterMap, Acc) ->
     case recv_packet(SockModule, Socket, Timeout, any) of
         {ok, ?local_infile_pattern = Packet, SeqNum2} ->
@@ -593,8 +593,8 @@ fetch_response(SockModule, Socket, Timeout, Proto, AllowedPaths, FilterMap, Acc)
             end;
         {error, timeout} ->
             {error, timeout};
-        {error, closed} ->
-            {error, closed}
+        {error, Reason} ->
+            exit(Reason)
     end.
 
 %% @doc Fetches a result set.
