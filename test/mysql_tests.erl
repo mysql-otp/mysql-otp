@@ -996,7 +996,7 @@ timeout_test_() ->
      end,
      {with, [fun (Pid) ->
                  %% SLEEP was added in MySQL 5.0.12
-                 ?assertEqual({ok, [<<"SLEEP(5)">>], [[1]]},
+                 check_sleep_timeout_result(
                               mysql:query(Pid, <<"SELECT SLEEP(5)">>, 40)),
 
                  %% A query after an interrupted query shouldn't get a timeout.
@@ -1004,15 +1004,23 @@ timeout_test_() ->
                               mysql:query(Pid, <<"SELECT 42">>)),
 
                  %% Parametrized query
-                 ?assertEqual({ok, [<<"SLEEP(?)">>], [[1]]},
+                 check_sleep_timeout_result(
                               mysql:query(Pid, <<"SELECT SLEEP(?)">>, [5], 40)),
 
                  %% Prepared statement
                  {ok, Stmt} = mysql:prepare(Pid, <<"SELECT SLEEP(?)">>),
-                 ?assertEqual({ok, [<<"SLEEP(?)">>], [[1]]},
+                 check_sleep_timeout_result(
                               mysql:execute(Pid, Stmt, [5], 40)),
                  ok = mysql:unprepare(Pid, Stmt)
              end]}}.
+
+check_sleep_timeout_result({error, {1317, <<"70100">>,
+                                    <<"Query execution was ", _/binary>>}}) ->
+    %% MariaDB 10.3 on TravisCI returns this when sleep is interrupted.
+    ok;
+check_sleep_timeout_result(Result) ->
+    %% Sleep returns 1 when aborted
+    ?assertMatch({ok, [<<"SLEEP", _/binary>>], [[1]]}, Result).
 
 %% --------------------------------------------------------------------------
 
