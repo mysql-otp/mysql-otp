@@ -328,6 +328,9 @@ query_test_() ->
           {"Binary protocol",       fun () -> binary_protocol(Pid) end},
           {"FLOAT rounding",        fun () -> float_rounding(Pid) end},
           {"DECIMAL",               fun () -> decimal(Pid) end},
+          {"DECIMAL truncated",     fun () -> decimal_trunc(Pid) end},
+          {"Float as decimal",      fun () -> float_as_decimal(Pid) end},
+          {"Float as decimal(2)",   fun () -> float_as_decimal_2(Pid) end},
           {"INT",                   fun () -> int(Pid) end},
           {"BIT(N)",                fun () -> bit(Pid) end},
           {"DATE",                  fun () -> date(Pid) end},
@@ -708,6 +711,95 @@ decimal(Pid) ->
     write_read_text_binary(Pid, <<"3.000000000000000">>, <<"3">>,
                            <<"dec16">>, <<"d">>),
     ok = mysql:query(Pid, "DROP TABLE dec16").
+
+decimal_trunc(_Pid) ->
+    %% Create another connection with log_warnings enabled.
+    {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
+                                  {log_warnings, true}]),
+    ok = mysql:query(Pid, <<"USE otptest">>),
+    ok = mysql:query(Pid, <<"SET autocommit = 1">>),
+    ok = mysql:query(Pid, <<"SET SESSION sql_mode = ?">>, [?SQL_MODE]),
+    ok = mysql:query(Pid, <<"CREATE TABLE `test_decimals` ("
+                            "  `id` bigint(20) unsigned NOT NULL,"
+                            "  `balance` decimal(13,4) NOT NULL,"
+                            "  PRIMARY KEY (`id`)"
+                            ") ENGINE=InnoDB;">>),
+    ok = mysql:query(Pid, <<"INSERT INTO test_decimals (id, balance)"
+                            " VALUES (1, 5000), (2, 5000), (3, 5000);">>),
+    {ok, decr} = mysql:prepare(Pid, decr, <<"UPDATE test_decimals"
+                                            " SET balance = balance - ?"
+                                            " WHERE id = ?">>),
+    %% Decimal sent as float gives truncation warning.
+    {ok, ok, [{_, LoggedWarning1}|_]} = error_logger_acc:capture(fun () ->
+        ok = mysql:execute(Pid, decr, [10.2, 1]),
+        ok = mysql:execute(Pid, decr, [10.2, 1]),
+        ok = mysql:execute(Pid, decr, [10.2, 1]),
+        ok = mysql:execute(Pid, decr, [10.2, 1])
+    end),
+    ?assertMatch("Note 1265: Data truncated for column 'balance'" ++ _,
+                 LoggedWarning1),
+    %% Decimal sent as binary gives truncation warning.
+    {ok, ok, [{_, LoggedWarning2}|_]} = error_logger_acc:capture(fun () ->
+        ok = mysql:execute(Pid, decr, [<<"10.2">>, 2]),
+        ok = mysql:execute(Pid, decr, [<<"10.2">>, 2]),
+        ok = mysql:execute(Pid, decr, [<<"10.2">>, 2]),
+        ok = mysql:execute(Pid, decr, [<<"10.2">>, 2])
+    end),
+    ?assertMatch("Note 1265: Data truncated for column 'balance'" ++ _,
+                 LoggedWarning2),
+    %% Decimal sent as DECIMAL => no warning
+    {ok, ok, []} = error_logger_acc:capture(fun () ->
+        ok = mysql:execute(Pid, decr, [{decimal, <<"10.2">>}, 3]),
+        ok = mysql:execute(Pid, decr, [{decimal, "10.2"}, 3]),
+        ok = mysql:execute(Pid, decr, [{decimal, 10.2}, 3]),
+        ok = mysql:execute(Pid, decr, [{decimal, 10.2}, 3]),
+        ok = mysql:execute(Pid, decr, [{decimal, 0}, 3]) % <- integer coverage
+    end),
+    ?assertMatch({ok, _, [[1, 4959.2], [2, 4959.2], [3, 4959.2]]},
+                 mysql:query(Pid, <<"SELECT id, balance FROM test_decimals">>)),
+    ok = mysql:query(Pid, "DROP TABLE test_decimals"),
+    ok = mysql:stop(Pid).
+
+float_as_decimal(_Pid) ->
+    %% Create another connection with {float_as_decimal, true}
+    {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
+                                  {log_warnings, true},
+                                  {float_as_decimal, true}]),
+    ok = mysql:query(Pid, <<"USE otptest">>),
+    ok = mysql:query(Pid, <<"SET autocommit = 1">>),
+    ok = mysql:query(Pid, <<"SET SESSION sql_mode = ?">>, [?SQL_MODE]),
+    ok = mysql:query(Pid, <<"CREATE TABLE float_as_decimal ("
+                            "  balance decimal(13,4) NOT NULL"
+                            ") ENGINE=InnoDB;">>),
+    ok = mysql:query(Pid, <<"INSERT INTO float_as_decimal (balance)"
+                            " VALUES (5000);">>),
+    {ok, decr} = mysql:prepare(Pid, decr, <<"UPDATE float_as_decimal"
+                                            " SET balance = balance - ?">>),
+    %% Floats sent as decimal => no truncation warning.
+    {ok, ok, []} = error_logger_acc:capture(fun () ->
+        ok = mysql:execute(Pid, decr, [10.2]),
+        ok = mysql:execute(Pid, decr, [10.2]),
+        ok = mysql:execute(Pid, decr, [10.2]),
+        ok = mysql:execute(Pid, decr, [10.2])
+    end),
+    ok = mysql:query(Pid, "DROP TABLE float_as_decimal;"),
+    ok = mysql:stop(Pid).
+
+float_as_decimal_2(_Pid) ->
+    %% Create another connection with {float_as_decimal, 2}.
+    %% Check that floats are sent as DECIMAL with 2 decimals.
+    {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
+                                  {log_warnings, true},
+                                  {float_as_decimal, 2}]),
+    ok = mysql:query(Pid, <<"USE otptest">>),
+    ok = mysql:query(Pid, <<"SET autocommit = 1">>),
+    ok = mysql:query(Pid, <<"SET SESSION sql_mode = ?">>, [?SQL_MODE]),
+    ok = mysql:query(Pid, <<"CREATE TABLE dec13_4 (d DECIMAL(13,4))">>),
+    ok = mysql:query(Pid, <<"INSERT INTO dec13_4 (d) VALUES (?)">>, [3.14159]),
+    {ok, _, [[Value]]} = mysql:query(Pid, <<"SELECT d FROM dec13_4">>),
+    ?assertEqual(3.14, Value),
+    ok = mysql:query(Pid, <<"DROP TABLE dec13_4">>),
+    ok = mysql:stop(Pid).
 
 int(Pid) ->
     ok = mysql:query(Pid, "CREATE TABLE ints (i INT)"),
