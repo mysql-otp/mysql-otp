@@ -1,5 +1,5 @@
 %% MySQL/OTP – MySQL client library for Erlang/OTP
-%% Copyright (C) 2014 Viktor Söderqvist
+%% Copyright (C) 2014-2021 Viktor Söderqvist
 %%               2017 Piotr Nosek, Michal Slaski
 %%
 %% This file is part of MySQL/OTP.
@@ -1078,6 +1078,14 @@ encode_param(Value) when is_integer(Value), Value < 0 ->
     end;
 encode_param(Value) when is_float(Value) ->
     {<<?TYPE_DOUBLE, 0>>, <<Value:64/float-little>>};
+encode_param({decimal, Value}) ->
+    Bin = if is_binary(Value) -> Value;
+             is_list(Value) -> list_to_binary(Value);
+             is_integer(Value) -> integer_to_binary(Value);
+             is_float(Value) -> list_to_binary(io_lib:format("~w", [Value]))
+          end,
+    EncLength = lenenc_int_encode(byte_size(Bin)),
+    {<<?TYPE_DECIMAL, 0>>, <<EncLength/binary, Bin/binary>>};
 encode_param(Value) when is_bitstring(Value) ->
     Binary = encode_bitstring(Value),
     EncLength = lenenc_int_encode(byte_size(Binary)),
@@ -1146,6 +1154,9 @@ is_valid_param(Value) when is_list(Value) ->
             false
     end;
 is_valid_param(Value) when is_number(Value) ->
+    true;
+is_valid_param({decimal, Value}) when is_binary(Value); is_list(Value);
+                                      is_float(Value); is_integer(Value) ->
     true;
 is_valid_param(Value) when is_bitstring(Value) ->
     true;

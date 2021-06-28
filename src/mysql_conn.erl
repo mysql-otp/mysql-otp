@@ -1,5 +1,5 @@
 %% MySQL/OTP – MySQL client library for Erlang/OTP
-%% Copyright (C) 2014-2018 Viktor Söderqvist
+%% Copyright (C) 2014-2021 Viktor Söderqvist
 %%
 %% This file is part of MySQL/OTP.
 %%
@@ -57,7 +57,8 @@
                 connect_timeout, ping_timeout, query_timeout, query_cache_time,
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
                 transaction_levels = [], ping_ref = undefined,
-                stmts = dict:new(), query_cache = empty, cap_found_rows = false}).
+                stmts = dict:new(), query_cache = empty, cap_found_rows = false,
+                float_as_decimal = false}).
 
 %% @private
 init(Opts) ->
@@ -89,6 +90,7 @@ init(Opts) ->
 
     Queries           = proplists:get_value(queries, Opts, []),
     Prepares          = proplists:get_value(prepare, Opts, []),
+    FloatAsDecimal    = proplists:get_value(float_as_decimal, Opts, false),
 
     true = lists:all(fun mysql_protocol:valid_path/1, AllowedLocalPaths),
 
@@ -111,7 +113,8 @@ init(Opts) ->
         ping_timeout = PingTimeout,
         query_timeout = QueryTimeout,
         query_cache_time = QueryCacheTime,
-        cap_found_rows = (SetFoundRows =:= true)
+        cap_found_rows = (SetFoundRows =:= true),
+        float_as_decimal = FloatAsDecimal
     },
 
     case proplists:get_value(connect_mode, Opts, synchronous) of
@@ -554,9 +557,16 @@ code_change(_OldVsn, _State, _Extra) ->
 %% @doc Executes a prepared statement and returns {Reply, NewState}.
 execute_stmt(Stmt, Args, FilterMap, Timeout, State) ->
     #state{socket = Socket, sockmod = SockMod,
-           allowed_local_paths = AllowedPaths} = State,
+           allowed_local_paths = AllowedPaths,
+           float_as_decimal = FloatAsDecimal} = State,
+    Args1 = case FloatAsDecimal of
+                false ->
+                    Args;
+                _ ->
+                    [float_to_decimal(Arg, FloatAsDecimal) || Arg <- Args]
+            end,
     setopts(SockMod, Socket, [{active, false}]),
-    {ok, Recs} = case mysql_protocol:execute(Stmt, Args, SockMod, Socket,
+    {ok, Recs} = case mysql_protocol:execute(Stmt, Args1, SockMod, Socket,
                                              AllowedPaths, FilterMap,
                                              Timeout) of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
@@ -575,6 +585,14 @@ execute_stmt(Stmt, Args, FilterMap, Timeout, State) ->
     State1#state.warning_count > 0 andalso State1#state.log_warnings
         andalso log_warnings(State1, Stmt#prepared.orig_query),
     handle_query_call_result(Recs, Stmt#prepared.orig_query, State1).
+
+%% @doc Formats floats as decimals, optionally with a given number of decimals.
+float_to_decimal(Arg, true) when is_float(Arg) ->
+    {decimal, list_to_binary(io_lib:format("~w", [Arg]))};
+float_to_decimal(Arg, N) when is_float(Arg), is_integer(N) ->
+    {decimal, float_to_binary(Arg, [{decimals, N}, compact])};
+float_to_decimal(Arg, _) ->
+    Arg.
 
 %% @doc Produces a tuple to return as an error reason.
 -spec error_to_reason(#error{}) -> mysql:server_reason().

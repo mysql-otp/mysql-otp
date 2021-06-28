@@ -1,5 +1,5 @@
 %% MySQL/OTP – MySQL client library for Erlang/OTP
-%% Copyright (C) 2014-2015, 2018 Viktor Söderqvist,
+%% Copyright (C) 2014-2015, 2018, 2021 Viktor Söderqvist,
 %%               2016 Johan Lövdahl
 %%               2017 Piotr Nosek, Michal Slaski
 %%
@@ -92,7 +92,8 @@
                 | {found_rows, boolean()}
                 | {query_cache_time, non_neg_integer()}
                 | {tcp_options, [gen_tcp:connect_option()]}
-                | {ssl, term()}.
+                | {ssl, term()}
+                | {float_as_decimal, boolean() | non_neg_integer()}.
 
 -include("exception.hrl").
 
@@ -192,6 +193,12 @@
 %%       The `server_name_indication' option, if omitted, defaults to the value
 %%       of the `host' option if it is a hostname string, otherwise no default
 %%       value is set.</dd>
+%%   <dt>`{float_as_decimal, boolean() | non_neg_integer()}'</dt>
+%%   <dd>Encode floats as decimals when sending parameters for parametrized
+%%       queries and prepared statements to the server. This prevents float
+%%       rounding and truncation errors from happening on the server side. If a
+%%       number is specified, the float is rounded to this number of
+%%       decimals. This is off (false) by default.</dd>
 %% </dl>
 -spec start_link(Options :: [option()]) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Options) ->

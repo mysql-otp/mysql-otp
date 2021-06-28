@@ -23,6 +23,12 @@ encode(String) when is_list(String) ->
     encode(unicode:characters_to_binary(String));
 encode(Bitstring) when is_bitstring(Bitstring) ->
     ["b'", [ case B of 0 -> $0; 1 -> $1 end || <<B:1>> <= Bitstring ], $'];
+encode({decimal, Num}) when is_float(Num); is_integer(Num) ->
+    encode(Num);
+encode({decimal, Str}) when is_binary(Str); is_list(Str) ->
+    %% Simple injection block
+    nomatch = re:run(Str, <<"[^0-9.+\\-eE]">>),
+    Str;
 encode({Y, M, D}) ->
     io_lib:format("'~4..0b-~2..0b-~2..0b'", [Y, M, D]);
 encode({{Y, M, D}, {H, Mi, S}}) when is_integer(S) ->

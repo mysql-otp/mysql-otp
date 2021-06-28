@@ -69,12 +69,14 @@ For the reference manual see the <a href="mysql.html">mysql</a> module.
       <td>DECIMAL(P, S)</td>
       <td>`integer()' when S == 0<br />
           `float()' when P =&lt; 15 and S &gt; 0<br />
-          `binary()' when P &gt;= 16 and S &gt; 0 [<a href="#vn2">2</a>]</td>
-      <td>`42'<br />`3.14'<br />`<<"3.14159265358979323846">>'</td>
+          `binary()' when P &gt;= 16 and S &gt; 0 [<a href="#vn2">2</a>]<br />
+          `{decimal, Value}' [<a href="#vn3">3</a>] (parameter only)</td>
+      <td>`42'<br />`3.14'<br />`<<"3.14159265358979323846">>'<br />
+          `{decimal, 10.2}'</td>
     </tr>
     <tr>
       <td>DATETIME, TIMESTAMP</td>
-      <td>`calendar:datetime()' [<a href="#vn3">3</a>]</td>
+      <td>`calendar:datetime()' [<a href="#vn4">4</a>]</td>
       <td>`{{2014, 11, 18}, {10, 22, 36}}'</td>
     </tr>
     <tr>
@@ -84,8 +86,8 @@ For the reference manual see the <a href="mysql.html">mysql</a> module.
     </tr>
     <tr>
       <td>TIME</td>
-      <td>`{Days, calendar:time()}' [<a href="#vn3">3</a>,
-          <a href="#vn4">4</a>]</td>
+      <td>`{Days, calendar:time()}' [<a href="#vn4">4</a>,
+          <a href="#vn5">5</a>]</td>
       <td>`{0, {10, 22, 36}}'</td>
     </tr>
     <tr>
@@ -111,17 +113,20 @@ Notes:
     can be represented without precision loss and as `binary()' for high
     precision DECIMAL values. This is similar to how the `odbc' OTP application
     treats DECIMALs.</li>
-  <li id="vn3">For `DATETIME', `TIMESTAMP' and `TIME' values with fractions of
+  <li id="vn3">DECIMALs can be sent as `{decimal, Value}' (where Value is a
+    number, string or binary) but values received from the database are
+    never returned in this format.</li>
+  <li id="vn4">For `DATETIME', `TIMESTAMP' and `TIME' values with fractions of
     seconds, we use a float for the seconds part. (These are unusual and were
     added to MySQL in version 5.6.4.)</li>
-  <li id="vn4">Since `TIME' can be outside the `calendar:time()' interval, we use
+  <li id="vn5">Since `TIME' can be outside the `calendar:time()' interval, we use
     the format as returned by `calendar:seconds_to_daystime/1' for `TIME'
     values.</li>
 </ol>
 
 <h2>Copying</h2>
 
-Copyright 2014-2019 The authors of MySQL/OTP. See the project page at
+Copyright 2014-2021 The authors of MySQL/OTP. See the project page at
 <a href="https://github.com/mysql-otp/mysql-otp"
    target="_top">https://github.com/mysql-otp/mysql-otp</a>.
 
