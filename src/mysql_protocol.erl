@@ -453,8 +453,9 @@ build_handshake_response(Handshake, Username, Password, Database,
     %% the client wants to do. The server doesn't say it handles them although
     %% it does. (http://bugs.mysql.com/bug.php?id=42268)
     ClientCapabilityFlags = add_client_capabilities(CapabilityFlags),
-    Hash = hash_password(Handshake#handshake.auth_plugin_name, Password,
-                         Handshake#handshake.auth_plugin_data),
+    AuthPluginName = Handshake#handshake.auth_plugin_name,
+    AuthPluginData = Handshake#handshake.auth_plugin_data,
+    Hash = hash_password(AuthPluginName, Password, AuthPluginData),
     HashLength = size(Hash),
     CharacterSet = character_set(Handshake#handshake.server_version),
     UsernameUtf8 = unicode:characters_to_binary(Username),
@@ -470,7 +471,10 @@ build_handshake_response(Handshake, Username, Password, Database,
       0, %% NUL-terminator for the username
       HashLength,
       Hash/binary,
-      DbBin/binary>>.
+      DbBin/binary,
+      AuthPluginName/binary,
+      0 %% NUL-terminator for the auth_plugin_name
+      >>.
 
 -spec verify_server_capabilities(Handshake :: #handshake{},
                                  CapabilityFlags :: integer()) ->
