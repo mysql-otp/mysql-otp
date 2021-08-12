@@ -2,6 +2,16 @@ Change log
 ==========
 
 
+1.8.0
+-----
+* Tag version [2021-08-12 14:38:57 +0200]
+* Tooling for publishing Hex package [2021-08-04 13:20:48 +0200]
+* Add auth_plugin_name to the end of handshake response [2021-08-03 20:47:02 +0200]
+* Add optional float-as-decimal encoding [2021-07-07 12:05:04 +0200]
+* README: markdown syntax highlighting [2021-03-04 15:02:00 +0100]
+* Fix timeout test case in MariaDB builds [2021-03-04 14:56:53 +0100]
+* Update CHANGELOG.md [2020-10-12 10:43:39 +0200]
+
 1.7.0
 -----
 * Update version [2020-10-12 10:39:45 +0200]
