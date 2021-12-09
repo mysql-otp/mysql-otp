@@ -159,7 +159,7 @@ connect(#state{connect_timeout = ConnectTimeout} = State) ->
 
 connect_socket(#state{tcp_opts = TcpOpts, host = Host, port = Port} = State) ->
     %% Connect socket
-    SockOpts = sanitize_tcp_opts(TcpOpts),
+    SockOpts = sanitize_tcp_opts(Host, TcpOpts),
     {ok, Socket} = gen_tcp:connect(Host, Port, SockOpts),
 
     %% If buffer wasn't specifically defined make it at least as
@@ -175,12 +175,13 @@ connect_socket(#state{tcp_opts = TcpOpts, host = Host, port = Port} = State) ->
 
     {ok, State#state{socket = Socket}}.
 
-sanitize_tcp_opts([{inet_backend, _} = InetBackend | TcpOpts0]) ->
+sanitize_tcp_opts(Host, [{inet_backend, _} = InetBackend | TcpOpts0]) ->
     %% This option is be used to turn on the experimental socket backend for
     %% gen_tcp/inet (OTP/23). If given, it must remain the first option in the
     %% list.
-    [InetBackend | sanitize_tcp_opts(TcpOpts0)];
-sanitize_tcp_opts(TcpOpts0) ->
+    [InetBackend | sanitize_tcp_opts(Host, TcpOpts0)];
+sanitize_tcp_opts(Host, TcpOpts0) ->
+    NodelaySupported = not is_tuple(Host) orelse element(1, Host) =/= local,
     TcpOpts1 = lists:filter(
         fun
             ({mode, _}) -> false;
@@ -188,13 +189,14 @@ sanitize_tcp_opts(TcpOpts0) ->
             (list) -> false;
             ({packet, _}) -> false;
             ({active, _}) -> false;
+            ({nodelay, _}) -> NodelaySupported;
             (_) -> true
         end,
         TcpOpts0
     ),
-    TcpOpts2 = case lists:keymember(nodelay, 1, TcpOpts1) of
-        true -> TcpOpts1;
-        false -> [{nodelay, true} | TcpOpts1]
+    TcpOpts2 = case NodelaySupported andalso not lists:keymember(nodelay, 1, TcpOpts1) of
+        true -> [{nodelay, true} | TcpOpts1];
+        false -> TcpOpts1
     end,
     [binary, {packet, raw}, {active, false} | TcpOpts2].
 

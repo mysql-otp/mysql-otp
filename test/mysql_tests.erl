@@ -261,6 +261,45 @@ unix_socket_test() ->
                                   "release could not be determined.~n")
     end.
 
+socket_backend_test() ->
+    try
+        list_to_integer(erlang:system_info(otp_release))
+    of
+        %% Supported in OTP >= 23
+        OtpRelease when OtpRelease >= 23 ->
+            case mysql:start_link([{user, ?user},
+                                   {password, ?password},
+                                   {tcp_options, [{inet_backend, socket}]}])
+            of
+                {ok, Pid1} ->
+                    {ok, [<<"@@socket">>], [[SockFile]]} =
+                                 mysql:query(Pid1, <<"SELECT @@socket">>),
+                    mysql:stop(Pid1),
+                    case mysql:start_link([{host, {local, SockFile}},
+                                           {user, ?user}, {password, ?password},
+                                           {tcp_options, [{inet_backend, socket}]}]) of
+                        {ok, Pid2} ->
+                            ?assertEqual({ok, [<<"1">>], [[1]]},
+                                         mysql:query(Pid2, <<"SELECT 1">>)),
+                            mysql:stop(Pid2);
+                        {error, eafnotsupported} ->
+                            error_logger:info_msg("Skipping socket backend test. "
+                                                  "Not supported on this OS.~n")
+                    end;
+                {error, enotsup} ->
+                    error_logger:info_msg("Skipping socket backend test. "
+                                          "Not supported on this OS.~n")
+            end;
+        OtpRelease ->
+            error_logger:info_msg("Skipping socket backend test. Current OTP "
+                                  "release is ~B. Required release is >= 23.~n",
+                                  [OtpRelease])
+    catch
+        error:badarg ->
+            error_logger:info_msg("Skipping socket backend tests. Current OTP "
+                                  "release could not be determined.~n")
+    end.
+
 connect_queries_failure_test() ->
     process_flag(trap_exit, true),
     {ok, Ret, Logged} = error_logger_acc:capture(
