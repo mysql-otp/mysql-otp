@@ -421,15 +421,16 @@ maybe_do_ssl_upgrade(Host, gen_tcp, Socket0, SeqNum1, Handshake, SSLOpts,
                      Database, SetFoundRows) ->
     Response = build_handshake_response(Handshake, Database, SetFoundRows),
     {ok, SeqNum2} = send_packet(gen_tcp, Socket0, Response, SeqNum1),
-    case ssl_connect(Host, Socket0, SSLOpts, 5000) of
+    case ssl_connect(Handshake, Host, Socket0, SSLOpts, 5000) of
         {ok, SSLSocket} ->
             {ok, ssl, SSLSocket, SeqNum2};
         {error, Reason} ->
             exit({failed_to_upgrade_socket, Reason})
     end.
 
-ssl_connect(Host, Port, ConfigSSLOpts, Timeout) ->
-    DefaultSSLOpts0 = [{versions, [tlsv1]}, {verify, verify_peer}],
+ssl_connect(Handshake, Host, Port, ConfigSSLOpts, Timeout) ->
+    SSLVersions = determine_ssl_versions(Handshake),
+    DefaultSSLOpts0 = [{versions, SSLVersions}, {verify, verify_peer}],
     DefaultSSLOpts1 = case is_list(Host) andalso inet:parse_address(Host) of
         false -> DefaultSSLOpts0;
         {ok, _} -> DefaultSSLOpts0;
@@ -438,6 +439,17 @@ ssl_connect(Host, Port, ConfigSSLOpts, Timeout) ->
     MandatorySSLOpts = [{active, false}],
     MergedSSLOpts = merge_ssl_options(DefaultSSLOpts1, MandatorySSLOpts, ConfigSSLOpts),
     ssl:connect(Port, MergedSSLOpts, Timeout).
+
+
+%% @doc Determines which ssl versions to use according to server vendor and version
+%% since almostly, mysql < 5.7.0 and mariadb < 10.1.0 supports only tlsv1
+-spec determine_ssl_versions(#handshake{}) -> list().
+determine_ssl_versions(#handshake{server_vendor = mysql, server_version = Version}) when Version < [5, 7, 0] ->
+    [tlsv1];
+determine_ssl_versions(#handshake{server_vendor = mariadb, server_version = Version}) when Version < [10, 1, 0] ->
+    [tlsv1];
+determine_ssl_versions(_) ->
+    proplists:get_value(available, ssl:versions()).
 
 -spec merge_ssl_options(list(), list(), list()) -> list().
 merge_ssl_options(DefaultSSLOpts, MandatorySSLOpts, ConfigSSLOpts) ->
