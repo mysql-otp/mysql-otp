@@ -405,7 +405,8 @@ maybe_do_ssl_upgrade(Host, gen_tcp, Socket0, SeqNum1, Handshake, SSLOpts,
     end.
 
 ssl_connect(Host, Port, ConfigSSLOpts, Timeout) ->
-    DefaultSSLOpts0 = [{versions, [tlsv1]}, {verify, verify_peer}],
+    DefaultSSLOpts0 = [{versions, proplists:get_value(available, ssl:versions())}, 
+		       {verify, verify_peer}],
     DefaultSSLOpts1 = case is_list(Host) andalso inet:parse_address(Host) of
         false -> DefaultSSLOpts0;
         {ok, _} -> DefaultSSLOpts0;
