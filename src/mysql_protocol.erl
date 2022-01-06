@@ -358,7 +358,9 @@ parse_handshake(<<10, Rest/binary>>) ->
         <<AuthPluginNameTrimmed:L/binary, 0>> -> AuthPluginNameTrimmed;
         _ -> AuthPluginName
     end,
-    #handshake{server_version = server_version_to_list(ServerVersion),
+    {Vendor, Version} = get_server_info(ServerVersion),
+    #handshake{server_vendor = Vendor,
+               server_version = Version,
                connection_id = ConnectionId,
                capabilities = Capabilities,
                character_set = CharacterSet,
@@ -371,6 +373,24 @@ parse_handshake(<<?ERROR, ErrNo:16/little, Msg/binary>>) ->
     #error{code = ErrNo, msg = Msg};
 parse_handshake(<<Protocol:8, _/binary>>) when Protocol /= 10 ->
     error(unknown_protocol).
+
+%% @doc Detects server vendor and version from a version string.
+-spec get_server_info(binary()) -> {mysql | mariadb, [integer()]}.
+get_server_info(<<"5.5.5-", Rest/binary>>) ->
+    %% Iff the version string starts with "5.5.5-", it is MariaDB>=10.
+    %% The real version follows after the "5.5.5-" prefix.
+    %% https://mariadb.com/kb/en/connection/#initial-handshake-packet
+    {mariadb, server_version_to_list(Rest)};
+get_server_info(ServerVersion) ->
+    Version = server_version_to_list(ServerVersion),
+    Vendor = case Version of
+        [5, 1|_] -> mysql; %% There is both MySQL and MariaDB 5.1; we assume it is MySQL
+        [5, 2|_] -> mariadb; %% There is no MySQL 5.2
+        [5, 3|_] -> mariadb; %% There is no MySQL 5.3
+        [5, 5|_] -> mysql; %% There is both MySQL and MariaDB 5.5; we assume it is MySQL
+        _ -> mysql %% Everything else is definitely MySQL
+    end,
+    {Vendor, Version}.
 
 %% @doc Converts a version on the form `<<"5.6.21">' to a list `[5, 6, 21]'.
 -spec server_version_to_list(binary()) -> [integer()].
@@ -1568,6 +1588,28 @@ nulterm_str(Bin) ->
 
 %% Testing some of the internal functions, mostly the cases we don't cover in
 %% other tests.
+
+server_info_test() ->
+    lists:foreach(
+        fun ({Input, Exp}) ->
+            ?assertEqual(Exp, get_server_info(Input)),
+            ?assertEqual(Exp, get_server_info(<<Input/binary, $a>>)),
+            ?assertEqual(Exp, get_server_info(<<Input/binary, $-, $a>>)),
+            ?assertEqual(Exp, get_server_info(<<Input/binary, $-, $0>>))
+        end,
+        [
+            {<<"4.1.0">>, {mysql, [4, 1, 0]}},
+            {<<"5.0.0">>, {mysql, [5, 0, 0]}},
+            {<<"5.1.0">>, {mysql, [5, 1, 0]}},
+            {<<"5.2.0">>, {mariadb, [5, 2, 0]}},
+            {<<"5.3.0">>, {mariadb, [5, 3, 0]}},
+            {<<"5.5.0">>, {mysql, [5, 5, 0]}},
+            {<<"5.6.0">>, {mysql, [5, 6, 0]}},
+            {<<"5.7.0">>, {mysql, [5, 7, 0]}},
+            {<<"8.0.0">>, {mysql, [8, 0, 0]}},
+            {<<"5.5.5-10.0.0">>, {mariadb, [10, 0, 0]}}
+        ]
+    ).
 
 decode_text_test() ->
     %% Int types

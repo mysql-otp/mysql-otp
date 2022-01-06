@@ -19,7 +19,8 @@
 %% --- Records ---
 
 %% Returned by parse_handshake/1.
--record(handshake, {server_version :: [integer()],
+-record(handshake, {server_vendor :: mysql | mariadb,
+                    server_version :: [integer()],
                     connection_id :: integer(),
                     capabilities :: integer(),
                     character_set :: integer(),
