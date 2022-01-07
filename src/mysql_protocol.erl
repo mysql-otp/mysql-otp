@@ -393,6 +393,10 @@ server_version_to_list(ServerVersion) ->
 maybe_do_ssl_upgrade(_Host, SockModule0, Socket0, SeqNum1, _Handshake,
                      undefined, _Database, _SetFoundRows) ->
     {ok, SockModule0, Socket0, SeqNum1};
+maybe_do_ssl_upgrade(_Host, _SockModule0, _Socket0, _SeqNum1,
+                     #handshake{capabilities=Caps},_SSLOpts, _Database,
+                     _SetFoundRows) when Caps band ?CLIENT_SSL =/= ?CLIENT_SSL ->
+    exit({failed_to_upgrade_socket, ssl_not_supported});
 maybe_do_ssl_upgrade(Host, gen_tcp, Socket0, SeqNum1, Handshake, SSLOpts,
                      Database, SetFoundRows) ->
     Response = build_handshake_response(Handshake, Database, SetFoundRows),
