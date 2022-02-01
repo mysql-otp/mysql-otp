@@ -68,7 +68,7 @@
 -type query_result() :: ok
                       | {ok, [column_name()], [row()]}
                       | {ok, [{[column_name()], [row()]}, ...]}
-                      | {error, server_reason()}.
+                      | {error, server_reason() | busy}.
 
 -type transaction_result(Result) :: {atomic, Result} | {aborted, Reason :: term()}.
 
@@ -366,6 +366,9 @@ query(Conn, Query, Params, FilterMap) when (Params == no_params orelse
 %% For queries that don't return any rows (INSERT, UPDATE, etc.) only the atom
 %% `ok' is returned.
 %%
+%% If this function is called on a connection which is already in transaction 
+%% owned by another process, `{error, busy}` will be returned.
+%%
 %% === FilterMap details ===
 %%
 %% If the `FilterMap' argument is used, it must be a function of arity 1 or 2
@@ -498,6 +501,9 @@ execute(Conn, StatementRef, Params, FilterMap) when FilterMap == no_filtermap_fu
 %%
 %% See `query/5' for an explanation of the `FilterMap' argument.
 %%
+%% Note that if this function is called on a connection which is already in transaction 
+%% owned by another process, `{error, busy}` will be returned.
+%%
 %% @see prepare/2
 %% @see prepare/3
 %% @see prepare/4
@@ -618,6 +624,10 @@ transaction(Conn, Fun, Retries) ->
 %% can be nested and are restarted automatically when deadlocks are detected.
 %% MySQL's savepoints are used to implement nested transactions.
 %%
+%% If this function is called on a connection which is already in transaction,
+%% `{aborted, busy}` will be returned. Since the idea of "nested transaction" is
+%% that this function can be called in the Fun, but all within the same process.
+%%
 %% Fun must be a function and Args must be a list of the same length as the
 %% arity of Fun.
 %%
@@ -665,8 +675,12 @@ transaction(Conn, Fun, Args, Retries) when is_list(Args),
                                            is_function(Fun, length(Args)) ->
     %% The guard makes sure that we can apply Fun to Args. Any error we catch
     %% in the try-catch are actual errors that occurred in Fun.
-    ok = gen_server:call(Conn, start_transaction, infinity),
-    execute_transaction(Conn, Fun, Args, Retries).
+    case gen_server:call(Conn, start_transaction, infinity) of
+        ok -> 
+            execute_transaction(Conn, Fun, Args, Retries);
+        {error, busy} ->
+            {aborted, busy}
+    end.        
 
 %% @private
 %% @doc This is a helper for transaction/2,3,4. It performs everything except

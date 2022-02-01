@@ -302,6 +302,11 @@ handle_call(Msg, From, #state{socket = undefined} = State) ->
         {error, _} = E ->
             {stop, E, State}
     end;
+handle_call({query, _Query, _FilterMap, _Timeout}, {FromPid, _},
+            State = #state{transaction_levels = [{OtherFromPid, _} | _]})
+  when FromPid =/= OtherFromPid ->
+    %% this conn is currently in transaction owned by another process
+    {reply, {error, busy}, State};
 handle_call({query, Query, FilterMap, Timeout}, _From, State) ->
     {Reply, State1} = query(Query, FilterMap, Timeout, State),
     {reply, Reply, State1};
@@ -309,6 +314,11 @@ handle_call({param_query, Query, Params, FilterMap, default_timeout}, From,
             State) ->
     handle_call({param_query, Query, Params, FilterMap,
                 State#state.query_timeout}, From, State);
+handle_call({param_query, _Query, _Params, _FilterMap, _Timeout}, {FromPid, _},
+            State = #state{transaction_levels = [{OtherFromPid, _} | _]})
+  when FromPid =/= OtherFromPid ->
+    %% this conn is currently in transaction owned by another process
+    {reply, {error, busy}, State};
 handle_call({param_query, Query, Params, FilterMap, Timeout}, _From,
             #state{socket = Socket, sockmod = SockMod} = State) ->
     %% Parametrized query: Prepared statement cached with the query as the key
@@ -346,6 +356,11 @@ handle_call({param_query, Query, Params, FilterMap, Timeout}, _From,
 handle_call({execute, Stmt, Args, FilterMap, default_timeout}, From, State) ->
     handle_call({execute, Stmt, Args, FilterMap, State#state.query_timeout},
         From, State);
+handle_call({execute, _Stmt, _Args, _FilterMap, _Timeout}, {FromPid, _},
+            State = #state{transaction_levels = [{OtherFromPid, _} | _]})
+  when FromPid =/= OtherFromPid ->
+    %% this conn is currently in transaction owned by another process
+    {reply, {error, busy}, State};
 handle_call({execute, Stmt, Args, FilterMap, Timeout}, _From, State) ->
     case dict:find(Stmt, State#state.stmts) of
         {ok, StmtRec} ->
@@ -445,6 +460,12 @@ handle_call(backslash_escapes_enabled, _From, State = #state{status = S}) ->
     {reply, S band ?SERVER_STATUS_NO_BACKSLASH_ESCAPES == 0, State};
 handle_call(in_transaction, _From, State) ->
     {reply, State#state.status band ?SERVER_STATUS_IN_TRANS /= 0, State};
+handle_call(start_transaction, {FromPid, _}, 
+            State = #state{transaction_levels = [{OtherFromPid, _}|_]})
+  when FromPid =/= OtherFromPid ->
+    %% the idea of "nested transaction" is that mysql:transaction can be called 
+    %% in the transaction function, but all within the same process
+    {reply, {error, busy}, State};
 handle_call(start_transaction, {FromPid, _},
             State = #state{socket = Socket, sockmod = SockMod,
                            transaction_levels = L, status = Status})
