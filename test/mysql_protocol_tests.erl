@@ -54,7 +54,7 @@ resultset_test() ->
 
 resultset_error_test() ->
     %% A query that returns a response starting as a result set but then
-    %% interupts itself and decides that it is an error.
+    %% interrupts itself and decides that it is an error.
     Query = <<"EXPLAIN SELECT * FROM dual;">>,
     ExpectedReq = <<(size(Query) + 1):24/little, 0, ?COM_QUERY, Query/binary>>,
     ExpectedResponse = hexdump_to_bin(

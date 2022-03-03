@@ -641,7 +641,7 @@ transaction(Conn, Fun, Retries) ->
 %% using e.g. `ok = mysql:query(Pid, "SELECT some_non_existent_value")'. An
 %% exception to this is the error 1213 "Deadlock", after the specified number
 %% of retries, all failed. In this case, the transaction is aborted and the
-%% error is retured as the reason for the aborted transaction, along with a
+%% error is returned as the reason for the aborted transaction, along with a
 %% stacktrace pointing to where the last deadlock was detected. (In earlier
 %% versions, up to and including 1.3.2, transactions where automatically
 %% restarted also for the error 1205 "Lock wait timeout". This is no longer the
@@ -727,7 +727,7 @@ execute_transaction(Conn, Fun, Args, Retries) ->
         ?EXCEPTION(throw, {implicit_rollback, 1, Reason}, Stacktrace)
           when Retries == 0 ->
             %% No more retries. Return 'aborted' along with the deadlock error
-            %% and a the trace to the line where the deadlock occured.
+            %% and a the trace to the line where the deadlock occurred.
             Trace = ?GET_STACK(Stacktrace),
             %% In MySQL < 5.7, we are still in a transaction here, but in 5.7+
             %% we're not.  The ROLLBACK executed here has no effect if no
