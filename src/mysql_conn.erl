@@ -443,7 +443,7 @@ handle_call(reset_connection, _From, #state{socket = Socket, sockmod = SockMod} 
         #ok{} -> ok;
         #error{} = E ->
             %% 'COM_RESET_CONNECTION' is added in MySQL 5.7 and MariaDB 10
-            %% "Unkown command" is returned when MySQL =< 5.6 or MariaDB =< 5.5
+            %% "Unknown command" is returned when MySQL =< 5.6 or MariaDB =< 5.5
             {error, error_to_reason(E)}
     end,
     {reply, Reply, State1};

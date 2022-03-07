@@ -490,7 +490,7 @@ build_handshake_response(Handshake, Username, Password, Database,
     <<ClientCapabilityFlags:32/little,
       ?MAX_BYTES_PER_PACKET:32/little,
       CharacterSet:8,
-      0:23/unit:8, %% reserverd
+      0:23/unit:8, %% reserved
       UsernameUtf8/binary,
       0, %% NUL-terminator for the username
       HashLength,
@@ -894,7 +894,7 @@ null_bitmap_encode(NullBitstring, BitOffset) ->
 reverse_byte(<<A:1, B:1, C:1, D:1, E:1, F:1, G:1, H:1>>) ->
     <<H:1, G:1, F:1, E:1, D:1, C:1, B:1, A:1>>.
 
-%% @doc Used for executing prepared statements. The bit offset whould be 0 in
+%% @doc Used for executing prepared statements. The bit offset would be 0 in
 %% this case.
 -spec build_null_bitmap([any()]) -> binary().
 build_null_bitmap(Values) ->

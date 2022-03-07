@@ -57,7 +57,7 @@
                     status :: integer(),
                     warning_count :: integer()}).
 
-%% Response of a successfull prepare call.
+%% Response of a successful prepare call.
 -record(prepared, {statement_id :: integer(),
                    orig_query :: iodata(),
                    param_count :: integer(),
