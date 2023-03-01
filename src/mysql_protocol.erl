@@ -212,7 +212,16 @@ fetch_query_response(SockModule, Socket, AllowedPaths, FilterMap, Timeout) ->
 prepare(Query, SockModule, Socket) ->
     Req = <<?COM_STMT_PREPARE, (iolist_to_binary(Query))/binary>>,
     {ok, SeqNum1} = send_packet(SockModule, Socket, Req, 0),
-    {ok, Resp, SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
+    case recv_packet(SockModule, Socket, SeqNum1) of
+        {error, #error{code = Code, state = State, msg = Msg}} ->
+            #error{code = Code, state = State, msg = Msg};
+        {error, Error} ->
+            #error{code = -1, state = #{}, msg = Error};
+        {ok, Resp, SeqNum2} ->
+            prepare_recv_packet(Resp, SeqNum2, Query, SockModule, Socket)
+    end.
+
+prepare_recv_packet(Resp, SeqNum2, Query, SockModule, Socket) ->
     case Resp of
         ?error_pattern ->
             parse_error_packet(Resp);
@@ -1277,9 +1286,9 @@ recv_packet(SockModule, Socket, Timeout, ExpectSeqNum, Acc) ->
                 SeqNum :: integer()) ->
     {ok | {error, Reason}, NextSeqNum :: integer()}
     when Reason :: not_allowed
-	         | file:posix()
-		 | badarg
-		 | system_limit.
+             | file:posix()
+         | badarg
+         | system_limit.
 send_file(SockModule, Socket, Filename, AllowedPaths, SeqNum0) ->
     {Result, SeqNum1} = case allowed_path(Filename, AllowedPaths) andalso
                              file:open(Filename, [read, raw, binary]) of
