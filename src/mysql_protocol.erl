@@ -252,7 +252,7 @@ unprepare(#prepared{statement_id = Id}, SockModule, Socket) ->
 %% @doc Executes a prepared statement.
 -spec execute(#prepared{}, [term()], module(), term(), [binary()],
               query_filtermap(), timeout()) ->
-    {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
+    {ok, [#ok{} | #resultset{} | #error{}]} | {error, term()}.
 execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
         SockModule, Socket, AllowedPaths, FilterMap, Timeout)
   when ParamCount == length(ParamValues) ->
