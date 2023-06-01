@@ -596,10 +596,8 @@ execute_stmt(Stmt, Args, FilterMap, Timeout, State) ->
             kill_query(State),
             mysql_protocol:fetch_execute_response(SockMod, Socket,
                                                   [], FilterMap, ?cmd_timeout);
-        {error, timeout} ->
-            %% For MySQL 4.x.x there is no way to recover from timeout except
-            %% killing the connection itself.
-            exit(timeout);
+        {error, Reason} ->
+            exit(Reason);
         QueryResult ->
             QueryResult
     end,
@@ -657,10 +655,8 @@ query(Query, FilterMap, Timeout, State) ->
             mysql_protocol:fetch_query_response(SockMod, Socket,
                                                 [], FilterMap,
                                                 ?cmd_timeout);
-        {error, timeout} ->
-            %% For MySQL 4.x.x there is no way to recover from timeout except
-            %% killing the connection itself.
-            exit(timeout);
+        {error, Reason} ->
+            exit(Reason);
         QueryResult ->
             QueryResult
     end,

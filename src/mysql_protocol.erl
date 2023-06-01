@@ -195,7 +195,7 @@ ping(SockModule, Socket) ->
 
 -spec query(Query :: iodata(), module(), term(), [binary()], query_filtermap(),
             timeout()) ->
-    {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
+    {ok, [#ok{} | #resultset{} | #error{}]} | {error, term()}.
 query(Query, SockModule, Socket, AllowedPaths, FilterMap, Timeout) ->
     Req = <<?COM_QUERY, (iolist_to_binary(Query))/binary>>,
     SeqNum0 = 0,
@@ -252,7 +252,7 @@ unprepare(#prepared{statement_id = Id}, SockModule, Socket) ->
 %% @doc Executes a prepared statement.
 -spec execute(#prepared{}, [term()], module(), term(), [binary()],
               query_filtermap(), timeout()) ->
-    {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
+    {ok, [#ok{} | #resultset{} | #error{}]} | {error, term()}.
 execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
         SockModule, Socket, AllowedPaths, FilterMap, Timeout)
   when ParamCount == length(ParamValues) ->
@@ -590,7 +590,7 @@ parse_handshake_confirm(<<?MORE_DATA, MoreData/binary>>) ->
 %% prepared statements).
 -spec fetch_response(module(), term(), timeout(), text | binary, [binary()],
                      query_filtermap(), list()) ->
-    {ok, [#ok{} | #resultset{} | #error{}]} | {error, timeout}.
+    {ok, [#ok{} | #resultset{} | #error{}]} | {error, term()}.
 fetch_response(SockModule, Socket, Timeout, Proto, AllowedPaths, FilterMap, Acc) ->
     case recv_packet(SockModule, Socket, Timeout, any) of
         {ok, ?local_infile_pattern = Packet, SeqNum2} ->
@@ -631,8 +631,8 @@ fetch_response(SockModule, Socket, Timeout, Proto, AllowedPaths, FilterMap, Acc)
                 false ->
                     {ok, lists:reverse(Acc1)}
             end;
-        {error, timeout} ->
-            {error, timeout}
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% @doc Fetches a result set.
