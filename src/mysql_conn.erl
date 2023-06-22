@@ -553,10 +553,26 @@ handle_info(ping, #state{socket = Socket, sockmod = SockMod} = State) ->
     #ok{} = mysql_protocol:ping(SockMod, Socket),
     setopts(SockMod, Socket, [{active, once}]),
     {noreply, schedule_ping(State)};
-handle_info({tcp_closed, _Socket}, State) ->
+handle_info({tcp_closed, Socket}, #state{socket = Socket} = State) ->
     {stop, normal, State#state{socket = undefined, connection_id = undefined}}; 
-handle_info({tcp_error, _Socket, Reason}, State) ->
+handle_info({ssl_closed, Socket}, #state{socket = Socket} = State) ->
+    {stop, normal, State#state{socket = undefined, connection_id = undefined}}; 
+handle_info({tcp_error, Socket, Reason}, #state{socket = Socket} = State) ->
     stop_server({tcp_error, Reason}, State);
+handle_info({ssl_error, Socket, Reason}, #state{socket = Socket} = State) ->
+    stop_server({ssl_error, Reason}, State);
+handle_info({tcp, Socket, _Data}, #state{socket = Socket,
+                                         sockmod = SockMod} = State) ->
+    %% Ignore out-of-band messages sent by the server,
+    %% eg. before closing the connection because of a session timeout
+    setopts(SockMod, Socket, [{active, once}]),
+    {noreply, State};
+handle_info({ssl, Socket, _Data}, #state{socket = Socket,
+                                         sockmod = SockMod} = State) ->
+    %% Ignore out-of-band messages sent by the server,
+    %% eg. before closing the connection because of a session timeout
+    setopts(SockMod, Socket, [{active, once}]),
+    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
