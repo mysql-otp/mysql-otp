@@ -554,9 +554,9 @@ handle_info(ping, #state{socket = Socket, sockmod = SockMod} = State) ->
     setopts(SockMod, Socket, [{active, once}]),
     {noreply, schedule_ping(State)};
 handle_info({tcp_closed, Socket}, #state{socket = Socket} = State) ->
-    {stop, normal, State#state{socket = undefined, connection_id = undefined}}; 
+    {stop, tcp_closed, State#state{socket = undefined, connection_id = undefined}}; 
 handle_info({ssl_closed, Socket}, #state{socket = Socket} = State) ->
-    {stop, normal, State#state{socket = undefined, connection_id = undefined}}; 
+    {stop, ssl_closed, State#state{socket = undefined, connection_id = undefined}}; 
 handle_info({tcp_error, Socket, Reason}, #state{socket = Socket} = State) ->
     stop_server({tcp_error, Reason}, State);
 handle_info({ssl_error, Socket, Reason}, #state{socket = Socket} = State) ->
