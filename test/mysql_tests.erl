@@ -22,6 +22,8 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-define(conn_state_socket_position, 4).
+
 -define(user,         "otptest").
 -define(password,     "OtpTest--123").
 -define(ssl_user,     "otptestssl").
@@ -159,7 +161,8 @@ server_disconnect_test() ->
         %% Make the server close the connection after 1 second of inactivity.
         ok = mysql:query(Pid, <<"SET SESSION wait_timeout = 1">>),
         receive
-            {'EXIT', Pid, normal} -> ok
+            {'EXIT', Pid, tcp_closed} -> ok;
+            {'EXIT', Pid, ssl_closed} -> ok
         after 2000 ->
             no_exit_message
         end
@@ -167,13 +170,23 @@ server_disconnect_test() ->
     process_flag(trap_exit, false),
     ?assertExit(noproc, mysql:stop(Pid)).
 
+unexpected_message_test() ->
+    Options = [{user, ?user}, {password, ?password}],
+    {ok, Pid} = mysql:start_link(Options),
+    Sock = get_socket_from_conn(Pid),
+    {ok, [{active, once}]} = inet:getopts(Sock, [active]),
+    Pid ! {tcp, Sock, <<"Dummy\n">>},
+    {ok, [{active, once}]} = inet:getopts(Sock, [active]),
+    ok.
+
 tcp_error_test() ->
     process_flag(trap_exit, true),
     Options = [{user, ?user}, {password, ?password}],
     {ok, Pid} = mysql:start_link(Options),
+    Sock = get_socket_from_conn(Pid),
     {ok, ok, LoggedErrors} = error_logger_acc:capture(fun () ->
         %% Simulate a tcp error by sending a message. (Is there a better way?)
-        Pid ! {tcp_error, dummy_socket, tcp_reason},
+        Pid ! {tcp_error, Sock, tcp_reason},
         receive
             {'EXIT', Pid, {tcp_error, tcp_reason}} -> ok
         after 1000 ->
@@ -1242,3 +1255,6 @@ is_access_denied({1251, <<"08004">>, <<"Client does not support authentication "
     true; % This has been observed with MariaDB 10.3.13
 is_access_denied(_) ->
     false.
+
+get_socket_from_conn(Pid) ->
+    element(?conn_state_socket_position, sys:get_state(Pid)).
