@@ -122,18 +122,18 @@ start MySQL on localhost and give privileges to the users `otptest`, `otptest2`
 and (for `ssl_tests`) to the user `otptestssl`:
 
 ```SQL
-CREATE USER otptest@localhost IDENTIFIED BY 'otptest';
+CREATE USER otptest@localhost IDENTIFIED BY 'OtpTest--123';
 GRANT ALL PRIVILEGES ON otptest.* TO otptest@localhost;
 
-CREATE USER otptest2@localhost IDENTIFIED BY 'otptest2';
+CREATE USER otptest2@localhost IDENTIFIED BY 'OtpTest2--123';
 GRANT ALL PRIVILEGES ON otptest.* TO otptest2@localhost;
 
 -- in MySQL < 5.7, REQUIRE SSL must be given in GRANT
-CREATE USER otptestssl@localhost IDENTIFIED BY 'otptestssl';
+CREATE USER otptestssl@localhost IDENTIFIED BY 'OtpTestSSL--123';
 GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost REQUIRE SSL;
 
 -- in MySQL >= 8.0, REQUIRE SSL must be given in CREATE USER
-CREATE USER otptestssl@localhost IDENTIFIED BY 'otptestssl' REQUIRE SSL;
+CREATE USER otptestssl@localhost IDENTIFIED BY 'OtpTestSSL--123' REQUIRE SSL;
 GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost;
 ```
 

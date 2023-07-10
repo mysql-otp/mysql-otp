@@ -23,7 +23,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -define(ssl_user,     "otptestssl").
--define(ssl_password, "otptestssl").
+-define(ssl_password, "OtpTestSSL--123").
 -define(cacertfile,   "test/ssl/ca.pem").
 
 successful_ssl_connect_test() ->

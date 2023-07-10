@@ -22,7 +22,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -define(user,     "otptest").
--define(password, "otptest").
+-define(password, "OtpTest--123").
 
 single_connection_test_() ->
     {setup,
