@@ -23,9 +23,9 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -define(user,         "otptest").
--define(password,     "otptest").
+-define(password,     "OtpTest--123").
 -define(ssl_user,     "otptestssl").
--define(ssl_password, "otptestssl").
+-define(ssl_password, "OtpTestSSL--123").
 
 %% We need to set a the SQL mode so it is consistent across MySQL versions
 %% and distributions.

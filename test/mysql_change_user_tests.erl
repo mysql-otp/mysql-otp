@@ -22,9 +22,9 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -define(user1,     "otptest").
--define(password1, "otptest").
+-define(password1, "OtpTest--123").
 -define(user2,     "otptest2").
--define(password2, "otptest2").
+-define(password2, "OtpTest2--123").
 
 %% Ensure that the current user can be changed to another user
 %% when given correct credentials.
