@@ -561,14 +561,9 @@ handle_info({tcp_error, Socket, Reason}, #state{socket = Socket} = State) ->
     stop_server({tcp_error, Reason}, State);
 handle_info({ssl_error, Socket, Reason}, #state{socket = Socket} = State) ->
     stop_server({ssl_error, Reason}, State);
-handle_info({tcp, Socket, _Data}, #state{socket = Socket,
-                                         sockmod = SockMod} = State) ->
-    %% Ignore out-of-band messages sent by the server,
-    %% eg. before closing the connection because of a session timeout
-    setopts(SockMod, Socket, [{active, once}]),
-    {noreply, State};
-handle_info({ssl, Socket, _Data}, #state{socket = Socket,
-                                         sockmod = SockMod} = State) ->
+handle_info({Transport, Socket, _Data}, #state{socket = Socket,
+                                               sockmod = SockMod} = State)
+  when Transport =:= tcp; Transport =:= ssl ->
     %% Ignore out-of-band messages sent by the server,
     %% eg. before closing the connection because of a session timeout
     setopts(SockMod, Socket, [{active, once}]),
