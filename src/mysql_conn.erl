@@ -331,7 +331,7 @@ handle_call({param_query, Query, Params, FilterMap, Timeout}, _From,
         not_found ->
             %% Prepare
             setopts(SockMod, Socket, [{active, false}]),
-            Rec = mysql_protocol:prepare(Query, SockMod, Socket),
+            Rec = mysql_protocol:prepare(Query, SockMod, Socket, Timeout),
             setopts(SockMod, Socket, [{active, once}]),
             case Rec of
                 #error{} = E ->
