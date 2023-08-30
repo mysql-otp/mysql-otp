@@ -62,3 +62,7 @@
                    orig_query :: iodata(),
                    param_count :: integer(),
                    warning_count :: integer()}).
+
+-record(decode_options, {
+    decode_decimal=auto :: auto | binary | number
+}).

@@ -199,6 +199,12 @@
 %%       rounding and truncation errors from happening on the server side. If a
 %%       number is specified, the float is rounded to this number of
 %%       decimals. This is off (false) by default.</dd>
+%%   <dt>`{decode_decimal, auto | number | binary}'</dt>
+%%   <dd>When decoding `decimal' columns from the server, force the return the
+%%       value as either a `binary()' or `float()' (specified by the atoms
+%%       `binary' or `float' respectively). Defaults to `auto', which will
+%%       return a binary for higher numbers to prevent the loss of precision
+%%       that comes with using floats</dd>
 %% </dl>
 -spec start_link(Options :: [option()]) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Options) ->
