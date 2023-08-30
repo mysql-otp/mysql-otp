@@ -58,7 +58,7 @@
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
                 transaction_levels = [], ping_ref = undefined,
                 stmts = dict:new(), query_cache = empty, cap_found_rows = false,
-                float_as_decimal = false, decode_options = #{}}).
+                float_as_decimal = false, decode_options = #decode_options{}}).
 
 %% @private
 init(Opts) ->
