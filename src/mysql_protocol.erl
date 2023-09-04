@@ -1679,9 +1679,9 @@ decode_text_test() ->
                                                           decode_decimal = binary},
                                                <<"3.0">>)),
 
-                      %% This decimal value will lose its precision, so we match
-                      %% on what the precision value will be lost to
-                      ?assertEqual(123456789.45678912,
+                      %% When decode_decimal=number, we expect a float and accept the
+                      %% precision loss.
+                      ?assertMatch(123456789.45678912,
                                    decode_text(ColDef#col{decimals = 12, length = 23,
                                                           decode_decimal = number},
                                                <<"123456789.456789123456789">>)),
