@@ -201,10 +201,11 @@
 %%       decimals. This is off (false) by default.</dd>
 %%   <dt>`{decode_decimal, auto | number | binary}'</dt>
 %%   <dd>When decoding `decimal' columns from the server, force the return the
-%%       value as either a `binary()' or `float()' (specified by the atoms
-%%       `binary' or `float' respectively). Defaults to `auto', which will
-%%       return a binary for higher numbers to prevent the loss of precision
-%%       that comes with using floats</dd>
+%%       value as either a `binary()' or `number()' (specified by the atoms
+%%       `binary' or `number' respectively). Defaults to `auto', which will
+%%       return a number (`integer()` or `float()`) unless the conversion to
+%%       `float()' would result in a loss of precision, in which case,
+%%       `binary()' is returned.</dd>
 %% </dl>
 -spec start_link(Options :: [option()]) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Options) ->
