@@ -647,9 +647,8 @@ fetch_resultset(SockModule, Socket, FieldCount, Proto, DecodeDecimal, FilterMap,
     {ok, DelimPacket, SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
     #eof{} = parse_eof_packet(DelimPacket),
     ColDefs1 = lists:map(fun(ColDef) ->
-        Col = parse_column_definition(ColDef),
-        Col#col{decode_decimal = DecodeDecimal}
-    end, ColDefs0),
+                                 parse_column_definition(ColDef, DecodeDecimal)
+                         end, ColDefs0),
     case fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs1, Proto,
                               FilterMap, SeqNum2, []) of
         {ok, Rows, _SeqNum3, #eof{status = S, warning_count = W}} ->
@@ -717,7 +716,7 @@ fetch_column_definitions(_SockModule, _Socket, SeqNum, 0, Acc) ->
     {ok, lists:reverse(Acc), SeqNum}.
 
 %% Parses a packet containing a column definition (part of a result set)
-parse_column_definition(Data) ->
+parse_column_definition(Data, DecodeDecimal) ->
     {<<"def">>, Rest1} = lenenc_str(Data),   %% catalog (always "def")
     {_Schema, Rest2} = lenenc_str(Rest1),    %% schema-name
     {_Table, Rest3} = lenenc_str(Rest2),     %% virtual table-name
@@ -739,7 +738,7 @@ parse_column_definition(Data) ->
     %% }
     <<>> = Rest8,
     #col{name = Name, type = Type, charset = Charset, length = Length,
-         decimals = Decimals, flags = Flags}.
+         decimals = Decimals, flags = Flags, decode_decimal = DecodeDecimal}.
 
 %% @doc Decodes a row using either the text or binary format.
 -spec decode_row(integer(), [#col{}], binary(), text | binary) -> [term()].
