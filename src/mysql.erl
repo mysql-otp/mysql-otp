@@ -37,7 +37,8 @@
 
 -export_type([option/0, connection/0, query/0, statement_name/0,
               statement_ref/0, query_param/0, query_filtermap_fun/0,
-              query_result/0, transaction_result/1, server_reason/0]).
+              query_result/0, transaction_result/1, server_reason/0,
+              decode_decimal/0]).
 
 %% A connection is a ServerRef as in gen_server:call/2,3.
 -type connection() :: Name :: atom() |
@@ -64,6 +65,8 @@
 -type statement_id() :: integer().
 -type statement_name() :: atom().
 -type statement_ref() :: statement_id() | statement_name().
+
+-type decode_decimal() :: auto | binary | number.
 
 -type query_result() :: ok
                       | {ok, [column_name()], [row()]}
@@ -93,7 +96,8 @@
                 | {query_cache_time, non_neg_integer()}
                 | {tcp_options, [gen_tcp:connect_option()]}
                 | {ssl, term()}
-                | {float_as_decimal, boolean() | non_neg_integer()}.
+                | {float_as_decimal, boolean() | non_neg_integer()}
+                | {decode_decimal, decode_decimal()}.
 
 -include("exception.hrl").
 

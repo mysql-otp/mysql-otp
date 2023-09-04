@@ -47,7 +47,8 @@
 -record(eof, {status, warning_count}).
 
 %% Column definition, used while parsing a result set.
--record(col, {name, type, charset, length, decimals, flags}).
+-record(col, {name, type, charset, length, decimals, flags,
+              decode_decimal=auto}).
 
 %% A resultset. The rows can be either lists of terms or unparsed binaries as
 %% received from the server using either the text protocol or the binary
@@ -62,7 +63,3 @@
                    orig_query :: iodata(),
                    param_count :: integer(),
                    warning_count :: integer()}).
-
--record(decode_options, {
-    decode_decimal=auto :: auto | binary | number
-}).

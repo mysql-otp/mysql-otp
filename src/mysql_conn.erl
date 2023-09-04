@@ -58,7 +58,7 @@
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
                 transaction_levels = [], ping_ref = undefined,
                 stmts = dict:new(), query_cache = empty, cap_found_rows = false,
-                float_as_decimal = false, decode_options = #decode_options{}}).
+                float_as_decimal = false, decode_decimal = auto}).
 
 %% @private
 init(Opts) ->
@@ -101,12 +101,6 @@ init(Opts) ->
         N when N > 0 -> N
     end,
 
-    %% This can be later expanded to include other decode option, if others add them,
-    %% while maintaining the pattern matching capabilities
-    DecodeOpts = #decode_options{
-        decode_decimal=DecodeDecimal
-    },
-
     State0 = #state{
         tcp_opts = TcpOpts,
         ssl_opts = SSLOpts,
@@ -122,7 +116,7 @@ init(Opts) ->
         query_cache_time = QueryCacheTime,
         cap_found_rows = (SetFoundRows =:= true),
         float_as_decimal = FloatAsDecimal,
-        decode_options = DecodeOpts
+        decode_decimal = DecodeDecimal
     },
 
     case proplists:get_value(connect_mode, Opts, synchronous) of
@@ -476,7 +470,7 @@ handle_call(start_transaction, {FromPid, _},
     {reply, {error, busy}, State};
 handle_call(start_transaction, {FromPid, _},
             State = #state{socket = Socket, sockmod = SockMod,
-                           decode_options=DecodeOpts,
+                           decode_decimal = DecodeDecimal,
                            transaction_levels = L, status = Status})
   when Status band ?SERVER_STATUS_IN_TRANS == 0, L == [];
        Status band ?SERVER_STATUS_IN_TRANS /= 0, L /= [] ->
@@ -487,14 +481,14 @@ handle_call(start_transaction, {FromPid, _},
     end,
     setopts(SockMod, Socket, [{active, false}]),
     {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
-                                               [], DecodeOpts, no_filtermap_fun,
+                                               [], DecodeDecimal, no_filtermap_fun,
                                                ?cmd_timeout),
     setopts(SockMod, Socket, [{active, once}]),
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_levels = [{FromPid, MRef} | L]}};
 handle_call(rollback, {FromPid, _},
             State = #state{socket = Socket, sockmod = SockMod, status = Status,
-                           decode_options=DecodeOpts,
+                           decode_decimal = DecodeDecimal,
                            transaction_levels = [{FromPid, MRef} | L]})
   when Status band ?SERVER_STATUS_IN_TRANS /= 0 ->
     erlang:demonitor(MRef),
@@ -504,14 +498,14 @@ handle_call(rollback, {FromPid, _},
     end,
     setopts(SockMod, Socket, [{active, false}]),
     {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
-                                               [], DecodeOpts, no_filtermap_fun,
+                                               [], DecodeDecimal, no_filtermap_fun,
                                                ?cmd_timeout),
     setopts(SockMod, Socket, [{active, once}]),
     State1 = update_state(Res, State),
     {reply, ok, State1#state{transaction_levels = L}};
 handle_call(commit, {FromPid, _},
             State = #state{socket = Socket, sockmod = SockMod, status = Status,
-                           decode_options=DecodeOpts,
+                           decode_decimal = DecodeDecimal,
                            transaction_levels = [{FromPid, MRef} | L]})
   when Status band ?SERVER_STATUS_IN_TRANS /= 0 ->
     erlang:demonitor(MRef),
@@ -521,7 +515,7 @@ handle_call(commit, {FromPid, _},
     end,
     setopts(SockMod, Socket, [{active, false}]),
     {ok, [Res = #ok{}]} = mysql_protocol:query(Query, SockMod, Socket,
-                                               [], DecodeOpts, no_filtermap_fun,
+                                               [], DecodeDecimal, no_filtermap_fun,
                                                ?cmd_timeout),
     setopts(SockMod, Socket, [{active, once}]),
     State1 = update_state(Res, State),
@@ -604,7 +598,7 @@ execute_stmt(Stmt, Args, FilterMap, Timeout, State) ->
     #state{socket = Socket, sockmod = SockMod,
            allowed_local_paths = AllowedPaths,
            float_as_decimal = FloatAsDecimal,
-           decode_options = DecodeOpts} = State,
+           decode_decimal = DecodeDecimal} = State,
     Args1 = case FloatAsDecimal of
                 false ->
                     Args;
@@ -613,12 +607,12 @@ execute_stmt(Stmt, Args, FilterMap, Timeout, State) ->
             end,
     setopts(SockMod, Socket, [{active, false}]),
     {ok, Recs} = case mysql_protocol:execute(Stmt, Args1, SockMod, Socket,
-                                             AllowedPaths, DecodeOpts,
+                                             AllowedPaths, DecodeDecimal,
                                              FilterMap, Timeout) of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
             kill_query(State),
             mysql_protocol:fetch_execute_response(SockMod, Socket, [],
-                                                  DecodeOpts, FilterMap,
+                                                  DecodeDecimal, FilterMap,
                                                   ?cmd_timeout);
         {error, Reason} ->
             exit(Reason);
@@ -670,15 +664,15 @@ query(Query, FilterMap, default_timeout,
 query(Query, FilterMap, Timeout, State) ->
     #state{sockmod = SockMod, socket = Socket,
            allowed_local_paths = AllowedPaths,
-           decode_options = DecodeOpts} = State,
+           decode_decimal = DecodeDecimal} = State,
     setopts(SockMod, Socket, [{active, false}]),
     Result = mysql_protocol:query(Query, SockMod, Socket, AllowedPaths,
-                                  DecodeOpts, FilterMap, Timeout),
+                                  DecodeDecimal, FilterMap, Timeout),
     {ok, Recs} = case Result of
         {error, timeout} when State#state.server_version >= [5, 0, 0] ->
             kill_query(State),
             mysql_protocol:fetch_query_response(SockMod, Socket,
-                                                [], DecodeOpts, FilterMap,
+                                                [], DecodeDecimal, FilterMap,
                                                 ?cmd_timeout);
         {error, Reason} ->
             exit(Reason);
@@ -774,11 +768,11 @@ schedule_ping(State = #state{ping_timeout = Timeout, ping_ref = Ref}) ->
 
 %% @doc Fetches and logs warnings. Query is the query that gave the warnings.
 log_warnings(#state{socket = Socket, sockmod = SockMod,
-                    decode_options = DecodeOpts}, Query) ->
+                    decode_decimal = DecodeDecimal}, Query) ->
     setopts(SockMod, Socket, [{active, false}]),
     {ok, [#resultset{rows = Rows}]} = mysql_protocol:query(<<"SHOW WARNINGS">>,
                                                            SockMod, Socket,
-                                                           [], DecodeOpts,
+                                                           [], DecodeDecimal,
                                                            no_filtermap_fun,
                                                            ?cmd_timeout),
     setopts(SockMod, Socket, [{active, once}]),
@@ -812,7 +806,7 @@ maybe_log_slow_query(_, _, _, _) ->
 %% our main connection back to normal. KILL QUERY appeared in MySQL 5.0.0.
 kill_query(#state{connection_id = ConnId, host = Host, port = Port,
                   user = User, password = Password, ssl_opts = SSLOpts,
-                  cap_found_rows = SetFoundRows, decode_options=DecodeOpts}) ->
+                  cap_found_rows = SetFoundRows, decode_decimal = DecodeDecimal}) ->
     %% Connect socket
     SockOpts = [{active, false}, binary, {packet, raw}],
     {ok, Socket0} = gen_tcp:connect(Host, Port, SockOpts),
@@ -826,7 +820,7 @@ kill_query(#state{connection_id = ConnId, host = Host, port = Port,
             IdBin = integer_to_binary(ConnId),
             {ok, [#ok{}]} = mysql_protocol:query(<<"KILL QUERY ", IdBin/binary>>,
                                                  SockMod, Socket,
-                                                 [], DecodeOpts,
+                                                 [], DecodeDecimal,
                                                  no_filtermap_fun,
                                                  ?cmd_timeout),
             mysql_protocol:quit(SockMod, Socket);
