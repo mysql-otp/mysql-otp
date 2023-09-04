@@ -648,7 +648,7 @@ fetch_resultset(SockModule, Socket, FieldCount, Proto, DecodeDecimal, FilterMap,
     #eof{} = parse_eof_packet(DelimPacket),
     ColDefs1 = lists:map(fun(ColDef) ->
         Col = parse_column_definition(ColDef),
-        Col#col{decode_decimal=DecodeDecimal}
+        Col#col{decode_decimal = DecodeDecimal}
     end, ColDefs0),
     case fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs1, Proto,
                               FilterMap, SeqNum2, []) of
@@ -662,8 +662,7 @@ fetch_resultset(SockModule, Socket, FieldCount, Proto, DecodeDecimal, FilterMap,
 %% @doc Fetches the rows for a result set and decodes them using either the text
 %% format (for plain queries) or binary format (for prepared statements).
 -spec fetch_resultset_rows(module(), term(), integer(), [#col{}], text | binary,
-                           query_filtermap(), integer(),
-                           [[term()]]) ->
+                           query_filtermap(), integer(), [[term()]]) ->
     {ok, [[term()]], integer(), #eof{}} | #error{}.
 fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs, Proto,
                      FilterMap, SeqNum0, Acc) ->
@@ -925,8 +924,7 @@ build_null_bitmap(Values) ->
 %% The types are type constants for the binary protocol, such as
 %% ProtocolBinary::MYSQL_TYPE_STRING. In the guide "MySQL Internals" these are
 %% not listed, but we assume that are the same as for the text protocol.
--spec decode_binary(ColDef :: #col{},
-                    Data :: binary()) ->
+-spec decode_binary(ColDef :: #col{}, Data :: binary()) ->
     {Term :: term(), Rest :: binary()}.
 decode_binary(#col{type = T}, Data)
   when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
@@ -1726,19 +1724,15 @@ decode_binary_test() ->
     ?assertEqual({1.0, <<>>},
                  decode_binary(#col{type = ?TYPE_FLOAT},
                                <<1.0:32/float-little>>)),
-
     ?assertEqual({0.2, <<>>},
                  decode_binary(#col{type = ?TYPE_FLOAT},
                                <<0.2:32/float-little>>)),
-
     ?assertEqual({-33.3333, <<>>},
                  decode_binary(#col{type = ?TYPE_FLOAT},
                                <<-33.333333:32/float-little>>)),
-
     ?assertEqual({0.000123457, <<>>},
                  decode_binary(#col{type = ?TYPE_FLOAT},
                                <<0.00012345678:32/float-little>>)),
-
     ?assertEqual({1234.57, <<>>},
                  decode_binary(#col{type = ?TYPE_FLOAT},
                                <<1234.56789:32/float-little>>)),
