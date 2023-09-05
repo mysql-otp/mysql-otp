@@ -1668,15 +1668,25 @@ decode_text_test() ->
                                    decode_text(ColDef#col{decimals = 1, length = 4,
                                                           decode_decimal = binary},
                                                <<"3.0">>)),
-
                       %% When decode_decimal=number, we expect a float and accept the
                       %% precision loss.
                       ?assertMatch(123456789.45678912,
                                    decode_text(ColDef#col{decimals = 12, length = 23,
                                                           decode_decimal = number},
                                                <<"123456789.456789123456789">>)),
+                      %% When with decode_decimal=auto, we expect a binary
+                      %% when the float value is large
+                      ?assertMatch(<<"12345678901234567890.12345">>,
+                                   decode_text(ColDef#col{decimals = 5, length = 27,
+                                                          decode_decimal = auto},
+                                               <<"12345678901234567890.12345">>)),
+                      %% When with decode_decimal=number, we expect a large float
+                      ?assertMatch(1.2345678901234567e19,
+                                   decode_text(ColDef#col{decimals = 5, length = 27,
+                                                          decode_decimal = number},
+                                               <<"12345678901234567890.12345">>)),
                       %% When decode_decimal=float, even if the expected return value
-                      %% would be an integer, force the float test
+                      %% would be an integer, force the float
                       ?assertMatch(3.0,
                                    decode_text(ColDef#col{decimals = 0, length = 2,
                                                           decode_decimal = float},
