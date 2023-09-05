@@ -1230,24 +1230,17 @@ encode_bitstring(Bitstring) ->
     PaddingSize = byte_size(Bitstring) * 8 - Size,
     <<0:PaddingSize, Bitstring:Size/bitstring>>.
 
-decode_decimal(auto, Bin, P, S) ->
-    decode_decimal_auto(Bin, P, S);
-decode_decimal(number, Bin, _P, S) ->
-    decode_decimal_number(Bin, S);
-decode_decimal(binary, Bin, _P, _S) ->
-    Bin.
-
-decode_decimal_auto(Bin, _P, 0) ->
+decode_decimal(Decode, Bin, _P, 0) when Decode =:= number;
+                                        Decode =:= auto ->
     binary_to_integer(Bin);
-decode_decimal_auto(Bin, P, S) when P =< 15, S > 0 ->
+decode_decimal(Decode, Bin, _P, 0) when Decode =:= float ->
+    float(binary_to_integer(Bin));
+decode_decimal(Decode, Bin, P, S) when Decode =:= auto, P =< 15, S > 0;
+                                       Decode =:= number;
+                                       Decode =:= float ->
     binary_to_float(Bin);
-decode_decimal_auto(Bin, P, S) when P >= 16, S > 0 ->
+decode_decimal(_Decode, Bin, _P, _S) ->
     Bin.
-
-decode_decimal_number(Bin, 0) ->
-    binary_to_integer(Bin);
-decode_decimal_number(Bin, _S) ->
-    binary_to_float(Bin).
 
 %% -- Protocol basics: packets --
 
@@ -1682,6 +1675,12 @@ decode_text_test() ->
                                    decode_text(ColDef#col{decimals = 12, length = 23,
                                                           decode_decimal = number},
                                                <<"123456789.456789123456789">>)),
+                      %% When decode_decimal=float, even if the expected return value
+                      %% would be an integer, force the float test
+                      ?assertMatch(3.0,
+                                   decode_text(ColDef#col{decimals = 0, length = 2,
+                                                          decode_decimal = float},
+                                               <<"3">>)),
                       %% decimal_decode=auto will encode to binary to prevent
                       %% the loss of precision when converting to float, so
                       %% this is just testing to ensure that that happens.

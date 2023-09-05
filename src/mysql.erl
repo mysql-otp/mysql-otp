@@ -66,7 +66,7 @@
 -type statement_name() :: atom().
 -type statement_ref() :: statement_id() | statement_name().
 
--type decode_decimal() :: auto | binary | number.
+-type decode_decimal() :: auto | binary | float | number.
 
 -type query_result() :: ok
                       | {ok, [column_name()], [row()]}
@@ -203,13 +203,13 @@
 %%       rounding and truncation errors from happening on the server side. If a
 %%       number is specified, the float is rounded to this number of
 %%       decimals. This is off (false) by default.</dd>
-%%   <dt>`{decode_decimal, auto | number | binary}'</dt>
+%%   <dt>`{decode_decimal, auto | float | number | binary}'</dt>
 %%   <dd>When decoding `decimal' columns from the server, force the return the
-%%       value as either a `binary()' or `number()' (specified by the atoms
-%%       `binary' or `number' respectively). Defaults to `auto', which will
-%%       return a number (`integer()` or `float()`) unless the conversion to
-%%       `float()' would result in a loss of precision, in which case,
-%%       `binary()' is returned.</dd>
+%%       value as either a `binary()', `float()`, or `number()' (specified by
+%%       the atoms `binary', `float', `number' respectively). Defaults to
+%%       `auto', which will return a number (`integer()' or `float()') unless
+%%       the conversion to `float()' would result in a loss of precision, in
+%%       which case, `binary()' is returned.</dd>
 %% </dl>
 -spec start_link(Options :: [option()]) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Options) ->
