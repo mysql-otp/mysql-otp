@@ -806,7 +806,7 @@ maybe_log_slow_query(_, _, _, _) ->
 %% our main connection back to normal. KILL QUERY appeared in MySQL 5.0.0.
 kill_query(#state{connection_id = ConnId, host = Host, port = Port,
                   user = User, password = Password, ssl_opts = SSLOpts,
-                  cap_found_rows = SetFoundRows, decode_decimal = DecodeDecimal}) ->
+                  cap_found_rows = SetFoundRows}) ->
     %% Connect socket
     SockOpts = [{active, false}, binary, {packet, raw}],
     {ok, Socket0} = gen_tcp:connect(Host, Port, SockOpts),
@@ -820,7 +820,7 @@ kill_query(#state{connection_id = ConnId, host = Host, port = Port,
             IdBin = integer_to_binary(ConnId),
             {ok, [#ok{}]} = mysql_protocol:query(<<"KILL QUERY ", IdBin/binary>>,
                                                  SockMod, Socket,
-                                                 [], DecodeDecimal,
+                                                 [], auto,
                                                  no_filtermap_fun,
                                                  ?cmd_timeout),
             mysql_protocol:quit(SockMod, Socket);
