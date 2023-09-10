@@ -40,6 +40,7 @@
                           "  f FLOAT,"
                           "  d DOUBLE,"
                           "  dc DECIMAL(5,3),"
+                          "  ldc DECIMAL(25,3),"
                           "  y YEAR,"
                           "  ti TIME,"
                           "  ts TIMESTAMP,"
@@ -641,8 +642,8 @@ multi_statements(Pid) ->
 
 text_protocol(Pid) ->
     ok = mysql:query(Pid, ?create_table_t),
-    ok = mysql:query(Pid, <<"INSERT INTO t (bl, f, d, dc, y, ti, ts, da, c)"
-                            " VALUES ('blob', 3.14, 3.14, 3.14, 2014,"
+    ok = mysql:query(Pid, <<"INSERT INTO t (bl, f, d, dc, ldc, y, ti, ts, da, c)"
+                            " VALUES ('blob', 3.14, 3.14, 3.14, 3.14, 2014,"
                             "'00:22:11', '2014-11-03 00:22:24', '2014-11-03',"
                             " NULL)">>),
     ?assertEqual(1, mysql:warning_count(Pid)), %% tx has no default value
@@ -652,9 +653,10 @@ text_protocol(Pid) ->
     %% select
     {ok, Columns, Rows} = mysql:query(Pid, <<"SELECT * FROM t">>),
     ?assertEqual([<<"id">>, <<"bl">>, <<"tx">>, <<"f">>, <<"d">>, <<"dc">>,
-                  <<"y">>, <<"ti">>, <<"ts">>, <<"da">>, <<"c">>], Columns),
+                  <<"ldc">>, <<"y">>, <<"ti">>, <<"ts">>, <<"da">>, <<"c">>],
+                 Columns),
     ?assertEqual([[1, <<"blob">>, <<>>, 3.14, 3.14, 3.14,
-                   2014, {0, {0, 22, 11}},
+                   <<"3.140">>, 2014, {0, {0, 22, 11}},
                    {{2014, 11, 03}, {00, 22, 24}}, {2014, 11, 03}, null]],
                  Rows),
 
@@ -663,22 +665,22 @@ text_protocol(Pid) ->
 binary_protocol(Pid) ->
     ok = mysql:query(Pid, ?create_table_t),
     %% The same queries as in the text protocol. Expect the same results.
-    {ok, Ins} = mysql:prepare(Pid, <<"INSERT INTO t (bl, tx, f, d, dc, y, ti,"
+    {ok, Ins} = mysql:prepare(Pid, <<"INSERT INTO t (bl, tx, f, d, dc, ldc, y, ti,"
                                      " ts, da, c)"
-                                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)">>),
+                                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)">>),
     %% 16#161 is the codepoint for "s with caron"; <<197, 161>> in UTF-8.
     ok = mysql:execute(Pid, Ins, [<<"blob">>, [16#161], 3.14, 3.14, 3.14,
-                                  2014, {0, {0, 22, 11}},
+                                  3.14, 2014, {0, {0, 22, 11}},
                                   {{2014, 11, 03}, {0, 22, 24}},
                                   {2014, 11, 03}, null]),
 
     {ok, Stmt} = mysql:prepare(Pid, <<"SELECT * FROM t WHERE id=?">>),
     {ok, Columns, Rows} = mysql:execute(Pid, Stmt, [1]),
     ?assertEqual([<<"id">>, <<"bl">>, <<"tx">>, <<"f">>, <<"d">>, <<"dc">>,
-                  <<"y">>, <<"ti">>,
+                  <<"ldc">>, <<"y">>, <<"ti">>,
                   <<"ts">>, <<"da">>, <<"c">>], Columns),
     ?assertEqual([[1, <<"blob">>, <<197, 161>>, 3.14, 3.14, 3.14,
-                   2014, {0, {0, 22, 11}},
+                   <<"3.140">>, 2014, {0, {0, 22, 11}},
                    {{2014, 11, 03}, {00, 22, 24}}, {2014, 11, 03}, null]],
                  Rows),
 

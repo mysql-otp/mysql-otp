@@ -28,8 +28,8 @@
 -module(mysql_protocol).
 
 -export([handshake/8, change_user/8, quit/2, ping/2,
-         query/6, fetch_query_response/5, prepare/3, unprepare/3,
-         execute/7, fetch_execute_response/5, reset_connnection/2,
+         query/7, fetch_query_response/6, prepare/3, unprepare/3,
+         execute/8, fetch_execute_response/6, reset_connnection/2,
          valid_params/1, valid_path/1]).
 
 -type query_filtermap() :: no_filtermap_fun | mysql:query_filtermap_fun().
@@ -37,6 +37,8 @@
 -type auth_more_data() :: fast_auth_completed
                         | full_auth_requested
                         | {public_key, term()}.
+
+-type decode_decimal() :: mysql:decode_decimal().
 
 %% How much data do we want per packet?
 -define(MAX_BYTES_PER_PACKET, 16#1000000).
@@ -193,19 +195,19 @@ ping(SockModule, Socket) ->
     {ok, OkPacket, _SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
     parse_ok_packet(OkPacket).
 
--spec query(Query :: iodata(), module(), term(), [binary()], query_filtermap(),
-            timeout()) ->
+-spec query(Query :: iodata(), module(), term(), [binary()],
+            decode_decimal(), query_filtermap(), timeout()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, term()}.
-query(Query, SockModule, Socket, AllowedPaths, FilterMap, Timeout) ->
+query(Query, SockModule, Socket, AllowedPaths, DecodeDecimal, FilterMap, Timeout) ->
     Req = <<?COM_QUERY, (iolist_to_binary(Query))/binary>>,
     SeqNum0 = 0,
     {ok, _SeqNum1} = send_packet(SockModule, Socket, Req, SeqNum0),
-    fetch_query_response(SockModule, Socket, AllowedPaths, FilterMap, Timeout).
+    fetch_query_response(SockModule, Socket, AllowedPaths, DecodeDecimal, FilterMap, Timeout).
 
 %% @doc This is used by query/4. If query/4 returns {error, timeout}, this
 %% function can be called to retry to fetch the results of the query.
-fetch_query_response(SockModule, Socket, AllowedPaths, FilterMap, Timeout) ->
-    fetch_response(SockModule, Socket, Timeout, text, AllowedPaths, FilterMap, []).
+fetch_query_response(SockModule, Socket, AllowedPaths, DecodeDecimal, FilterMap, Timeout) ->
+    fetch_response(SockModule, Socket, Timeout, text, AllowedPaths, DecodeDecimal, FilterMap, []).
 
 %% @doc Prepares a statement.
 -spec prepare(iodata(), module(), term()) -> #error{} | #prepared{}.
@@ -251,10 +253,10 @@ unprepare(#prepared{statement_id = Id}, SockModule, Socket) ->
 
 %% @doc Executes a prepared statement.
 -spec execute(#prepared{}, [term()], module(), term(), [binary()],
-              query_filtermap(), timeout()) ->
+              decode_decimal(), query_filtermap(), timeout()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, term()}.
 execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
-        SockModule, Socket, AllowedPaths, FilterMap, Timeout)
+        SockModule, Socket, AllowedPaths, DecodeDecimal, FilterMap, Timeout)
   when ParamCount == length(ParamValues) ->
     %% Flags Constant Name
     %% 0x00 CURSOR_TYPE_NO_CURSOR
@@ -282,12 +284,12 @@ execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
             iolist_to_binary([Req1, TypesAndSigns, EncValues])
     end,
     {ok, _SeqNum1} = send_packet(SockModule, Socket, Req, 0),
-    fetch_execute_response(SockModule, Socket, AllowedPaths, FilterMap, Timeout).
+    fetch_execute_response(SockModule, Socket, AllowedPaths, DecodeDecimal, FilterMap, Timeout).
 
 %% @doc This is used by execute/5. If execute/5 returns {error, timeout}, this
 %% function can be called to retry to fetch the results of the query.
-fetch_execute_response(SockModule, Socket, AllowedPaths, FilterMap, Timeout) ->
-    fetch_response(SockModule, Socket, Timeout, binary, AllowedPaths, FilterMap, []).
+fetch_execute_response(SockModule, Socket, AllowedPaths, DecodeDecimal, FilterMap, Timeout) ->
+    fetch_response(SockModule, Socket, Timeout, binary, AllowedPaths, DecodeDecimal, FilterMap, []).
 
 %% @doc Changes the user of the connection.
 -spec change_user(module(), term(), iodata(), iodata(), binary(), binary(),
@@ -589,9 +591,9 @@ parse_handshake_confirm(<<?MORE_DATA, MoreData/binary>>) ->
 %% either the text format (for plain queries) or the binary format (for
 %% prepared statements).
 -spec fetch_response(module(), term(), timeout(), text | binary, [binary()],
-                     query_filtermap(), list()) ->
+                     decode_decimal(), query_filtermap(), list()) ->
     {ok, [#ok{} | #resultset{} | #error{}]} | {error, term()}.
-fetch_response(SockModule, Socket, Timeout, Proto, AllowedPaths, FilterMap, Acc) ->
+fetch_response(SockModule, Socket, Timeout, Proto, AllowedPaths, DecodeDecimal, FilterMap, Acc) ->
     case recv_packet(SockModule, Socket, Timeout, any) of
         {ok, ?local_infile_pattern = Packet, SeqNum2} ->
             Filename = parse_local_infile_packet(Packet),
@@ -610,7 +612,7 @@ fetch_response(SockModule, Socket, Timeout, Proto, AllowedPaths, FilterMap, Acc)
                     [#error{code = -2, msg = ErrorMsg}|Acc]
             end,
             fetch_response(SockModule, Socket, Timeout, Proto, AllowedPaths,
-                           FilterMap, Acc1);
+                           DecodeDecimal, FilterMap, Acc1);
         {ok, Packet, SeqNum2} ->
             Result = case Packet of
                 ?ok_pattern ->
@@ -621,13 +623,13 @@ fetch_response(SockModule, Socket, Timeout, Proto, AllowedPaths, FilterMap, Acc)
                     %% The first packet in a resultset is only the column count.
                     {ColCount, <<>>} = lenenc_int(ResultPacket),
                     fetch_resultset(SockModule, Socket, ColCount, Proto,
-                                    FilterMap, SeqNum2)
+                                    DecodeDecimal, FilterMap, SeqNum2)
             end,
             Acc1 = [Result | Acc],
             case more_results_exists(Result) of
                 true ->
                     fetch_response(SockModule, Socket, Timeout, Proto,
-                                   AllowedPaths, FilterMap, Acc1);
+                                   AllowedPaths, DecodeDecimal, FilterMap, Acc1);
                 false ->
                     {ok, lists:reverse(Acc1)}
             end;
@@ -637,14 +639,16 @@ fetch_response(SockModule, Socket, Timeout, Proto, AllowedPaths, FilterMap, Acc)
 
 %% @doc Fetches a result set.
 -spec fetch_resultset(module(), term(), integer(), text | binary,
-                      query_filtermap(), integer()) ->
+                      decode_decimal(), query_filtermap(), integer()) ->
     #resultset{} | #error{}.
-fetch_resultset(SockModule, Socket, FieldCount, Proto, FilterMap, SeqNum0) ->
+fetch_resultset(SockModule, Socket, FieldCount, Proto, DecodeDecimal, FilterMap, SeqNum0) ->
     {ok, ColDefs0, SeqNum1} = fetch_column_definitions(SockModule, Socket,
                                                        SeqNum0, FieldCount, []),
     {ok, DelimPacket, SeqNum2} = recv_packet(SockModule, Socket, SeqNum1),
     #eof{} = parse_eof_packet(DelimPacket),
-    ColDefs1 = lists:map(fun parse_column_definition/1, ColDefs0),
+    ColDefs1 = lists:map(fun(ColDef) ->
+                                 parse_column_definition(ColDef, DecodeDecimal)
+                         end, ColDefs0),
     case fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs1, Proto,
                               FilterMap, SeqNum2, []) of
         {ok, Rows, _SeqNum3, #eof{status = S, warning_count = W}} ->
@@ -669,7 +673,7 @@ fetch_resultset_rows(SockModule, Socket, FieldCount, ColDefs, Proto,
             Eof = parse_eof_packet(Packet),
             {ok, lists:reverse(Acc), SeqNum1, Eof};
         RowPacket ->
-            Row0=decode_row(FieldCount, ColDefs, RowPacket, Proto),
+            Row0 = decode_row(FieldCount, ColDefs, RowPacket, Proto),
             Acc1 = case filtermap_resultset_row(FilterMap, ColDefs, Row0) of
                 false ->
                     Acc;
@@ -712,7 +716,7 @@ fetch_column_definitions(_SockModule, _Socket, SeqNum, 0, Acc) ->
     {ok, lists:reverse(Acc), SeqNum}.
 
 %% Parses a packet containing a column definition (part of a result set)
-parse_column_definition(Data) ->
+parse_column_definition(Data, DecodeDecimal) ->
     {<<"def">>, Rest1} = lenenc_str(Data),   %% catalog (always "def")
     {_Schema, Rest2} = lenenc_str(Rest1),    %% schema-name
     {_Table, Rest3} = lenenc_str(Rest2),     %% virtual table-name
@@ -734,7 +738,7 @@ parse_column_definition(Data) ->
     %% }
     <<>> = Rest8,
     #col{name = Name, type = Type, charset = Charset, length = Length,
-         decimals = Decimals, flags = Flags}.
+         decimals = Decimals, flags = Flags, decode_decimal = DecodeDecimal}.
 
 %% @doc Decodes a row using either the text or binary format.
 -spec decode_row(integer(), [#col{}], binary(), text | binary) -> [term()].
@@ -783,11 +787,12 @@ decode_text(#col{type = T}, Text)
 decode_text(#col{type = ?TYPE_BIT, length = Length}, Text) ->
     %% Convert to <<_:Length/bitstring>>
     decode_bitstring(Text, Length);
-decode_text(#col{type = T, decimals = S, length = L}, Text)
+decode_text(#col{type = T, decimals = S, length = L,
+                 decode_decimal = DecodeDecimal}, Text)
   when T == ?TYPE_DECIMAL; T == ?TYPE_NEWDECIMAL ->
     %% Length is the max number of symbols incl. dot and minus sign, e.g. the
     %% number of digits plus 2.
-    decode_decimal(Text, L - 2, S);
+    decode_decimal(DecodeDecimal, Text, L - 2, S);
 decode_text(#col{type = ?TYPE_DATE},
             <<Y:4/binary, "-", M:2/binary, "-", D:2/binary>>) ->
     {binary_to_integer(Y), binary_to_integer(M), binary_to_integer(D)};
@@ -870,7 +875,7 @@ decode_binary_row_acc([ColDef | ColDefs], <<0:1, NullBitMap/bitstring>>, Data,
     %% Not NULL
     {Term, Rest} = decode_binary(ColDef, Data),
     decode_binary_row_acc(ColDefs, NullBitMap, Rest, [Term | Acc]);
-decode_binary_row_acc([], _, <<>>, Acc) ->
+decode_binary_row_acc([], _NullBitMap, <<>>, Acc) ->
     lists:reverse(Acc).
 
 %% @doc Decodes a null bitmap as stored by MySQL and returns it in a strait
@@ -963,12 +968,13 @@ decode_binary(#col{type = ?TYPE_TINY, flags = F},
               <<Value:8/signed, Rest/binary>>)
   when F band ?UNSIGNED_FLAG == 0 ->
     {Value, Rest};
-decode_binary(#col{type = T, decimals = S, length = L}, Data)
+decode_binary(#col{type = T, decimals = S, length = L,
+                   decode_decimal = DecodeDecimal}, Data)
   when T == ?TYPE_DECIMAL; T == ?TYPE_NEWDECIMAL ->
     %% Length is the max number of symbols incl. dot and minus sign, e.g. the
     %% number of digits plus 2.
     {Binary, Rest} = lenenc_str(Data),
-    {decode_decimal(Binary, L - 2, S), Rest};
+    {decode_decimal(DecodeDecimal, Binary, L - 2, S), Rest};
 decode_binary(#col{type = ?TYPE_DOUBLE},
               <<Value:64/float-little, Rest/binary>>) ->
     {Value, Rest};
@@ -1224,11 +1230,16 @@ encode_bitstring(Bitstring) ->
     PaddingSize = byte_size(Bitstring) * 8 - Size,
     <<0:PaddingSize, Bitstring:Size/bitstring>>.
 
-decode_decimal(Bin, _P, 0) ->
+decode_decimal(Decode, Bin, _P, 0) when Decode =:= number;
+                                        Decode =:= auto ->
     binary_to_integer(Bin);
-decode_decimal(Bin, P, S) when P =< 15, S > 0 ->
+decode_decimal(Decode, Bin, _P, 0) when Decode =:= float ->
+    float(binary_to_integer(Bin));
+decode_decimal(Decode, Bin, P, S) when Decode =:= auto, P =< 15, S > 0;
+                                       Decode =:= number;
+                                       Decode =:= float ->
     binary_to_float(Bin);
-decode_decimal(Bin, P, S) when P >= 16, S > 0 ->
+decode_decimal(_Decode, Bin, _P, _S) ->
     Bin.
 
 %% -- Protocol basics: packets --
@@ -1645,10 +1656,51 @@ decode_text_test() ->
                   [?TYPE_FLOAT, ?TYPE_DOUBLE]),
     %% Decimal types
     lists:foreach(fun (T) ->
-                      ColDef = #col{type = T, decimals = 1, length = 4},
-                      ?assertMatch(3.0, decode_text(ColDef, <<"3.0">>))
+                      ColDef = #col{type = T},
+                      ?assertMatch(3.0,
+                                   decode_text(ColDef#col{decimals = 1, length = 4},
+                                               <<"3.0">>)),
+                      %% Decimal Decode Options
+                      %% A small value like this would be returned as a float
+                      %% if decode_decimal=auto. We want to test forcing the
+                      %% binary return
+                      ?assertMatch(<<"3.0">>,
+                                   decode_text(ColDef#col{decimals = 1, length = 4,
+                                                          decode_decimal = binary},
+                                               <<"3.0">>)),
+                      %% When decode_decimal=number, we expect a float and accept the
+                      %% precision loss.
+                      ?assertMatch(123456789.45678912,
+                                   decode_text(ColDef#col{decimals = 12, length = 23,
+                                                          decode_decimal = number},
+                                               <<"123456789.456789123456789">>)),
+                      %% When with decode_decimal=auto, we expect a binary
+                      %% when the float value is large
+                      ?assertMatch(<<"12345678901234567890.12345">>,
+                                   decode_text(ColDef#col{decimals = 5, length = 27,
+                                                          decode_decimal = auto},
+                                               <<"12345678901234567890.12345">>)),
+                      %% When with decode_decimal=number, we expect a large float
+                      ?assertMatch(1.2345678901234567e19,
+                                   decode_text(ColDef#col{decimals = 5, length = 27,
+                                                          decode_decimal = number},
+                                               <<"12345678901234567890.12345">>)),
+                      %% When decode_decimal=float, even if the expected return value
+                      %% would be an integer, force the float
+                      ?assertMatch(3.0,
+                                   decode_text(ColDef#col{decimals = 0, length = 2,
+                                                          decode_decimal = float},
+                                               <<"3">>)),
+                      %% decimal_decode=auto will encode to binary to prevent
+                      %% the loss of precision when converting to float, so
+                      %% this is just testing to ensure that that happens.
+                      ?assertMatch(<<"123456789.456789123456789">>,
+                                   decode_text(ColDef#col{decimals = 12, length = 23,
+                                                          decode_decimal = auto},
+                                               <<"123456789.456789123456789">>))
                   end,
                   [?TYPE_DECIMAL, ?TYPE_NEWDECIMAL]),
+
     ?assertEqual(3.0,  decode_text(#col{type = ?TYPE_FLOAT}, <<"3">>)),
     ?assertEqual(30.0, decode_text(#col{type = ?TYPE_FLOAT}, <<"3e1">>)),
     ?assertEqual(3,    decode_text(#col{type = ?TYPE_LONG}, <<"3">>)),
