@@ -385,11 +385,10 @@ handle_call({prepare, Query}, _From, State) ->
             State2 = State#state{stmts = Stmts1},
             {reply, {ok, Id}, State2}
     end;
-handle_call({prepare, Name, Query}, _From, State) when is_atom(Name) ->
+handle_call({prepare, Name, Query}, _From, State) ->
     {Reply, State1} = named_prepare(Name, Query, State),
     {reply, Reply, State1};
-handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);
-                                                  is_integer(Stmt) ->
+handle_call({unprepare, Stmt}, _From, State) ->
     case dict:find(Stmt, State#state.stmts) of
         {ok, StmtRec} ->
             #state{socket = Socket, sockmod = SockMod} = State,
