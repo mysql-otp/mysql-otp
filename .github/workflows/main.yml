@@ -26,8 +26,5 @@ jobs:
           rebar3-version: 3.20.0
       - run: |
           export MYSQL_IMAGE=${{ matrix.image }}
-          docker compose -f .ci/docker-compose.yml up -d --wait
-          sleep 10
-          set -x
-          docker exec mysql /init.sh
+          ./.ci/prep.sh
       - run: make tests

@@ -29,3 +29,6 @@ rebar.lock
 *.crashdump
 *.dump
 _build/
+.ci/run
+.ci/certs
+.ci/my-ssl.cnf

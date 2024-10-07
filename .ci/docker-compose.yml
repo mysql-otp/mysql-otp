@@ -14,8 +14,14 @@ services:
         source: ./my-otp.cnf
         target: /etc/mysql/conf.d/my-otp.cnf
       - type: bind
-        source: ./init.sh
-        target: /init.sh
+        source: ./my-ssl.cnf
+        target: /etc/mysql/conf.d/my-ssl.cnf
+      - type: bind
+        source: ./certs/
+        target: ${MYSQL_CERTS_DIR}
       - type: bind
         source: ./run/
         target: /var/run/mysqld/
+      - type: bind
+        source: ./init.sh
+        target: /init.sh
