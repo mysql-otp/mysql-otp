@@ -63,7 +63,7 @@
                              | {true, term()}.
 
 -type statement_id() :: integer().
--type statement_name() :: atom().
+-type statement_name() :: atom() | binary().
 -type statement_ref() :: statement_id() | statement_name().
 
 -type decode_decimal() :: auto | binary | float | number.

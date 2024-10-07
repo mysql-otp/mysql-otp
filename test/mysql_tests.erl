@@ -128,6 +128,28 @@ common_basic_check(ExtraOpts) ->
                  mysql:execute(Pid, foo, [])),
     Pid.
 
+successful_connect_binary_ref_test() ->
+    %% A connection with a registered name and execute initial queries and
+    %% create prepared statements.
+    Pid = common_basic_check_binary_ref([{user, ?user}, {password, ?password}]),
+
+    %% Test some gen_server callbacks not tested elsewhere
+    State = get_state(Pid),
+    ?assertMatch({ok, State}, mysql_conn:code_change("0.1.0", State, [])),
+    ?assertMatch({error, _}, mysql_conn:code_change("2.0.0", unknown_state, [])),
+    common_conn_close().
+
+common_basic_check_binary_ref(ExtraOpts) ->
+    Options = [{name, {local, tardis}},
+               {queries, ["SET @foo = 'bar'", "SELECT 1",
+                          "SELECT 1; SELECT 2"]},
+               {prepare, [{<<"foo">>, "SELECT @foo"}]} | ExtraOpts],
+    {ok, Pid} = mysql:start_link(Options),
+    %% Check that queries and prepare has been done.
+    ?assertEqual({ok, [<<"@foo">>], [[<<"bar">>]]},
+                 mysql:execute(Pid, <<"foo">>, [])),
+    Pid.
+
 common_conn_close() ->
     Pid = whereis(tardis),
     process_flag(trap_exit, true),
