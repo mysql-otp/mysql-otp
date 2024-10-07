@@ -1,0 +1,3 @@
+[mysqld]
+local_infile=ON
+mysql_native_password=ON

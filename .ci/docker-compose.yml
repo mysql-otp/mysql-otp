@@ -1,0 +1,15 @@
+version: '3.9'
+
+services:
+  mysql:
+    container_name: mysql
+    image: ${MYSQL_IMAGE}
+    restart: always
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: true
+    ports:
+      - "3306:3306"
+    volumes:
+      - type: bind
+        source: ./my-otp.cnf
+        target: /etc/mysql/conf.d/my-otp.cnf
