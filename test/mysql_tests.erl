@@ -261,6 +261,7 @@ reset_connection_test() ->
     %% Ignored test with MySQL earlier than 5.7
     Options = [{user, ?user}, {password, ?password}, {keep_alive, true}],
     {ok, Pid} = mysql:start_link(Options),
+    ok = mysql:query(Pid, <<"DROP DATABASE IF EXISTS otptest">>),
     ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
     ok = mysql:query(Pid, <<"USE otptest">>),
     ok = mysql:query(Pid, <<"SET autocommit = 1">>),
