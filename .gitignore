@@ -25,3 +25,7 @@ test/ssl/my-ssl.cnf-e
 mysql.d
 *~
 *.sw?
+rebar.lock
+*.crashdump
+*.dump
+_build/
