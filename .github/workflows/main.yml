@@ -29,8 +29,5 @@ jobs:
           docker compose -f .ci/docker-compose.yml up -d --wait
           sleep 10
           set -x
-          docker exec mysql mysql -h 127.0.0.1 -uroot -e "CREATE USER otptest@'%' IDENTIFIED BY 'otptest';"
-          docker exec mysql mysql -h 127.0.0.1 -uroot -e "GRANT ALL PRIVILEGES ON otptest.* TO otptest@'%';"
-          docker exec mysql mysql -h 127.0.0.1 -uroot -e "CREATE USER otptest2@'%' IDENTIFIED BY 'otptest2';"
-          docker exec mysql mysql -h 127.0.0.1 -uroot -e "GRANT ALL PRIVILEGES ON otptest.* TO otptest2@'%';"
+          docker exec mysql /init.sh
       - run: make tests

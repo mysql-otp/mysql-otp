@@ -13,3 +13,6 @@ services:
       - type: bind
         source: ./my-otp.cnf
         target: /etc/mysql/conf.d/my-otp.cnf
+      - type: bind
+        source: ./init.sh
+        target: /init.sh
