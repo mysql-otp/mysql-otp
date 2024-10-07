@@ -16,3 +16,6 @@ services:
       - type: bind
         source: ./init.sh
         target: /init.sh
+      - type: bind
+        source: ./run/
+        target: /var/run/mysqld/

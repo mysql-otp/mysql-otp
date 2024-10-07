@@ -286,8 +286,8 @@ unix_socket_test() ->
             %% Get socket file to use
             {ok, Pid1} = mysql:start_link([{user, ?user},
                                            {password, ?password}]),
-            {ok, [<<"@@socket">>], [SockFile]} = mysql:query(Pid1,
-                                                             "SELECT @@socket"),
+            {ok, [<<"@@socket">>], [[SockFile0]]} = mysql:query(Pid1, "SELECT @@socket"),
+            SockFile = filename:join([".ci", "run", filename:basename(SockFile0)]),
             mysql:stop(Pid1),
             %% Connect through unix socket
             case mysql:start_link([{host, {local, SockFile}},
@@ -321,8 +321,8 @@ socket_backend_test() ->
                                    {tcp_options, [{inet_backend, socket}]}])
             of
                 {ok, Pid1} ->
-                    {ok, [<<"@@socket">>], [[SockFile]]} =
-                                 mysql:query(Pid1, <<"SELECT @@socket">>),
+                    {ok, [<<"@@socket">>], [[SockFile0]]} = mysql:query(Pid1, <<"SELECT @@socket">>),
+                    SockFile = filename:join([".ci", "run", filename:basename(SockFile0)]),
                     mysql:stop(Pid1),
                     case mysql:start_link([{host, {local, SockFile}},
                                            {user, ?user}, {password, ?password},
