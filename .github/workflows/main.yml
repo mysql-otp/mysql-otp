@@ -12,11 +12,12 @@ jobs:
     name: CI
     runs-on: ${{matrix.os}}
     strategy:
+      fail-fast: false
       matrix:
         otp: [25, 26]
-        image:
-          - "mysql:8"
-          - "mysql:5.7"
+        mysql_version:
+          - "8.4"
+          - "5.7"
         os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v3
@@ -25,6 +26,7 @@ jobs:
           otp-version: ${{matrix.otp}}
           rebar3-version: 3.20.0
       - run: |
-          export MYSQL_IMAGE=${{ matrix.image }}
+          export MYSQL_VERSION=${{ matrix.mysql_version }}
           ./.ci/prep.sh
-      - run: make tests
+      - run: |
+          make tests

@@ -1,9 +1,7 @@
-version: '3.9'
-
 services:
   mysql:
     container_name: mysql
-    image: ${MYSQL_IMAGE}
+    image: mysql:${MYSQL_VERSION}
     restart: always
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: true

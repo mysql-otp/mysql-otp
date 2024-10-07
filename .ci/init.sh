@@ -2,18 +2,6 @@
 
 set -euo pipefail
 
-MAX_ATTEMPTS=15
-attempt=0
-while ! mysql -uroot -e 'show databases;' >/dev/null 2>&1; do
-    attempt=$((attempt + 1))
-    echo "Waiting for MySQL... $attempt"
-    if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
-        echo "Failed to connect to MySQL server after $MAX_ATTEMPTS attempts."
-        exit 1
-    fi
-    sleep 1
-done
-
 echo "Creating users for tests..."
 
 mysql -uroot -e "CREATE USER 'otptest'@'%' IDENTIFIED BY 'OtpTest--123';"
