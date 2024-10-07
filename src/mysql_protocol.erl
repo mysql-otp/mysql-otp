@@ -1172,7 +1172,7 @@ encode_param({D, {H, M, S}}) when is_float(S), S > 0.0, D < 0 ->
     Seconds = (D * 24 + H) * 3600 + M * 60 + IntS + 1,
     {D1, {M1, H1, S1}} = calendar:seconds_to_daystime(-Seconds),
     {<<?TYPE_TIME, 0>>, <<12, 1, D1:32/little, H1, M1, S1, Micro:32/little>>};
-encode_param({D, {H, M, 0.0}}) ->
+encode_param({D, {H, M, V}}) when abs(V) =:= +0.0 ->
     encode_param({D, {H, M, 0}}).
 
 %% @doc Checks if the given Parameters can be encoded for use in the
