@@ -29,7 +29,7 @@ Some of the features:
 
 Requirements:
 
-* Erlang/OTP version R16B or later
+* Erlang/OTP version 19 or later
 * MySQL database version 4.1 or later or MariaDB
 * GNU Make *or* Rebar or any other tool for building Erlang/OTP applications
 
