@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        otp: [25, 26]
+        otp: [24, 25, 26]
         mysql_version:
           - "8.4"
           - "5.7"
