@@ -117,33 +117,7 @@ To run individual test suites, use `make eunit t=SUITE` where SUITE is one of
 The encode and protocol test suites does not require a
 running MySQL server on localhost.
 
-For the suites `mysql_tests`, `ssl_tests` and `transaction_tests` you need to
-start MySQL on localhost and give privileges to the users `otptest`, `otptest2`
-and (for `ssl_tests`) to the user `otptestssl`:
-
-```SQL
-CREATE USER otptest@localhost IDENTIFIED BY 'OtpTest--123';
-GRANT ALL PRIVILEGES ON otptest.* TO otptest@localhost;
-
-CREATE USER otptest2@localhost IDENTIFIED BY 'OtpTest2--123';
-GRANT ALL PRIVILEGES ON otptest.* TO otptest2@localhost;
-
--- in MySQL < 5.7, REQUIRE SSL must be given in GRANT
-CREATE USER otptestssl@localhost IDENTIFIED BY 'OtpTestSSL--123';
-GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost REQUIRE SSL;
-
--- in MySQL >= 8.0, REQUIRE SSL must be given in CREATE USER
-CREATE USER otptestssl@localhost IDENTIFIED BY 'OtpTestSSL--123' REQUIRE SSL;
-GRANT ALL PRIVILEGES ON otptest.* TO otptestssl@localhost;
-```
-
-Before running the test suite `ssl_tests` you'll also need to generate SSL files
-and MySQL extra config file. In order to do so, please execute `make tests-prep`.
-
-The MySQL server configuration must include `my-ssl.cnf` file,
-which can be found in `test/ssl/`.
-**Do not run** `make tests-prep` after you start MySQL,
-because CA certificates will no longer match.
+To quickly setup a test environment, execute `.ci/prep.sh`, then execute `make tests`.
 
 If you run `make tests COVER=1` a coverage report will be generated. Open
 `cover/index.html` to see that any lines you have added or modified are covered
