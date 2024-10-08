@@ -8,10 +8,12 @@ export MYSQL_CERTS_DIR='/etc/mysql_certs'
 
 mkdir -p .ci/run .ci/certs
 SSLDIR=/etc/mysql_certs make tests-prep
+mv test/ssl/my-ssl.cnf .ci/
+# Need to run with sudo here because later the files are changed to be owned by mysql user in docker container
+# If the script is re-run (probably not in CI, but when running locally), cp without sudo will fail.
 sudo cp test/ssl/ca.pem .ci/certs/
 sudo mv test/ssl/server-key.pem .ci/certs/
 sudo mv test/ssl/server-cert.pem .ci/certs/
-mv test/ssl/my-ssl.cnf .ci/
 sudo chmod 660 .ci/certs/*
 
 if [ ${MYSQL_VERSION} = '8.4' ]; then
