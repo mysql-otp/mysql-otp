@@ -66,7 +66,7 @@ assert_init_exit(Err) ->
             ?assertMatch(Err, Reason),
             ok
     after
-        1_000 ->
+        1000 ->
             error(exit_signal_not_received)
     end.
 -endif.
