@@ -829,21 +829,38 @@ decimal_trunc(_Pid) ->
     end),
     ?assertMatch("Note 1265: Data truncated for column 'balance'" ++ _,
                  LoggedWarning2),
-    %% TODO fix this test
-    %% latest test seem to emit warning anyways
     %% Decimal sent as DECIMAL => no warning
-    % {ok, ok, []} = error_logger_acc:capture(fun () ->
-    %     ok = mysql:execute(Pid, decr, [{decimal, <<"10.2">>}, 3]),
-    %     ok = mysql:execute(Pid, decr, [{decimal, "10.2"}, 3]),
-    %     ok = mysql:execute(Pid, decr, [{decimal, 10.2}, 3]),
-    %     ok = mysql:execute(Pid, decr, [{decimal, 10.2}, 3]),
-    %     ok = mysql:execute(Pid, decr, [{decimal, 0}, 3]) % <- integer coverage
-    % end),
-    %?assertMatch({ok, _, [[1, 4959.2], [2, 4959.2], [3, 4959.2]]},
-    ?assertMatch({ok, _, [[1, 4959.2], [2, 4959.2], [3, _]]},
+     {ok, ok, MaybeWarning} = error_logger_acc:capture(fun () ->
+         ok = mysql:execute(Pid, decr, [{decimal, <<"10.2">>}, 3]),
+         ok = mysql:execute(Pid, decr, [{decimal, "10.2"}, 3]),
+         ok = mysql:execute(Pid, decr, [{decimal, 10.2}, 3]),
+         ok = mysql:execute(Pid, decr, [{decimal, 10.2}, 3]),
+         ok = mysql:execute(Pid, decr, [{decimal, 0}, 3]) % <- integer coverage
+     end),
+    ?assertMatch({ok, _, [[1, 4959.2], [2, 4959.2], [3, 4959.2]]},
                  mysql:query(Pid, <<"SELECT id, balance FROM test_decimals">>)),
+    assert_decimal_trunctation_warning(MaybeWarning),
     ok = mysql:query(Pid, "DROP TABLE test_decimals"),
     ok = mysql:stop(Pid).
+
+%% Asserts when running CI
+%% Assume MYSQL_IMAGE is set to 'mariadb' or 'mysql',
+%% and MYSQL_VERSION is also set respectively
+assert_decimal_trunctation_warning([]) -> ok;
+assert_decimal_trunctation_warning([{warning_msg, Msg}]) ->
+    ?assertMatch("Note 1265: Data truncated for column 'balance'" ++ _, Msg),
+    case os:getenv("MYSQL_IMAGE") of
+        "mariadb" ->
+            throw("not expecting mariadb to emit warning " ++ Msg);
+        _ ->
+            ok
+    end,
+    case {os:getenv("MYSQL_IMAGE"), os:getenv("MYSQL_VERSION")} of
+        {"mysql", "5." ++ _} ->
+            throw("not expecting MySQL 5.x to emit warning: " ++ Msg);
+        _ ->
+            ok
+    end.
 
 float_as_decimal(_Pid) ->
     %% Create another connection with {float_as_decimal, true}

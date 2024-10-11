@@ -1,8 +1,15 @@
 #!/bin/bash
 
+## This script is to start MySQL or MariaDB in docker container
+## for test cases to run.
+## It is used in GitHub Actions, but can also be used to setup
+## a test environment locally.
+## Set MYSQL_IMAGE to mysql or mariadb
+## And MYSQL_VERSION respectively
+
 set -euo pipefail
 
-set -x
+export MYSQL_IMAGE="${MYSQL_IMAGE:-mysql}"
 export MYSQL_VERSION="${MYSQL_VERSION:-8.4}"
 export MYSQL_CERTS_DIR='/etc/mysql_certs'
 
@@ -21,13 +28,13 @@ if [ ${MYSQL_VERSION} = '8.4' ]; then
 fi
 
 # the host has no mysql user, issue a docker run command to change owner
-docker run --rm -t -v $(pwd)/.ci/certs:${MYSQL_CERTS_DIR} mysql:${MYSQL_VERSION} chown -R mysql:mysql ${MYSQL_CERTS_DIR}
+docker run --rm -t -v $(pwd)/.ci/certs:${MYSQL_CERTS_DIR} ${MYSQL_IMAGE}:${MYSQL_VERSION} chown -R mysql:mysql ${MYSQL_CERTS_DIR}
 # now start mysql with config files and certificate files mouted as volumes
 docker compose -f .ci/docker-compose.yml up -d --wait
 
 # wait for mysqld to be ready
 is_mysqld_ready() {
-    docker logs mysql 2>&1 | grep -qE 'socket:\s.+var/run/.+port:\s3306'
+    docker logs mysql 2>&1 | grep -qE 'socket:\s.+/run/.+port:\s3306'
 }
 
 MAX_ATTEMPTS=6

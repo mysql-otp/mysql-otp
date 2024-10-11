@@ -1,7 +1,7 @@
 services:
   mysql:
     container_name: mysql
-    image: mysql:${MYSQL_VERSION}
+    image: ${MYSQL_IMAGE}:${MYSQL_VERSION}
     restart: always
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: true
