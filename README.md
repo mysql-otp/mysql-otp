@@ -123,7 +123,14 @@ Set environemt variable `MYSQL_IMAGE=mysql|mariadb` and `MYSQL_VERSION` to pick 
 
 To test aginast MySQL or MariaDB running in localhost, follow the below steps:
 
-- Start MySQL or MariaDB.
+- Stop MySQL service
+- Generate SSL certificates by running `make -C test/ssl`
+- Copy `test/ssl/server-{cert,key}.pem` to `/etc/mysql/`
+- Copy `test/ssl/ca.pem` to `/etc/mysql/`
+- Change certificate file modes: `sudo chmod -R 660 /etc/mysql/*.pem`
+- Change certificate file owner: `sudo chown mysql:mysql /etc/mysql/*.pem`
+- Append SSL configs: `cat test/ssl/my-ssl.cnf | sudo tee -a /etc/mysql/conf.d/my-ssl.cnf`
+- Start MySQL service
 - Run script `./scripts/init.sh` to prepare for test users.
 - Run `make tests`.
 
