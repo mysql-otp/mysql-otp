@@ -314,12 +314,11 @@ socket_backend_test() ->
                                     {user, ?user}, {password, ?password},
                                     {tcp_options, [{inet_backend, socket}]}]) of
                 {ok, Pid2} ->
-                    ?assertEqual({ok, [<<"1">>], [[1]]},
-                                    mysql:query(Pid2, <<"SELECT 1">>)),
+                    ?assertEqual({ok, [<<"1">>], [[1]]}, mysql:query(Pid2, <<"SELECT 1">>)),
                     mysql:stop(Pid2);
                 {error, eafnotsupported} ->
                     error_logger:info_msg("Skipping socket backend test. "
-                                            "Not supported on this OS.~n")
+                                          "Not supported on this OS.~n")
             end;
         {error, eafnosupport} ->
             error_logger:info_msg("Skipping unix socket test. Not supported on this OS.~n")
@@ -774,6 +773,7 @@ decimal_trunc(_Pid) ->
     %% Create another connection with log_warnings enabled.
     {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
                                   {log_warnings, true}]),
+    VersionStr = db_version_string(Pid),
     ok = mysql:query(Pid, <<"USE otptest">>),
     ok = mysql:query(Pid, <<"SET autocommit = 1">>),
     ok = mysql:query(Pid, <<"SET SESSION sql_mode = ?">>, [?SQL_MODE]),
@@ -806,36 +806,32 @@ decimal_trunc(_Pid) ->
     ?assertMatch("Note 1265: Data truncated for column 'balance'" ++ _,
                  LoggedWarning2),
     %% Decimal sent as DECIMAL => no warning
-     {ok, ok, MaybeWarning} = error_logger_acc:capture(fun () ->
-         ok = mysql:execute(Pid, decr, [{decimal, <<"10.2">>}, 3]),
-         ok = mysql:execute(Pid, decr, [{decimal, "10.2"}, 3]),
-         ok = mysql:execute(Pid, decr, [{decimal, 10.2}, 3]),
-         ok = mysql:execute(Pid, decr, [{decimal, 10.2}, 3]),
-         ok = mysql:execute(Pid, decr, [{decimal, 0}, 3]) % <- integer coverage
-     end),
+    {ok, ok, MaybeWarning} = error_logger_acc:capture(fun () ->
+        ok = mysql:execute(Pid, decr, [{decimal, <<"10.2">>}, 3]),
+        ok = mysql:execute(Pid, decr, [{decimal, "10.2"}, 3]),
+        ok = mysql:execute(Pid, decr, [{decimal, 10.2}, 3]),
+        ok = mysql:execute(Pid, decr, [{decimal, 10.2}, 3]),
+        ok = mysql:execute(Pid, decr, [{decimal, 0}, 3]) % <- integer coverage
+    end),
     ?assertMatch({ok, _, [[1, 4959.2], [2, 4959.2], [3, 4959.2]]},
                  mysql:query(Pid, <<"SELECT id, balance FROM test_decimals">>)),
-    assert_decimal_trunctation_warning(MaybeWarning),
+    assert_decimal_trunctation_warning(VersionStr, MaybeWarning),
     ok = mysql:query(Pid, "DROP TABLE test_decimals"),
     ok = mysql:stop(Pid).
 
-%% Asserts when running CI
-%% Assume MYSQL_IMAGE is set to 'mariadb' or 'mysql',
-%% and MYSQL_VERSION is also set respectively
-assert_decimal_trunctation_warning([]) -> ok;
-assert_decimal_trunctation_warning([{warning_msg, Msg}]) ->
+assert_decimal_trunctation_warning(_VersionStr, []) -> ok;
+assert_decimal_trunctation_warning(VersionStr, [{warning_msg, Msg}]) ->
     ?assertMatch("Note 1265: Data truncated for column 'balance'" ++ _, Msg),
-    case os:getenv("MYSQL_IMAGE") of
-        "mariadb" ->
-            throw("not expecting mariadb to emit warning " ++ Msg);
-        _ ->
-            ok
-    end,
-    case {os:getenv("MYSQL_IMAGE"), os:getenv("MYSQL_VERSION")} of
-        {"mysql", "5." ++ _} ->
-            throw("not expecting MySQL 5.x to emit warning: " ++ Msg);
-        _ ->
-            ok
+    case is_mariadb(VersionStr) of
+        true ->
+            throw("Not expecting mariadb to emit warning: " ++ Msg);
+        false ->
+            case parse_db_version(VersionStr) of
+                [5 | _] ->
+                    throw("Not expecting MySQL 5.x to emit warning: " ++ Msg);
+                _ ->
+                    ok
+            end
     end.
 
 float_as_decimal(_Pid) ->
