@@ -15,6 +15,7 @@ if command -v mysql >/dev/null 2>&1; then
 else
     CMD=mariadb
 fi
+
 $CMD -uroot -e "CREATE USER 'otptest'@'%' IDENTIFIED BY 'OtpTest--123';"
 $CMD -uroot -e "GRANT ALL PRIVILEGES ON otptest.* TO 'otptest'@'%';"
 $CMD -uroot -e "CREATE USER 'otptest2'@'%' IDENTIFIED BY 'OtpTest2--123';"

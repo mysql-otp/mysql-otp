@@ -1,7 +1,6 @@
 MySQL/OTP
 =========
 
-[![Build Status](https://travis-ci.org/mysql-otp/mysql-otp.svg?branch=master)](https://travis-ci.org/mysql-otp/mysql-otp)
  :link: [Test coverage (EUnit)](//mysql-otp.github.io/mysql-otp/eunit.html)
  :link: [API documentation (EDoc)](//mysql-otp.github.io/mysql-otp/index.html)
  :link: [Hex package](//hex.pm/packages/mysql)
@@ -117,7 +116,7 @@ To run individual test suites, use `make eunit t=SUITE` where SUITE is one of
 The encode and protocol test suites does not require a
 running MySQL server on localhost.
 
-To quickly setup a test environment, execute `.ci/prep.sh`, then execute `make tests`.
+To quickly setup a test environment, execute `make tests-prep`, then execute `make tests`.
 
 If you run `make tests COVER=1` a coverage report will be generated. Open
 `cover/index.html` to see that any lines you have added or modified are covered
