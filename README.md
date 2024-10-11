@@ -116,7 +116,16 @@ To run individual test suites, use `make eunit t=SUITE` where SUITE is one of
 The encode and protocol test suites does not require a
 running MySQL server on localhost.
 
-To quickly setup a test environment, execute `make tests-prep`, then execute `make tests`.
+To quickly setup MySQL or MariaDB runing in docker for testing,
+execute `make tests-prep`, then execute `make tests`.
+
+Set environemt variable `MYSQL_IMAGE=mysql|mariadb` and `MYSQL_VERSION` to pick a flavor.
+
+To test aginast MySQL or MariaDB running in localhost, follow the below steps:
+
+- Start MySQL or MariaDB.
+- Run script `./scripts/init.sh` to prepare for test users.
+- Run `make tests`.
 
 If you run `make tests COVER=1` a coverage report will be generated. Open
 `cover/index.html` to see that any lines you have added or modified are covered

@@ -278,7 +278,15 @@ reset_connection_test() ->
     ok.
 
 run_dir() ->
-    filename:join(["scripts", "run"]).
+    CiDir = filename:join(["scripts", "run"]),
+    case filelib:wildcard("*.pid", CiDir) of
+        [] ->
+            %% Assume MySQL or MariaDB is running in host
+            "/var/run/mysqld/";
+        _ ->
+            %% This is the mouted dir for MySQL or MariaDb running in docker
+            CiDir
+    end.
 
 unix_socket_test() ->
     %% Get socket file to use
