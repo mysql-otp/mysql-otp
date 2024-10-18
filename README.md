@@ -131,7 +131,9 @@ To test aginast MySQL or MariaDB running in localhost, follow the below steps:
 - Change certificate file owner: `sudo chown mysql:mysql /etc/mysql/*.pem`
 - Append SSL configs: `cat test/ssl/my-ssl.cnf | sudo tee -a /etc/mysql/conf.d/my-ssl.cnf`
 - Start MySQL service
-- Run script `./scripts/init.sh` to prepare for test users.
+- Run `sudo ./scripts/init.sh` to prepare for test users.
+  The script connects to the database on localhost as root and creates users.
+  Alternatively, look into the script and perform the steps manually.
 - Run `make tests`.
 
 If you run `make tests COVER=1` a coverage report will be generated. Open
