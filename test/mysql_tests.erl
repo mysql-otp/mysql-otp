@@ -284,7 +284,7 @@ run_dir() ->
             %% Assume MySQL or MariaDB is running in host
             "/var/run/mysqld/";
         _ ->
-            %% This is the mouted dir for MySQL or MariaDb running in docker
+            %% This is the mounted dir for MySQL or MariaDb running in docker
             CiDir
     end.
 
@@ -292,26 +292,26 @@ unix_socket_test() ->
     %% Get socket file to use
     Dir = run_dir(),
     {ok, Pid1} = mysql:start_link([{user, ?user},
-                                    {password, ?password}]),
+                                   {password, ?password}]),
     {ok, [<<"@@socket">>], [[SockFile0]]} = mysql:query(Pid1, "SELECT @@socket"),
     SockFile = filename:join([Dir, filename:basename(SockFile0)]),
     mysql:stop(Pid1),
     %% Connect through unix socket
     case mysql:start_link([{host, {local, SockFile}},
-                            {user, ?user}, {password, ?password}]) of
+                           {user, ?user}, {password, ?password}]) of
         {ok, Pid2} ->
             ?assertEqual({ok, [<<"1">>], [[1]]},
                             mysql:query(Pid2, <<"SELECT 1">>)),
             mysql:stop(Pid2);
         {error, eafnosupport} ->
             error_logger:info_msg("Skipping unix socket test. "
-                                    "Not supported on this OS.~n")
+                                  "Not supported on this OS.~n")
     end.
 
 socket_backend_test() ->
     case mysql:start_link([{user, ?user},
-                            {password, ?password},
-                            {tcp_options, [{inet_backend, socket}]}])
+                           {password, ?password},
+                           {tcp_options, [{inet_backend, socket}]}])
     of
         {ok, Pid1} ->
             Dir = run_dir(),
@@ -319,8 +319,8 @@ socket_backend_test() ->
             SockFile = filename:join([Dir, filename:basename(SockFile0)]),
             mysql:stop(Pid1),
             case mysql:start_link([{host, {local, SockFile}},
-                                    {user, ?user}, {password, ?password},
-                                    {tcp_options, [{inet_backend, socket}]}]) of
+                                   {user, ?user}, {password, ?password},
+                                   {tcp_options, [{inet_backend, socket}]}]) of
                 {ok, Pid2} ->
                     ?assertEqual({ok, [<<"1">>], [[1]]}, mysql:query(Pid2, <<"SELECT 1">>)),
                     mysql:stop(Pid2);
@@ -827,18 +827,36 @@ decimal_trunc(_Pid) ->
     ok = mysql:query(Pid, "DROP TABLE test_decimals"),
     ok = mysql:stop(Pid).
 
-assert_decimal_trunctation_warning(_VersionStr, []) -> ok;
-assert_decimal_trunctation_warning(VersionStr, [{warning_msg, Msg}]) ->
-    ?assertMatch("Note 1265: Data truncated for column 'balance'" ++ _, Msg),
+assert_decimal_trunctation_warning(VersionStr, MaybeWarning) ->
+    case is_decimal_truncation_warning_expected(VersionStr) of
+        true ->
+            case MaybeWarning of
+                [] ->
+                    throw("Expecting " ++ VersionStr ++ " to emit decimal truncation warning, but it did not");
+                [{warning_msg, Msg}] ->
+                    ?assertMatch("Note 1265: Data truncated for column 'balance'" ++ _, Msg)
+            end;
+        false ->
+            case MaybeWarning  of
+                [] ->
+                    ok;
+                [{warning_msg, Msg}] ->
+                    throw("Not expecting " ++ VersionStr ++ "to emit decimal truncation warning, but got: " ++ Msg)
+            end
+    end.
+
+is_decimal_truncation_warning_expected(VersionStr) ->
     case is_mariadb(VersionStr) of
         true ->
-            throw("Not expecting mariadb to emit warning: " ++ Msg);
+            false;
         false ->
             case parse_db_version(VersionStr) of
-                [5 | _] ->
-                    throw("Not expecting MySQL 5.x to emit warning: " ++ Msg);
+                [8 | _] ->
+                    true;
+                [9 | _] ->
+                    true;
                 _ ->
-                    ok
+                    false
             end
     end.
 
