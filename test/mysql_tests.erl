@@ -55,6 +55,22 @@ connect_synchronous_test() ->
     mysql:stop(Pid),
     ok.
 
+-if(?OTP_RELEASE >= 26).
+assert_init_exit(_) ->
+    %% OTP 26 release note: proc_lib:start*/* has become synchronous when the started process fails
+    ok.
+-else.
+assert_init_exit(Err) ->
+    receive
+        {'EXIT', _From, Reason} ->
+            ?assertMatch(Err, Reason),
+            ok
+    after
+        1000 ->
+            error(exit_signal_not_received)
+    end.
+-endif.
+
 connect_asynchronous_successful_test() ->
     {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
                                   {connect_mode, asynchronous}]),
@@ -99,11 +115,7 @@ failing_connect_test() ->
     ?assertMatch([_|_], Logged), % some errors logged
     {error, Error} = Ret,
     true = is_access_denied(Error),
-    receive
-        {'EXIT', _Pid, Error} -> ok
-    after 1000 ->
-        error(no_exit_message)
-    end,
+    assert_init_exit(Error),
     process_flag(trap_exit, false).
 
 successful_connect_test() ->
@@ -249,6 +261,7 @@ reset_connection_test() ->
     %% Ignored test with MySQL earlier than 5.7
     Options = [{user, ?user}, {password, ?password}, {keep_alive, true}],
     {ok, Pid} = mysql:start_link(Options),
+    ok = mysql:query(Pid, <<"DROP DATABASE IF EXISTS otptest">>),
     ok = mysql:query(Pid, <<"CREATE DATABASE otptest">>),
     ok = mysql:query(Pid, <<"USE otptest">>),
     ok = mysql:query(Pid, <<"SET autocommit = 1">>),
@@ -264,76 +277,59 @@ reset_connection_test() ->
     mysql:stop(Pid),
     ok.
 
+run_dir() ->
+    CiDir = filename:join(["scripts", "run"]),
+    case filelib:wildcard("*.pid", CiDir) of
+        [] ->
+            %% Assume MySQL or MariaDB is running in host
+            "/var/run/mysqld/";
+        _ ->
+            %% This is the mounted dir for MySQL or MariaDb running in docker
+            CiDir
+    end.
+
 unix_socket_test() ->
-    try
-        list_to_integer(erlang:system_info(otp_release))
-    of
-        %% Supported in OTP >= 19
-        OtpRelease when OtpRelease >= 19 ->
-            %% Get socket file to use
-            {ok, Pid1} = mysql:start_link([{user, ?user},
-                                           {password, ?password}]),
-            {ok, [<<"@@socket">>], [SockFile]} = mysql:query(Pid1,
-                                                             "SELECT @@socket"),
-            mysql:stop(Pid1),
-            %% Connect through unix socket
-            case mysql:start_link([{host, {local, SockFile}},
-                                   {user, ?user}, {password, ?password}]) of
-                {ok, Pid2} ->
-                    ?assertEqual({ok, [<<"1">>], [[1]]},
-                                 mysql:query(Pid2, <<"SELECT 1">>)),
-                    mysql:stop(Pid2);
-                {error, eafnosupport} ->
-                    error_logger:info_msg("Skipping unix socket test. "
-                                          "Not supported on this OS.~n")
-            end;
-        OtpRelease ->
-            error_logger:info_msg("Skipping unix socket test. Current OTP "
-                                  "release is ~B. Required release is >= 19.~n",
-                                  [OtpRelease])
-    catch
-        error:badarg ->
-            error_logger:info_msg("Skipping unix socket tests. Current OTP "
-                                  "release could not be determined.~n")
+    %% Get socket file to use
+    Dir = run_dir(),
+    {ok, Pid1} = mysql:start_link([{user, ?user},
+                                   {password, ?password}]),
+    {ok, [<<"@@socket">>], [[SockFile0]]} = mysql:query(Pid1, "SELECT @@socket"),
+    SockFile = filename:join([Dir, filename:basename(SockFile0)]),
+    mysql:stop(Pid1),
+    %% Connect through unix socket
+    case mysql:start_link([{host, {local, SockFile}},
+                           {user, ?user}, {password, ?password}]) of
+        {ok, Pid2} ->
+            ?assertEqual({ok, [<<"1">>], [[1]]},
+                            mysql:query(Pid2, <<"SELECT 1">>)),
+            mysql:stop(Pid2);
+        {error, eafnosupport} ->
+            error_logger:info_msg("Skipping unix socket test. "
+                                  "Not supported on this OS.~n")
     end.
 
 socket_backend_test() ->
-    try
-        list_to_integer(erlang:system_info(otp_release))
+    case mysql:start_link([{user, ?user},
+                           {password, ?password},
+                           {tcp_options, [{inet_backend, socket}]}])
     of
-        %% Supported in OTP >= 23
-        OtpRelease when OtpRelease >= 23 ->
-            case mysql:start_link([{user, ?user},
-                                   {password, ?password},
-                                   {tcp_options, [{inet_backend, socket}]}])
-            of
-                {ok, Pid1} ->
-                    {ok, [<<"@@socket">>], [[SockFile]]} =
-                                 mysql:query(Pid1, <<"SELECT @@socket">>),
-                    mysql:stop(Pid1),
-                    case mysql:start_link([{host, {local, SockFile}},
-                                           {user, ?user}, {password, ?password},
-                                           {tcp_options, [{inet_backend, socket}]}]) of
-                        {ok, Pid2} ->
-                            ?assertEqual({ok, [<<"1">>], [[1]]},
-                                         mysql:query(Pid2, <<"SELECT 1">>)),
-                            mysql:stop(Pid2);
-                        {error, eafnotsupported} ->
-                            error_logger:info_msg("Skipping socket backend test. "
-                                                  "Not supported on this OS.~n")
-                    end;
-                {error, enotsup} ->
+        {ok, Pid1} ->
+            Dir = run_dir(),
+            {ok, [<<"@@socket">>], [[SockFile0]]} = mysql:query(Pid1, <<"SELECT @@socket">>),
+            SockFile = filename:join([Dir, filename:basename(SockFile0)]),
+            mysql:stop(Pid1),
+            case mysql:start_link([{host, {local, SockFile}},
+                                   {user, ?user}, {password, ?password},
+                                   {tcp_options, [{inet_backend, socket}]}]) of
+                {ok, Pid2} ->
+                    ?assertEqual({ok, [<<"1">>], [[1]]}, mysql:query(Pid2, <<"SELECT 1">>)),
+                    mysql:stop(Pid2);
+                {error, eafnotsupported} ->
                     error_logger:info_msg("Skipping socket backend test. "
                                           "Not supported on this OS.~n")
             end;
-        OtpRelease ->
-            error_logger:info_msg("Skipping socket backend test. Current OTP "
-                                  "release is ~B. Required release is >= 23.~n",
-                                  [OtpRelease])
-    catch
-        error:badarg ->
-            error_logger:info_msg("Skipping socket backend tests. Current OTP "
-                                  "release could not be determined.~n")
+        {error, eafnosupport} ->
+            error_logger:info_msg("Skipping unix socket test. Not supported on this OS.~n")
     end.
 
 connect_queries_failure_test() ->
@@ -345,28 +341,21 @@ connect_queries_failure_test() ->
         end),
     ?assertMatch([{error_report, {crash_report, _}}], Logged),
     {error, Reason} = Ret,
-    receive
-        {'EXIT', _Pid, Reason} -> ok
-    after 1000 ->
-        exit(no_exit_message)
-    end,
+    assert_init_exit(Reason),
     process_flag(trap_exit, false).
 
 connect_prepare_failure_test() ->
     process_flag(trap_exit, true),
     {ok, Ret, Logged} = error_logger_acc:capture(
         fun () ->
-            mysql:start_link([{user, ?user}, {password, ?password},
-                                                {prepare, [{foo, "foo"}]}])
+            mysql:start_link([{user, ?user},
+                              {password, ?password},
+                              {prepare, [{foo, "foo"}]}])
         end),
     ?assertMatch([{error_report, {crash_report, _}}], Logged),
     {error, Reason} = Ret,
     ?assertMatch({1064, <<"42000">>, <<"You have an erro", _/binary>>}, Reason),
-    receive
-        {'EXIT', _Pid, Reason} -> ok
-    after 1000 ->
-        exit(no_exit_message)
-    end,
+    assert_init_exit(Reason),
     process_flag(trap_exit, false).
 
 %% For R16B where sys:get_state/1 is not available.
@@ -792,6 +781,7 @@ decimal_trunc(_Pid) ->
     %% Create another connection with log_warnings enabled.
     {ok, Pid} = mysql:start_link([{user, ?user}, {password, ?password},
                                   {log_warnings, true}]),
+    VersionStr = db_version_string(Pid),
     ok = mysql:query(Pid, <<"USE otptest">>),
     ok = mysql:query(Pid, <<"SET autocommit = 1">>),
     ok = mysql:query(Pid, <<"SET SESSION sql_mode = ?">>, [?SQL_MODE]),
@@ -824,7 +814,7 @@ decimal_trunc(_Pid) ->
     ?assertMatch("Note 1265: Data truncated for column 'balance'" ++ _,
                  LoggedWarning2),
     %% Decimal sent as DECIMAL => no warning
-    {ok, ok, []} = error_logger_acc:capture(fun () ->
+    {ok, ok, MaybeWarning} = error_logger_acc:capture(fun () ->
         ok = mysql:execute(Pid, decr, [{decimal, <<"10.2">>}, 3]),
         ok = mysql:execute(Pid, decr, [{decimal, "10.2"}, 3]),
         ok = mysql:execute(Pid, decr, [{decimal, 10.2}, 3]),
@@ -833,8 +823,42 @@ decimal_trunc(_Pid) ->
     end),
     ?assertMatch({ok, _, [[1, 4959.2], [2, 4959.2], [3, 4959.2]]},
                  mysql:query(Pid, <<"SELECT id, balance FROM test_decimals">>)),
+    assert_decimal_trunctation_warning(VersionStr, MaybeWarning),
     ok = mysql:query(Pid, "DROP TABLE test_decimals"),
     ok = mysql:stop(Pid).
+
+assert_decimal_trunctation_warning(VersionStr, MaybeWarning) ->
+    case is_decimal_truncation_warning_expected(VersionStr) of
+        true ->
+            case MaybeWarning of
+                [] ->
+                    throw("Expecting " ++ VersionStr ++ " to emit decimal truncation warning, but it did not");
+                [{warning_msg, Msg}] ->
+                    ?assertMatch("Note 1265: Data truncated for column 'balance'" ++ _, Msg)
+            end;
+        false ->
+            case MaybeWarning  of
+                [] ->
+                    ok;
+                [{warning_msg, Msg}] ->
+                    throw("Not expecting " ++ VersionStr ++ "to emit decimal truncation warning, but got: " ++ Msg)
+            end
+    end.
+
+is_decimal_truncation_warning_expected(VersionStr) ->
+    case is_mariadb(VersionStr) of
+        true ->
+            false;
+        false ->
+            case parse_db_version(VersionStr) of
+                [8 | _] ->
+                    true;
+                [9 | _] ->
+                    true;
+                _ ->
+                    false
+            end
+    end.
 
 float_as_decimal(_Pid) ->
     %% Create another connection with {float_as_decimal, true}

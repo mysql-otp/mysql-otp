@@ -1,0 +1,25 @@
+services:
+  mysql:
+    container_name: mysql
+    image: ${MYSQL_IMAGE}:${MYSQL_VERSION}
+    restart: always
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: true
+    ports:
+      - "3306:3306"
+    volumes:
+      - type: bind
+        source: ./my-otp.cnf
+        target: /etc/mysql/conf.d/my-otp.cnf
+      - type: bind
+        source: ./my-ssl.cnf
+        target: /etc/mysql/conf.d/my-ssl.cnf
+      - type: bind
+        source: ./certs/
+        target: ${MYSQL_CERTS_DIR}
+      - type: bind
+        source: ./run/
+        target: /var/run/mysqld/
+      - type: bind
+        source: ./init.sh
+        target: /init.sh

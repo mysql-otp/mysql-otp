@@ -1,0 +1,37 @@
+---
+name: build
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+jobs:
+  ci:
+    name: CI
+    runs-on: ${{matrix.os}}
+    strategy:
+      fail-fast: false
+      matrix:
+        otp: [24, 25, 26]
+        image:
+          - ["mysql", "5.7"]
+          - ["mysql", "8.4"]
+          - ["mysql", "9.0"]
+          - ["mariadb", "10"]
+          - ["mariadb", "11"]
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{matrix.otp}}
+          rebar3-version: 3.20.0
+      - name: Set up environment variables
+        run: |
+          set -x
+          export MYSQL_IMAGE=${{ matrix.image[0] }}
+          export MYSQL_VERSION=${{ matrix.image[1] }}
+          make tests-prep
+          make tests

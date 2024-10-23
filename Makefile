@@ -23,11 +23,13 @@ ERLANG_MK_BUILD_CONFIG = erlang-mk.build.config
 include erlang.mk
 
 # Generate keys for SSL tests. Requires configuring and restarting MySQL.
+# Start MySQL or MariaDB in docker
 tests-prep:
-	$(MAKE) -C test/ssl
+	./scripts/prep.sh
 
 distclean::
 	$(MAKE) -C test/ssl clean
+	docker rm -f mysql
 
 CHANGELOG.md:
 	priv/bin/changelog.sh > $@
