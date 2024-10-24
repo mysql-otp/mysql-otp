@@ -239,30 +239,7 @@ stop(Conn) ->
     when Conn :: connection(),
          Timeout :: timeout().
 stop(Conn, Timeout) ->
-    case erlang:function_exported(gen_server, stop, 3) of
-        true -> gen_server:stop(Conn, normal, Timeout);            %% OTP >= 18
-        false -> backported_gen_server_stop(Conn, normal, Timeout) %% OTP < 18
-    end.
-
--spec backported_gen_server_stop(Conn, Reason, Timeout) -> ok
-    when Conn :: connection(),
-         Reason :: term(),
-         Timeout :: timeout().
-backported_gen_server_stop(Conn, Reason, Timeout) ->
-    Monitor=monitor(process, Conn),
-    exit(Conn, Reason),
-    receive
-        {'DOWN', Monitor, process, Conn, Reason} ->
-            ok;
-        {'DOWN', Monitor, process, Conn, UnexpectedReason} ->
-            exit(UnexpectedReason)
-    after Timeout ->
-        exit(Conn, kill),
-        receive
-            {'DOWN', Monitor, process, Conn, killed} ->
-                exit(timeout)
-        end
-    end.
+    gen_server:stop(Conn, normal, Timeout).
 
 %% @private
 -spec is_connected(Conn) -> boolean()
