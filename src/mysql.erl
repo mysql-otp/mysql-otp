@@ -490,7 +490,7 @@ execute(Conn, StatementRef, Params, FilterMap) when FilterMap == no_filtermap_fu
 %% See `query/5' for an explanation of the `FilterMap' argument.
 %%
 %% Note that if this function is called on a connection which is already in transaction 
-%% owned by another process, `{error, busy}` will be returned.
+%% owned by another process, `{error, busy}' will be returned.
 %%
 %% @see prepare/2
 %% @see prepare/3

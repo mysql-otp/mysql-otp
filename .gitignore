@@ -32,3 +32,5 @@ _build/
 scripts/run/
 scripts/certs/
 scripts/my-ssl.cnf
+mysql_dialyzer_*
+*.tmp

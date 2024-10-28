@@ -21,5 +21,5 @@
     {vsn, "1.8.0"},
     {modules, []},
     {registered, []},
-    {applications, [kernel,stdlib,ssl]}
+    {applications, [kernel,stdlib,ssl,public_key]}
 ]}.

@@ -39,6 +39,10 @@
 -type cache(K, V) ::
     {cache, erlang:timestamp(), dict:dict(K, {V, non_neg_integer()})} | empty.
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 %% @doc Deletes the entries that have not been used for `MaxAge' milliseconds
 %% and returns them along with the new state.
 -spec evict_older_than(Cache :: cache(K, V), MaxAge :: non_neg_integer()) ->
@@ -104,7 +108,6 @@ store(Key, Value, empty) ->
     {cache, os:timestamp(), dict:store(Key, {Value, 0}, dict:new())}.
 
 -ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
 
 empty_test() ->
     ?assertEqual(empty, ?MODULE:new()),

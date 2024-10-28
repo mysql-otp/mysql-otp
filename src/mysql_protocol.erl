@@ -48,6 +48,9 @@
 -include("records.hrl").
 -include("protocol.hrl").
 -include("server_status.hrl").
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 %% Macros for pattern matching on packets.
 -define(ok_pattern, <<?OK, _/binary>>).
@@ -444,7 +447,7 @@ ssl_connect(Handshake, Host, Port, ConfigSSLOpts, Timeout) ->
 
 
 %% @doc Determines which ssl versions to use according to server vendor and version
-%% since almostly, mysql < 5.7.0 and mariadb < 10.1.0 supports only tlsv1
+%% since almostly, mysql earlier than 5.7.0 and mariadb earlier than 10.1.0 supports only tlsv1
 -spec determine_ssl_versions(#handshake{}) -> list().
 determine_ssl_versions(#handshake{server_vendor = mysql, server_version = Version}) when Version < [5, 7, 0] ->
     [tlsv1];
@@ -1611,7 +1614,6 @@ nulterm_str(Bin) ->
     {String, Rest}.
 
 -ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
 
 %% Testing some of the internal functions, mostly the cases we don't cover in
 %% other tests.
