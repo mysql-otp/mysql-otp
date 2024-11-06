@@ -168,7 +168,7 @@ auth_finish_or_switch(AuthPluginName, AuthPluginData, Password,
             auth_finish_or_switch(AuthPluginName, AuthPluginData, Password, SockModule,
                                   Socket, ServerVersion, SeqNum2);
         {public_key, PubKey} ->
-            %% Serveri has sent its public key (certainly specific to the caching_sha2_password
+            %% Server has sent its public key (certainly specific to the caching_sha2_password
             %% method). We encrypt the password with the public key we received and send
             %% it back to the server.
             EncryptedPassword = encrypt_password(Password, AuthPluginData, PubKey,
@@ -1557,12 +1557,21 @@ encrypt_password(Password, Salt, PubKey, ServerVersion)
     %% Prior to server 8.0.5 the encryption was done using RSA_PKCS1_PADDING.
     %% With 8.0.5 it is done with RSA_PKCS1_OAEP_PADDING."
     RsaPadding = case ServerVersion < [8, 0, 5] of
-        true -> rsa_pkcs1_padding;
-        false -> rsa_pkcs1_oaep_padding
+        true ->
+            error_logger:warning_msg("Using unsafe cipher algorithm padding rsa_pkcs1_padding"),
+            rsa_pkcs1_padding;
+        false ->
+            rsa_pkcs1_oaep_padding
     end,
+
+    %% In OTP 27.0, public_key:encrypt_public was deprecated, and
+    %% de-deprecated again in 27.1. We mitigate the possible deprecation
+    %% warning by putting the module name in a variable and use it to
+    %% perform the call.
     %% The option rsa_pad was renamed to rsa_padding in OTP/22, but rsa_pad
     %% is being kept for backwards compatibility.
-    public_key:encrypt_public(Password2, PubKey, [{rsa_pad, RsaPadding}]);
+    PublicKeyMod = public_key,
+    PublicKeyMod:encrypt_public(Password2, PubKey, [{rsa_pad, RsaPadding}]);
 encrypt_password(Password, Salt, PubKey, ServerVersion) ->
     encrypt_password(iolist_to_binary(Password), Salt, PubKey, ServerVersion).
 
