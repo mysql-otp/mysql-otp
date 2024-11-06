@@ -13,8 +13,6 @@
 %% TODO: Use logger by default and use error_logger only for old OTP releases.
 -module(error_logger_acc).
 
--include("exception.hrl").
-
 %% Public API
 -export([capture/1]).
 
@@ -47,11 +45,11 @@ capture(Fun) when is_function(Fun, 0) ->
             restore_default_logger_handler(DefaultLoggerHandler),
             {ok, Result, error_logger:delete_report_handler(?MODULE)}
     catch
-        ?EXCEPTION(Class, Error, Stacktrace) ->
+        Class:Error:Stacktrace ->
             lists:foreach(fun error_logger:add_report_handler/1, OldHandlers),
             AccumulatedErrors = error_logger:delete_report_handler(?MODULE),
             restore_default_logger_handler(DefaultLoggerHandler),
-            {Class, Error, ?GET_STACK(Stacktrace), AccumulatedErrors}
+            {Class, Error, Stacktrace, AccumulatedErrors}
     end.
 
 %% --- gen_event callbacks ---

@@ -99,8 +99,6 @@
                 | {float_as_decimal, boolean() | non_neg_integer()}
                 | {decode_decimal, decode_decimal()}.
 
--include("exception.hrl").
-
 %% @doc Starts a connection gen_server process and connects to a database. To
 %% disconnect use `mysql:stop/1,2'.
 %%
@@ -701,59 +699,58 @@ execute_transaction(Conn, Fun, Args, Retries) ->
     catch
         %% We are at the top level, try to restart the transaction if there are
         %% retries left
-        ?EXCEPTION(throw, {implicit_rollback, 1, _}, _Stacktrace)
+        throw:{implicit_rollback, 1, _}
           when Retries == infinity ->
             %% In MySQL < 5.7 we're not in a transaction here, but in earlier
             %% versions we are, so we can't use `gen_server:call(Conn,
             %% start_transaction, infinity)' here.
             ok = query(Conn, <<"BEGIN">>),
             execute_transaction(Conn, Fun, Args, infinity);
-        ?EXCEPTION(throw, {implicit_rollback, 1, _}, _Stacktrace)
+        throw:{implicit_rollback, 1, _}
           when Retries > 0 ->
             ok = query(Conn, <<"BEGIN">>),
             execute_transaction(Conn, Fun, Args, Retries - 1);
-        ?EXCEPTION(throw, {implicit_rollback, 1, Reason}, Stacktrace)
+        throw:{implicit_rollback, 1, Reason}:Stacktrace
           when Retries == 0 ->
             %% No more retries. Return 'aborted' along with the deadlock error
             %% and a the trace to the line where the deadlock occurred.
-            Trace = ?GET_STACK(Stacktrace),
             %% In MySQL < 5.7, we are still in a transaction here, but in 5.7+
             %% we're not.  The ROLLBACK executed here has no effect if no
             %% transaction is ongoing.
             ok = gen_server:call(Conn, rollback, infinity),
-            {aborted, {Reason, Trace}};
-        ?EXCEPTION(throw, {implicit_rollback, N, Reason}, Stacktrace)
+            {aborted, {Reason, Stacktrace}};
+        throw:{implicit_rollback, N, Reason}:Stacktrace
           when N > 1 ->
             %% Nested transaction. Bubble out to the outermost level.
             erlang:raise(throw, {implicit_rollback, N - 1, Reason},
-                         ?GET_STACK(Stacktrace));
-        ?EXCEPTION(error, {implicit_commit, _Query} = E, Stacktrace) ->
+                         Stacktrace);
+        error:{implicit_commit, _Query} = E:Stacktrace ->
             %% The called did something like ALTER TABLE which resulted in an
             %% implicit commit. The server has already committed. We need to
             %% jump out of N levels of transactions.
             %%
             %% Returning 'atomic' or 'aborted' would both be wrong. Raise an
             %% exception is the best we can do.
-            erlang:raise(error, E, ?GET_STACK(Stacktrace));
-        ?EXCEPTION(error, change_user_in_transaction = E, Stacktrace) ->
+            erlang:raise(error, E, Stacktrace);
+        error:change_user_in_transaction = E:Stacktrace ->
             %% The called tried to change user inside the transaction, which
             %% is not allowed and a serious mistake. We roll back and raise
             %% an error.
             ok = gen_server:call(Conn, rollback, infinity),
-            erlang:raise(error, E, ?GET_STACK(Stacktrace));
-        ?EXCEPTION(error, reset_connection_in_transaction = E, Stacktrace) ->
+            erlang:raise(error, E, Stacktrace);
+        error:reset_connection_in_transaction = E:Stacktrace ->
             %% The called tried to reset connection inside the transaction, which
             %% is not allowed and a serious mistake. We roll back and raise
             %% an error.
             ok = gen_server:call(Conn, rollback, infinity),
-            erlang:raise(error, E, ?GET_STACK(Stacktrace));
-        ?EXCEPTION(Class, Reason, Stacktrace) ->
+            erlang:raise(error, E, Stacktrace);
+        Class:Reason:Stacktrace ->
             %% We must be able to rollback. Otherwise let's crash.
             ok = gen_server:call(Conn, rollback, infinity),
             %% These forms for throw, error and exit mirror Mnesia's behaviour.
             Aborted = case Class of
                 throw -> {throw, Reason};
-                error -> {Reason, ?GET_STACK(Stacktrace)};
+                error -> {Reason, Stacktrace};
                 exit  -> Reason
             end,
             {aborted, Aborted}
