@@ -28,10 +28,16 @@ jobs:
         with:
           otp-version: ${{matrix.otp}}
           rebar3-version: 3.20.0
-      - name: Set up environment variables
+      - name: Run tests and doc generation
         run: |
           set -x
           export MYSQL_IMAGE=${{ matrix.image[0] }}
           export MYSQL_VERSION=${{ matrix.image[1] }}
+          rebar3 xref
+          rebar3 dialyzer
           make tests-prep
           make tests
+          # also run rebar3 eunit
+          rebar3 eunit -v --cover
+          rebar3 cover
+          rebar3 edoc
