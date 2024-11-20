@@ -27,7 +27,7 @@
 -define(cacertfile,   "test/ssl/ca.pem").
 
 successful_ssl_connect_test() ->
-    [ application:start(App) || App <- [crypto, asn1, public_key, ssl] ],
+    ok = start_apps(),
     common_basic_check([{ssl, [{server_name_indication, disable},
                                {cacertfile, ?cacertfile}]},
                         {user, ?ssl_user}, {password, ?ssl_password}]),
@@ -48,3 +48,25 @@ common_basic_check(ExtraOpts) ->
 common_conn_close() ->
     Pid = whereis(tardis),
     mysql:stop(Pid, 5000).
+
+owner_down_test() ->
+    ok = start_apps(),
+    Options = [{name, {local, tardis}},
+               {queries, ["SET @foo = 'bar'", "SELECT 1",
+                          "SELECT 1; SELECT 2"]},
+               {prepare, [{foo, "SELECT @foo"}]},
+               {ssl, [{server_name_indication, disable},
+                      {cacertfile, ?cacertfile}]},
+               {user, ?ssl_user}, {password, ?ssl_password}],
+    {ok, Pid} = mysql:start_link(Options),
+    unlink(Pid),
+    Mref = erlang:monitor(process, Pid),
+    Caller = spawn(fun() -> gen_server:call(Pid, start_transaction, 10) end),
+    receive
+        {'DOWN', Mref, _, Pid, Reason} ->
+            ?assertEqual({application_process_died, Caller}, Reason)
+    end.
+
+start_apps() ->
+    {ok, _} = application:ensure_all_started(ssl),
+    ok.
