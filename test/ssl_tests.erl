@@ -65,6 +65,8 @@ owner_down_test() ->
     receive
         {'DOWN', Mref, _, Pid, Reason} ->
             ?assertEqual({application_process_died, Caller}, Reason)
+    after 1000 ->
+        error(down_signal_not_received)
     end.
 
 start_apps() ->
