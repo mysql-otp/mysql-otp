@@ -497,7 +497,7 @@ handle_call(rollback, {FromPid, _},
                            decode_decimal = DecodeDecimal,
                            transaction_levels = [{FromPid, MRef} | L]})
   when Status band ?SERVER_STATUS_IN_TRANS /= 0 ->
-    erlang:demonitor(MRef),
+    erlang:demonitor(MRef, [flush]),
     Query = case L of
         [] -> <<"ROLLBACK">>;
         _  -> <<"ROLLBACK TO s", (integer_to_binary(length(L)))/binary>>
@@ -514,7 +514,7 @@ handle_call(commit, {FromPid, _},
                            decode_decimal = DecodeDecimal,
                            transaction_levels = [{FromPid, MRef} | L]})
   when Status band ?SERVER_STATUS_IN_TRANS /= 0 ->
-    erlang:demonitor(MRef),
+    erlang:demonitor(MRef, [flush]),
     Query = case L of
         [] -> <<"COMMIT">>;
         _  -> <<"RELEASE SAVEPOINT s", (integer_to_binary(length(L)))/binary>>
@@ -838,10 +838,10 @@ kill_query(#state{connection_id = ConnId, host = Host, port = Port,
 stop_server(Reason, #state{socket = undefined} = State) ->
   {stop, Reason, State};
 stop_server(Reason,
-            #state{socket = Socket, connection_id = ConnId} = State) ->
+            #state{socket = Socket, connection_id = ConnId, sockmod = SockMod} = State) ->
   error_logger:error_msg("Connection Id ~p closing with reason: ~p~n",
                          [ConnId, Reason]),
-  ok = gen_tcp:close(Socket),
+  ok = SockMod:close(Socket),
   {stop, Reason, State#state{socket = undefined, connection_id = undefined}}.
 
 setopts(gen_tcp, Socket, Opts) ->
@@ -852,7 +852,7 @@ setopts(SockMod, Socket, Opts) ->
 demonitor_processes(List, 0) ->
     List;
 demonitor_processes([{_FromPid, MRef}|T], Count) ->
-    erlang:demonitor(MRef),
+    erlang:demonitor(MRef, [flush]),
     demonitor_processes(T, Count - 1).
 
 format_status(Status = #{state := State = #state{ssl_opts = SSLOpts}}) ->
