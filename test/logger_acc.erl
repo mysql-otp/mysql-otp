@@ -15,8 +15,7 @@
   when ResultOfFun :: term(),
        Reason :: term(),
        Trace :: list(),
-       AccumulatedErrors :: [{error|warning_msg|info_msg, string()} |
-                             {error_report|warning_report|info_report, term()}].
+       AccumulatedErrors :: [{logger:level(), [atom()], string()|logger:report()}].
 capture(Fun) when is_function(Fun, 0) ->
     Tag = make_ref(),
     Self = self(),
@@ -52,9 +51,9 @@ log_acc_loop(Tag, Parent) ->
 
 log_acc_loop(Tag, Parent, Status, Acc) ->
     Timeout = case Status of
-        open -> infinity;
-	closing -> 1000
-    end,
+                  open -> infinity;
+                  closing -> 1000
+              end,
     receive
         {Tag, flush} when Status =:= open ->
             log_acc_loop(Tag, Parent, closing, Acc);
@@ -64,7 +63,7 @@ log_acc_loop(Tag, Parent, Status, Acc) ->
                          #{} -> []
                      end,
             Message = case Msg of
-                          {string, Str} -> Str;
+                          {string, Str} -> unicode:characters_to_list(Str);
                           {report, Report} -> Report;
                           {Fmt, Args} -> lists:flatten(io_lib:format(Fmt, Args))
                       end,
@@ -73,8 +72,8 @@ log_acc_loop(Tag, Parent, Status, Acc) ->
             error({unexpected_message, Other})
     after Timeout ->
         Parent ! {Tag, lists:reverse(Acc)},
-	unlink(Parent),
-	ok
+        unlink(Parent),
+        ok
     end.
 
 -ifdef(TEST).
