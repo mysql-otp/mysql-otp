@@ -80,18 +80,18 @@ log_acc_loop(Tag, Parent, Status, Acc) ->
 -include_lib("eunit/include/eunit.hrl").
 
 capture_success_test() ->
-    Result = ?MODULE:capture(fun () ->
-        logger:notice("Hello ~p", [world]),
-        logger:notice("Hello ~p", [again]),
-        foo
-    end),
+    Result = ?MODULE:capture(fun() ->
+                                 logger:notice("Hello ~p", [world]),
+                                 logger:notice("Hello ~p", [again]),
+                                 foo
+                             end),
     ?assertEqual({ok, foo, [{notice, [], "Hello world"}, {notice, [], "Hello again"}]}, Result).
 
 capture_failure_test() ->
-    Result = ?MODULE:capture(fun () ->
-        logger:notice("Hello ~p", [world]),
-        throw(foo)
-    end),
+    Result = ?MODULE:capture(fun() ->
+                                 logger:notice("Hello ~p", [world]),
+                                 throw(foo)
+                             end),
     ?assertMatch({throw, foo, _Trace, [{notice, [], "Hello world"}]}, Result).
 
 -endif.
