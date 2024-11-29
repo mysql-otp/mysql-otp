@@ -154,10 +154,10 @@
 %%       The default is an empty list, meaning the client will not send any
 %%       local files to the server.</dd>
 %%   <dt>`{log_warnings, boolean()}'</dt>
-%%   <dd>Whether to fetch warnings and log them using error_logger; default
+%%   <dd>Whether to fetch warnings and log them using logger; default
 %%       true.</dd>
 %%   <dt>`{log_slow_queries, boolean()}'</dt>
-%%   <dd>Whether to log slow queries using error_logger; default false. Queries
+%%   <dd>Whether to log slow queries using logger; default false. Queries
 %%       are flagged as slow by the server if their execution time exceeds the
 %%       value in the `long_query_time' variable.</dd>
 %%   <dt>`{keep_alive, boolean() | timeout()}'</dt>

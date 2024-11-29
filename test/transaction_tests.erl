@@ -91,7 +91,7 @@ application_process_kill() ->
     receive killme -> ok end,
 
     %% Kill AppPid, the process using the connection, capturing the noise
-    {ok, ok, LoggedErrors} = error_logger_acc:capture(fun () ->
+    {ok, ok, LoggedErrors} = logger_acc:capture(fun () ->
         exit(AppPid, kill),
         receive
             {'DOWN', Mref, process, Pid, {application_process_died, AppPid}} ->
@@ -101,9 +101,9 @@ application_process_kill() ->
         end
     end),
     %% Check that we got the expected error log noise
-    ?assertMatch([{error, "Connection Id" ++ _},     %% from mysql_conn
-                  {error, "** Generic server" ++ _}, %% from gen_server
-                  {error_report, _}], LoggedErrors),
+    ?assertMatch([{error, [mysql], "Connection Id" ++ _},     %% from mysql_conn
+                  {error, [otp], _}, %% from gen_server
+                  {error, [otp, sasl], _}], LoggedErrors),
 
     ?assertNot(is_process_alive(Pid)),
 
@@ -384,9 +384,9 @@ lock_wait_timeout({_Conn1, Conn2} = Conns) ->
             lock_wait_timeout1(Conns);
         {error, {1238, _, <<"Variable 'innodb_lock_wait_timeout' is a read on",
                             _/binary>>}} ->
-            error_logger:info_msg("Can't set lock wait timeout in this server"
-                                  " version. Skipping the lock wait timeout"
-                                  " test.\n")
+            logger:info("Can't set lock wait timeout in this server"
+                        " version. Skipping the lock wait timeout"
+                        " test.\n")
     end.
 
 %% Continuation of lock_wait_timeout/1.
