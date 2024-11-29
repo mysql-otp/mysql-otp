@@ -80,7 +80,7 @@ connect_asynchronous_successful_test() ->
 
 connect_asynchronous_failing_test() ->
     process_flag(trap_exit, true),
-    {ok, Ret, _Logged} = error_logger_acc:capture(
+    {ok, Ret, _Logged} = logger_acc:capture(
         fun () ->
             {ok, Pid} = mysql:start_link([{user, "dummy"}, {password, "junk"},
                                           {connect_mode, asynchronous}]),
@@ -108,11 +108,11 @@ connect_lazy_test() ->
 
 failing_connect_test() ->
     process_flag(trap_exit, true),
-    {ok, Ret, Logged} = error_logger_acc:capture(
+    {ok, Ret, Logged} = logger_acc:capture(
         fun () ->
             mysql:start_link([{user, "dummy"}, {password, "junk"}])
         end),
-    ?assertMatch([_|_], Logged), % some errors logged
+    ?assertMatch([_ | _], Logged), % some errors logged
     {error, Error} = Ret,
     true = is_access_denied(Error),
     assert_init_exit(Error),
@@ -176,11 +176,12 @@ common_conn_close() ->
 exit_normal_test() ->
     Options = [{user, ?user}, {password, ?password}],
     {ok, Pid} = mysql:start_link(Options),
-    {ok, ok, LoggedErrors} = error_logger_acc:capture(fun () ->
+    {ok, ok, LoggedErrors} = logger_acc:capture(fun () ->
         %% Stop the connection without noise, errors or messages
         mysql:stop(Pid),
         receive
-            UnexpectedExitMessage -> UnexpectedExitMessage
+            {'EXIT', Pid, _} = UnexpectedExitMessage ->
+                UnexpectedExitMessage
         after 0 ->
             ok
         end
@@ -192,7 +193,7 @@ server_disconnect_test() ->
     process_flag(trap_exit, true),
     Options = [{user, ?user}, {password, ?password}],
     {ok, Pid} = mysql:start_link(Options),
-    {ok, ok, _LoggedErrors} = error_logger_acc:capture(fun () ->
+    {ok, ok, _LoggedErrors} = logger_acc:capture(fun () ->
         %% Make the server close the connection after 1 second of inactivity.
         ok = mysql:query(Pid, <<"SET SESSION wait_timeout = 1">>),
         receive
@@ -219,7 +220,7 @@ tcp_error_test() ->
     Options = [{user, ?user}, {password, ?password}],
     {ok, Pid} = mysql:start_link(Options),
     Sock = get_socket_from_conn(Pid),
-    {ok, ok, LoggedErrors} = error_logger_acc:capture(fun () ->
+    {ok, ok, LoggedErrors} = logger_acc:capture(fun () ->
         %% Simulate a tcp error by sending a message. (Is there a better way?)
         Pid ! {tcp_error, Sock, tcp_reason},
         receive
@@ -230,12 +231,9 @@ tcp_error_test() ->
     end),
     process_flag(trap_exit, false),
     %% Check that we got the expected crash report in the error log.
-    [{error, Msg1}, {error, Msg2}, {error_report, CrashReport}] = LoggedErrors,
+    [{error, [mysql], Msg1}, {error, [otp], _}, {error, [otp, sasl], _}] = LoggedErrors,
     %% "Connection Id 24 closing with reason: tcp_closed"
-    ?assert(lists:prefix("Connection Id", Msg1)),
-    ExpectedPrefix = io_lib:format("** Generic server ~p terminating", [Pid]),
-    ?assert(lists:prefix(lists:flatten(ExpectedPrefix), Msg2)),
-    ?assertMatch({crash_report, _}, CrashReport).
+    ?assert(lists:prefix("Connection Id", Msg1)).
 
 keep_alive_test() ->
      %% Let the connection send a few pings.
@@ -245,10 +243,10 @@ keep_alive_test() ->
      receive after 70 -> ok end,
      State = get_state(Pid),
      [state, _Version, _ConnectionId, Socket | _] = tuple_to_list(State),
-     {ok, ExitMessage, _LoggedErrors} = error_logger_acc:capture(fun () ->
+     {ok, ExitMessage, _LoggedErrors} = logger_acc:capture(fun () ->
          gen_tcp:close(Socket),
          receive
-            Message -> Message
+             {'EXIT', Pid, _} = Message -> Message
          after 1000 ->
              ping_didnt_crash_connection
          end
@@ -304,8 +302,8 @@ unix_socket_test() ->
                             mysql:query(Pid2, <<"SELECT 1">>)),
             mysql:stop(Pid2);
         {error, eafnosupport} ->
-            error_logger:info_msg("Skipping unix socket test. "
-                                  "Not supported on this OS.~n")
+            logger:info("Skipping unix socket test. "
+                        "Not supported on this OS.~n")
     end.
 
 socket_backend_test() ->
@@ -325,34 +323,34 @@ socket_backend_test() ->
                     ?assertEqual({ok, [<<"1">>], [[1]]}, mysql:query(Pid2, <<"SELECT 1">>)),
                     mysql:stop(Pid2);
                 {error, eafnotsupported} ->
-                    error_logger:info_msg("Skipping socket backend test. "
-                                          "Not supported on this OS.~n")
+                    logger:info("Skipping socket backend test. "
+                                "Not supported on this OS.~n")
             end;
         {error, eafnosupport} ->
-            error_logger:info_msg("Skipping unix socket test. Not supported on this OS.~n")
+            logger:info("Skipping unix socket test. Not supported on this OS.~n")
     end.
 
 connect_queries_failure_test() ->
     process_flag(trap_exit, true),
-    {ok, Ret, Logged} = error_logger_acc:capture(
+    {ok, Ret, Logged} = logger_acc:capture(
         fun () ->
             mysql:start_link([{user, ?user}, {password, ?password},
                               {queries, ["foo"]}])
         end),
-    ?assertMatch([{error_report, {crash_report, _}}], Logged),
+    ?assertMatch([{error, [otp, sasl], _}], Logged),
     {error, Reason} = Ret,
     assert_init_exit(Reason),
     process_flag(trap_exit, false).
 
 connect_prepare_failure_test() ->
     process_flag(trap_exit, true),
-    {ok, Ret, Logged} = error_logger_acc:capture(
+    {ok, Ret, Logged} = logger_acc:capture(
         fun () ->
             mysql:start_link([{user, ?user},
                               {password, ?password},
                               {prepare, [{foo, "foo"}]}])
         end),
-    ?assertMatch([{error_report, {crash_report, _}}], Logged),
+    ?assertMatch([{error, [otp, sasl], _}], Logged),
     {error, Reason} = Ret,
     ?assertMatch({1064, <<"42000">>, <<"You have an erro", _/binary>>}, Reason),
     assert_init_exit(Reason),
@@ -451,12 +449,12 @@ log_warnings_test() ->
     %% Capture error log to check that we get a warning logged
     ok = mysql:query(Pid, "CREATE TABLE foo (x INT NOT NULL)"),
     {ok, insrt} = mysql:prepare(Pid, insrt, "INSERT INTO foo () VALUES ()"),
-    {ok, ok, LoggedErrors} = error_logger_acc:capture(fun () ->
+    {ok, ok, LoggedErrors} = logger_acc:capture(fun () ->
         ok = mysql:query(Pid, "INSERT INTO foo () VALUES ()"),
         ok = mysql:query(Pid, "INSeRT INtO foo () VaLUeS ()", []),
         ok = mysql:execute(Pid, insrt, [])
     end),
-    [{_, Log1}, {_, Log2}, {_, Log3}] = LoggedErrors,
+    [{_, [mysql], Log1}, {_, [mysql], Log2}, {_, [mysql], Log3}] = LoggedErrors,
     ?assertEqual("Warning 1364: Field 'x' doesn't have a default value\n"
                  " in INSERT INTO foo () VALUES ()\n", Log1),
     ?assertEqual("Warning 1364: Field 'x' doesn't have a default value\n"
@@ -484,10 +482,10 @@ log_slow_queries_test() ->
 
         %% single statement should not include query number
         SingleQuery = "SELECT SLEEP(0.2)",
-        {ok, _, SingleLogged} = error_logger_acc:capture( fun () ->
+        {ok, _, SingleLogged} = logger_acc:capture( fun () ->
             {ok, _, _} = mysql:query(Pid, SingleQuery)
         end),
-        [{_, SingleLog}] = SingleLogged,
+        [{_, [mysql], SingleLog}] = SingleLogged,
         ?assertEqual("MySQL query was slow: " ++ SingleQuery ++ "\n", SingleLog),
 
         %% multi statement should include number of slow query
@@ -496,21 +494,21 @@ log_slow_queries_test() ->
                      "SET @foo = 1; "      %% #3 -> not slow, no result set
                      "SELECT SLEEP(0.2); " %% #4 -> slow
                      "SELECT 1",           %% #5 -> not slow
-        {ok, _, MultiLogged} = error_logger_acc:capture(fun () ->
+        {ok, _, MultiLogged} = logger_acc:capture(fun () ->
             {ok, _} = mysql:query(Pid, MultiQuery)
         end),
-        [{_, MultiLog1}, {_, MultiLog2}] = MultiLogged,
+        [{_, [mysql], MultiLog1}, {_, [mysql], MultiLog2}] = MultiLogged,
         ?assertEqual("MySQL query #1 was slow: " ++ MultiQuery ++ "\n", MultiLog1),
         ?assertEqual("MySQL query #4 was slow: " ++ MultiQuery ++ "\n", MultiLog2)
     catch
         throw:{mysql, version_too_small} ->
-            error_logger:info_msg("Skipping Log Slow Queries test. Current MySQL version"
-                                  " is ~s. Required version is >= 5.5.8.~n",
-                                  [VersionStr]);
+            logger:info("Skipping Log Slow Queries test. Current MySQL version"
+                        " is ~s. Required version is >= 5.5.8.~n",
+                        [VersionStr]);
         throw:{mariadb, version_too_small} ->
-            error_logger:info_msg("Skipping Log Slow Queries test. Current MariaDB version"
-                                  " is ~s. Required version is >= 10.0.21.~n",
-                                  [VersionStr])
+            logger:info("Skipping Log Slow Queries test. Current MariaDB version"
+                        " is ~s. Required version is >= 10.0.21.~n",
+                        [VersionStr])
     end,
     mysql:stop(Pid).
 
@@ -796,7 +794,7 @@ decimal_trunc(_Pid) ->
                                             " SET balance = balance - ?"
                                             " WHERE id = ?">>),
     %% Decimal sent as float gives truncation warning.
-    {ok, ok, [{_, LoggedWarning1}|_]} = error_logger_acc:capture(fun () ->
+    {ok, ok, [{_, [mysql], LoggedWarning1}|_]} = logger_acc:capture(fun () ->
         ok = mysql:execute(Pid, decr, [10.2, 1]),
         ok = mysql:execute(Pid, decr, [10.2, 1]),
         ok = mysql:execute(Pid, decr, [10.2, 1]),
@@ -805,7 +803,7 @@ decimal_trunc(_Pid) ->
     ?assertMatch("Note 1265: Data truncated for column 'balance'" ++ _,
                  LoggedWarning1),
     %% Decimal sent as binary gives truncation warning.
-    {ok, ok, [{_, LoggedWarning2}|_]} = error_logger_acc:capture(fun () ->
+    {ok, ok, [{_, [mysql], LoggedWarning2}|_]} = logger_acc:capture(fun () ->
         ok = mysql:execute(Pid, decr, [<<"10.2">>, 2]),
         ok = mysql:execute(Pid, decr, [<<"10.2">>, 2]),
         ok = mysql:execute(Pid, decr, [<<"10.2">>, 2]),
@@ -814,7 +812,7 @@ decimal_trunc(_Pid) ->
     ?assertMatch("Note 1265: Data truncated for column 'balance'" ++ _,
                  LoggedWarning2),
     %% Decimal sent as DECIMAL => no warning
-    {ok, ok, MaybeWarning} = error_logger_acc:capture(fun () ->
+    {ok, ok, MaybeWarning} = logger_acc:capture(fun () ->
         ok = mysql:execute(Pid, decr, [{decimal, <<"10.2">>}, 3]),
         ok = mysql:execute(Pid, decr, [{decimal, "10.2"}, 3]),
         ok = mysql:execute(Pid, decr, [{decimal, 10.2}, 3]),
@@ -833,14 +831,14 @@ assert_decimal_trunctation_warning(VersionStr, MaybeWarning) ->
             case MaybeWarning of
                 [] ->
                     throw("Expecting " ++ VersionStr ++ " to emit decimal truncation warning, but it did not");
-                [{warning_msg, Msg}] ->
+                [{warning, [mysql], Msg}] ->
                     ?assertMatch("Note 1265: Data truncated for column 'balance'" ++ _, Msg)
             end;
         false ->
             case MaybeWarning  of
                 [] ->
                     ok;
-                [{warning_msg, Msg}] ->
+                [{warning, [mysql], Msg}] ->
                     throw("Not expecting " ++ VersionStr ++ "to emit decimal truncation warning, but got: " ++ Msg)
             end
     end.
@@ -876,7 +874,7 @@ float_as_decimal(_Pid) ->
     {ok, decr} = mysql:prepare(Pid, decr, <<"UPDATE float_as_decimal"
                                             " SET balance = balance - ?">>),
     %% Floats sent as decimal => no truncation warning.
-    {ok, ok, []} = error_logger_acc:capture(fun () ->
+    {ok, ok, []} = logger_acc:capture(fun () ->
         ok = mysql:execute(Pid, decr, [10.2]),
         ok = mysql:execute(Pid, decr, [10.2]),
         ok = mysql:execute(Pid, decr, [10.2]),
@@ -1020,12 +1018,12 @@ json(Pid) ->
         test_invalid_json(Pid)
     catch
         throw:no_mariadb ->
-            error_logger:info_msg("Skipping JSON test, not supported on"
-                                  " MariaDB.~n");
+            logger:info("Skipping JSON test, not supported on"
+                        " MariaDB.~n");
         throw:version_too_small ->
-            error_logger:info_msg("Skipping JSON test. Current MySQL version"
-                                  " is ~s. Required version is >= 5.7.8.~n",
-                                  [Version])
+            logger:info("Skipping JSON test. Current MySQL version"
+                        " is ~s. Required version is >= 5.7.8.~n",
+                        [Version])
     end.
 
 test_valid_json(Pid) ->
@@ -1055,9 +1053,9 @@ microseconds(Pid) ->
         test_time_microseconds(Pid),
         test_datetime_microseconds(Pid)
     catch _:_ ->
-        error_logger:info_msg("Skipping microseconds test. Current MySQL"
-                              " version is ~s. Required version is >= 5.6.4.~n",
-                              [Version])
+        logger:info("Skipping microseconds test. Current MySQL"
+                    " version is ~s. Required version is >= 5.6.4.~n",
+                    [Version])
     end.
 
 test_time_microseconds(Pid) ->

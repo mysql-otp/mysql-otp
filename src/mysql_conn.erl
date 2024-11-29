@@ -66,6 +66,8 @@
 
 %% @private
 init(Opts) ->
+    ok = logger:set_process_metadata(#{domain => [mysql]}),
+
     %% Connect
     Host           = proplists:get_value(host, Opts, ?default_host),
 
@@ -784,7 +786,7 @@ log_warnings(#state{socket = Socket, sockmod = SockMod,
     setopts(SockMod, Socket, [{active, once}]),
     Lines = [[Level, " ", integer_to_binary(Code), ": ", Message, "\n"]
              || [Level, Code, Message] <- Rows],
-    error_logger:warning_msg("~s in ~s~n", [Lines, Query]).
+    logger:warning("~s in ~s~n", [Lines, Query]).
 
 %% @doc Logs slow queries. Query is the query that gave the warnings.
 maybe_log_slow_query(#state{log_slow_queries = true}, S, RecNum, Query)
@@ -803,8 +805,8 @@ maybe_log_slow_query(#state{log_slow_queries = true}, S, RecNum, Query)
         _ ->
             io_lib:format(" #~b", [RecNum])
     end,
-    error_logger:warning_msg("MySQL query~s~s was slow: ~s~n",
-                             [QueryNumHint, IndexHint, Query]);
+    logger:warning("MySQL query~s~s was slow: ~s~n",
+                   [QueryNumHint, IndexHint, Query]);
 maybe_log_slow_query(_, _, _, _) ->
     ok.
 
@@ -831,16 +833,16 @@ kill_query(#state{connection_id = ConnId, host = Host, port = Port,
                                                  ?cmd_timeout),
             mysql_protocol:quit(SockMod, Socket);
         #error{} = E ->
-            error_logger:error_msg("Failed to connect to kill query: ~p",
-                                   [error_to_reason(E)])
+            logger:error("Failed to connect to kill query: ~p",
+                         [error_to_reason(E)])
     end.
 
 stop_server(Reason, #state{socket = undefined} = State) ->
   {stop, Reason, State};
 stop_server(Reason,
             #state{socket = Socket, connection_id = ConnId, sockmod = SockMod} = State) ->
-  error_logger:error_msg("Connection Id ~p closing with reason: ~p~n",
-                         [ConnId, Reason]),
+  logger:error("Connection Id ~p closing with reason: ~p~n",
+               [ConnId, Reason]),
   ok = SockMod:close(Socket),
   {stop, Reason, State#state{socket = undefined, connection_id = undefined}}.
 

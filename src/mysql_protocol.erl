@@ -1558,7 +1558,7 @@ encrypt_password(Password, Salt, PubKey, ServerVersion)
     %% With 8.0.5 it is done with RSA_PKCS1_OAEP_PADDING."
     RsaPadding = case ServerVersion < [8, 0, 5] of
         true ->
-            error_logger:warning_msg("Using unsafe cipher algorithm padding rsa_pkcs1_padding"),
+            logger:warning("Using unsafe cipher algorithm padding rsa_pkcs1_padding"),
             rsa_pkcs1_padding;
         false ->
             rsa_pkcs1_oaep_padding
