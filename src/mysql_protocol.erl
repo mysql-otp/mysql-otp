@@ -444,7 +444,7 @@ ssl_connect(Handshake, Host, Port, ConfigSSLOpts, Timeout) ->
 
 
 %% @doc Determines which ssl versions to use according to server vendor and version
-%% since almostly, mysql < 5.7.0 and mariadb < 10.1.0 supports only tlsv1
+%% since almostly, mysql &lt; 5.7.0 and mariadb &lt; 10.1.0 supports only tlsv1
 -spec determine_ssl_versions(#handshake{}) -> list().
 determine_ssl_versions(#handshake{server_vendor = mysql, server_version = Version}) when Version < [5, 7, 0] ->
     [tlsv1];
