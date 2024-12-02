@@ -384,9 +384,9 @@ lock_wait_timeout({_Conn1, Conn2} = Conns) ->
             lock_wait_timeout1(Conns);
         {error, {1238, _, <<"Variable 'innodb_lock_wait_timeout' is a read on",
                             _/binary>>}} ->
-            logger:info("Can't set lock wait timeout in this server"
-                        " version. Skipping the lock wait timeout"
-                        " test.\n")
+            logger:notice("Can't set lock wait timeout in this server"
+                          " version. Skipping the lock wait timeout"
+                          " test.\n")
     end.
 
 %% Continuation of lock_wait_timeout/1.

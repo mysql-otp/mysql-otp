@@ -302,16 +302,22 @@ unix_socket_test() ->
                             mysql:query(Pid2, <<"SELECT 1">>)),
             mysql:stop(Pid2);
         {error, eafnosupport} ->
-            logger:info("Skipping unix socket test. "
-                        "Not supported on this OS.~n")
+            logger:notice("Skipping unix socket test. "
+                          "Not supported on this OS.~n")
     end.
 
 socket_backend_test() ->
-    case mysql:start_link([{user, ?user},
-                           {password, ?password},
-                           {tcp_options, [{inet_backend, socket}]}])
-    of
-        {ok, Pid1} ->
+    case ?OTP_RELEASE of
+        Rel when Rel < 23 ->
+            logger:notice("Skipping socket backend test. "
+                          "Not supported on OTP ~b.", [Rel]);
+        23 ->
+            logger:notice("Skipping socket backend test. "
+                          "Unstable on OTP 23.");
+        _ ->
+            {ok, Pid1} = mysql:start_link([{user, ?user},
+                                           {password, ?password},
+                                           {tcp_options, [{inet_backend, socket}]}]),
             Dir = run_dir(),
             {ok, [<<"@@socket">>], [[SockFile0]]} = mysql:query(Pid1, <<"SELECT @@socket">>),
             SockFile = filename:join([Dir, filename:basename(SockFile0)]),
@@ -323,11 +329,9 @@ socket_backend_test() ->
                     ?assertEqual({ok, [<<"1">>], [[1]]}, mysql:query(Pid2, <<"SELECT 1">>)),
                     mysql:stop(Pid2);
                 {error, eafnotsupported} ->
-                    logger:info("Skipping socket backend test. "
-                                "Not supported on this OS.~n")
-            end;
-        {error, eafnosupport} ->
-            logger:info("Skipping unix socket test. Not supported on this OS.~n")
+                    logger:notice("Skipping socket backend test. "
+                                  "Not supported on this OS.~n")
+            end
     end.
 
 connect_queries_failure_test() ->
@@ -502,13 +506,13 @@ log_slow_queries_test() ->
         ?assertEqual("MySQL query #4 was slow: " ++ MultiQuery ++ "\n", MultiLog2)
     catch
         throw:{mysql, version_too_small} ->
-            logger:info("Skipping Log Slow Queries test. Current MySQL version"
-                        " is ~s. Required version is >= 5.5.8.~n",
-                        [VersionStr]);
+            logger:notice("Skipping Log Slow Queries test. Current MySQL version"
+                          " is ~s. Required version is >= 5.5.8.~n",
+                          [VersionStr]);
         throw:{mariadb, version_too_small} ->
-            logger:info("Skipping Log Slow Queries test. Current MariaDB version"
-                        " is ~s. Required version is >= 10.0.21.~n",
-                        [VersionStr])
+            logger:notice("Skipping Log Slow Queries test. Current MariaDB version"
+                          " is ~s. Required version is >= 10.0.21.~n",
+                          [VersionStr])
     end,
     mysql:stop(Pid).
 
@@ -1018,12 +1022,12 @@ json(Pid) ->
         test_invalid_json(Pid)
     catch
         throw:no_mariadb ->
-            logger:info("Skipping JSON test, not supported on"
-                        " MariaDB.~n");
+            logger:notice("Skipping JSON test, not supported on"
+                          " MariaDB.~n");
         throw:version_too_small ->
-            logger:info("Skipping JSON test. Current MySQL version"
-                        " is ~s. Required version is >= 5.7.8.~n",
-                        [Version])
+            logger:notice("Skipping JSON test. Current MySQL version"
+                          " is ~s. Required version is >= 5.7.8.~n",
+                          [Version])
     end.
 
 test_valid_json(Pid) ->
@@ -1053,9 +1057,9 @@ microseconds(Pid) ->
         test_time_microseconds(Pid),
         test_datetime_microseconds(Pid)
     catch _:_ ->
-        logger:info("Skipping microseconds test. Current MySQL"
-                    " version is ~s. Required version is >= 5.6.4.~n",
-                    [Version])
+        logger:notice("Skipping microseconds test. Current MySQL"
+                      " version is ~s. Required version is >= 5.6.4.~n",
+                      [Version])
     end.
 
 test_time_microseconds(Pid) ->
