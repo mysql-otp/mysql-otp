@@ -1,5 +1,5 @@
 ---
-name: build
+name: CI
 on:
   push:
     branches:
@@ -9,12 +9,16 @@ on:
       - master
 jobs:
   ci:
-    name: CI
+    name: OTP ${{matrix.otp[0]}} + ${{matrix.image[0]}} ${{matrix.image[1]}}
     runs-on: ${{matrix.os}}
     strategy:
       fail-fast: false
       matrix:
-        otp: [24, 25, 26]
+        otp:
+          - [24, "3.21.0"]
+          - [25, "3.24.0"]
+          - [26, "3.24.0"]
+          - [27, "3.24.0"]
         image:
           - ["mysql", "5.7"]
           - ["mysql", "8.4"]
@@ -23,12 +27,12 @@ jobs:
           - ["mariadb", "11"]
         os: [ubuntu-latest]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: ${{matrix.otp}}
-          rebar3-version: 3.20.0
-      - name: Set up environment variables
+          otp-version: ${{matrix.otp[0]}}
+          rebar3-version: ${{matrix.otp[1]}}
+      - name: Run tests
         run: |
           set -x
           export MYSQL_IMAGE=${{ matrix.image[0] }}
