@@ -316,8 +316,8 @@ socket_backend_test() ->
                           "Unstable on OTP 23.");
         _ ->
             {ok, Pid1} = mysql:start_link([{user, ?user},
-                                          {password, ?password},
-                                          {tcp_options, [{inet_backend, socket}]}]),
+                                           {password, ?password},
+                                           {tcp_options, [{inet_backend, socket}]}]),
             Dir = run_dir(),
             {ok, [<<"@@socket">>], [[SockFile0]]} = mysql:query(Pid1, <<"SELECT @@socket">>),
             SockFile = filename:join([Dir, filename:basename(SockFile0)]),
