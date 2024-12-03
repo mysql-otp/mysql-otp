@@ -61,7 +61,7 @@
                 connect_timeout, ping_timeout, query_timeout, query_cache_time,
                 affected_rows = 0, status = 0, warning_count = 0, insert_id = 0,
                 transaction_levels = [], ping_ref = undefined,
-                stmts = dict:new(), query_cache = empty, cap_found_rows = false,
+                stmts = #{}, query_cache = mysql_cache:new(), cap_found_rows = false,
                 float_as_decimal = false, decode_decimal = auto}).
 
 %% @private
@@ -346,7 +346,7 @@ handle_call({param_query, Query, Params, FilterMap, Timeout}, _From,
                     {{error, error_to_reason(E)}, Cache};
                 #prepared{} = Stmt ->
                     %% If the first entry in the cache, start the timer.
-                    Cache == empty andalso begin
+                    mysql_cache:is_empty(Cache) andalso begin
                         When = State#state.query_cache_time * 2,
                         erlang:send_after(When, self(), query_cache)
                     end,
@@ -370,11 +370,11 @@ handle_call({execute, _Stmt, _Args, _FilterMap, _Timeout}, {FromPid, _},
     %% this conn is currently in transaction owned by another process
     {reply, {error, busy}, State};
 handle_call({execute, Stmt, Args, FilterMap, Timeout}, _From, State) ->
-    case dict:find(Stmt, State#state.stmts) of
-        {ok, StmtRec} ->
+    case State#state.stmts of
+        #{Stmt := StmtRec} ->
             {Reply, State1} = execute_stmt(StmtRec, Args, FilterMap, Timeout, State),
             {reply, Reply, State1};
-        error ->
+        #{} ->
             {reply, {error, not_prepared}, State}
     end;
 handle_call({prepare, Query}, _From, State) ->
@@ -382,13 +382,12 @@ handle_call({prepare, Query}, _From, State) ->
     setopts(SockMod, Socket, [{active, false}]),
     Rec = mysql_protocol:prepare(Query, SockMod, Socket),
     setopts(SockMod, Socket, [{active, once}]),
-    State1 = update_state(Rec, State),
+    State1 = #state{stmts = Stmts1} = update_state(Rec, State),
     case Rec of
         #error{} = E ->
             {reply, {error, error_to_reason(E)}, State1};
         #prepared{statement_id = Id} = Stmt ->
-            Stmts1 = dict:store(Id, Stmt, State1#state.stmts),
-            State2 = State#state{stmts = Stmts1},
+            State2 = State#state{stmts = Stmts1#{Id => Stmt}},
             {reply, {ok, Id}, State2}
     end;
 handle_call({prepare, Name, Query}, _From, State) when is_atom(Name);
@@ -398,13 +397,13 @@ handle_call({prepare, Name, Query}, _From, State) when is_atom(Name);
 handle_call({unprepare, Stmt}, _From, State) when is_atom(Stmt);
                                                   is_integer(Stmt);
                                                   is_binary(Stmt) ->
-    case dict:find(Stmt, State#state.stmts) of
-        {ok, StmtRec} ->
+    case maps:take(Stmt, State#state.stmts) of
+        {StmtRec, Stmts1} ->
             #state{socket = Socket, sockmod = SockMod} = State,
             setopts(SockMod, Socket, [{active, false}]),
             mysql_protocol:unprepare(StmtRec, SockMod, Socket),
             setopts(SockMod, Socket, [{active, once}]),
-            State1 = State#state{stmts = dict:erase(Stmt, State#state.stmts)},
+            State1 = State#state{stmts = Stmts1},
             State2 = schedule_ping(State1),
             {reply, ok, State2};
         error ->
@@ -427,7 +426,7 @@ handle_call({change_user, Username, Password, Options}, From,
     State1 = update_state(Result, State),
     State1#state.warning_count > 0 andalso State1#state.log_warnings
         andalso log_warnings(State1, "CHANGE USER"),
-    State2 = State1#state{query_cache = empty, stmts = dict:new()},
+    State2 = State1#state{query_cache = mysql_cache:new(), stmts = #{}},
     case Result of
         #ok{} ->
             State3 = State2#state{user = Username, password = Password,
@@ -556,7 +555,7 @@ handle_info(query_cache, #state{query_cache = Cache,
                   Evicted),
     setopts(SockMod, Socket, [{active, once}]),
     %% If nonempty, schedule eviction again.
-    mysql_cache:size(Cache1) > 0 andalso
+    mysql_cache:is_empty(Cache1) orelse
         erlang:send_after(CacheTime, self(), query_cache),
     {noreply, State#state{query_cache = Cache1}};
 handle_info({'DOWN', _MRef, _, Pid, _Info}, State) ->
@@ -699,22 +698,21 @@ named_prepare(Name, Query, State) ->
     #state{socket = Socket, sockmod = SockMod} = State,
     %% First unprepare if there is an old statement with this name.
     setopts(SockMod, Socket, [{active, false}]),
-    State1 = case dict:find(Name, State#state.stmts) of
-        {ok, OldStmt} ->
+    State1 = case maps:take(Name, State#state.stmts) of
+        {OldStmt, Stmts1} ->
             mysql_protocol:unprepare(OldStmt, SockMod, Socket),
-            State#state{stmts = dict:erase(Name, State#state.stmts)};
+            State#state{stmts = Stmts1};
         error ->
             State
     end,
     Rec = mysql_protocol:prepare(Query, SockMod, Socket),
     setopts(SockMod, Socket, [{active, once}]),
-    State2 = update_state(Rec, State1),
+    State2 = #state{stmts = Stmts2} = update_state(Rec, State1),
     case Rec of
         #error{} = E ->
             {{error, error_to_reason(E)}, State2};
         #prepared{} = Stmt ->
-            Stmts1 = dict:store(Name, Stmt, State2#state.stmts),
-            State3 = State2#state{stmts = Stmts1},
+            State3 = State2#state{stmts = Stmts2#{Name => Stmt}},
             {{ok, Name}, State3}
     end.
 
