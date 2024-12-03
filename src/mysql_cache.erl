@@ -20,13 +20,10 @@
 %% using manual calls to evict_older_than/2. Most of the functions return a new
 %% updated cache object which should be used in subsequent calls.
 %%
-%% A cache can be initialized to 'empty' which represents the empty cache.
-%%
 %% Properties:
 %%
 %% <ul>
 %%   <li>Embeddable in a gen_server or other process</li>
-%%   <li>Small overhead when unused (the empty cache is a single atom)</li>
 %%   <li>Evicting K elements is O(N + K * log N) which means low overhead when
 %%       nothing or few elements are evicted</li>
 %% </ul>
@@ -45,13 +42,11 @@
 evict_older_than(Cache = #{}, MaxAge) ->
     MinTime = timestamp() - MaxAge * 1000,
     {Evicted, Cache1} = maps:fold(
-        fun (Key, {Value, Time}, {EvictedAcc, CacheAcc}) ->
-            if
-                Time < MinTime ->
-                    {[{Key, Value} | EvictedAcc], maps:remove(Key, CacheAcc)};
-                Time >= MinTime ->
-                    {EvictedAcc, CacheAcc}
-            end
+        fun
+            (_Key, {_Value, Time}, Acc) when Time >= MinTime ->
+                Acc;
+	    (Key, {Value, _Time}, {EvictedAcc, CacheAcc}) ->
+                {[{Key, Value} | EvictedAcc], maps:remove(Key, CacheAcc)}
         end,
         {[], Cache},
         Cache),
