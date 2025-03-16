@@ -85,21 +85,21 @@ Usage as a dependency
 Using *erlang.mk*:
 
     DEPS = mysql
-    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.8.0
+    dep_mysql = git https://github.com/mysql-otp/mysql-otp 1.9.0
 
 Using *rebar* (version 2 or 3):
 
 ```erlang
 {deps, [
   {mysql, ".*", {git, "https://github.com/mysql-otp/mysql-otp",
-                {tag, "1.8.0"}}}
+                {tag, "1.9.0"}}}
 ]}.
 ```
 
 Using *mix*:
 
 ```elixir
-{:mysql, git: "https://github.com/mysql-otp/mysql-otp", tag: "1.8.0"},
+{:mysql, git: "https://github.com/mysql-otp/mysql-otp", tag: "1.9.0"},
 ```
 
 There's also a Hex package called [mysql](//hex.pm/packages/mysql).
