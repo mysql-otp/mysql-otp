@@ -165,6 +165,32 @@ error_as_initial_packet_test() ->
                  Result),
     ok.
 
+connection_closed_during_handshake_test() ->
+    %% Test that connection closure during handshake is handled gracefully
+    %% instead of crashing with pattern matching error.
+    %% We create a mock that will return an error on the first recv call.
+    
+    %% Custom mock that simulates connection closure
+    MockSock = spawn_link(fun() ->
+        receive
+            {recv, 4, FromPid} ->
+                %% Simulate connection closed during handshake packet header read
+                FromPid ! {error, closed}
+        end
+    end),
+    
+    SSLOpts = undefined,
+    Result = mysql_protocol:handshake("localhost", "user", "pass", "db", mock_tcp,
+                                      SSLOpts, MockSock, false),
+    
+    %% Should return an error record instead of crashing
+    ?assertMatch(#error{code = -3}, Result),
+    ?assertMatch(#error{msg = Msg} when is_binary(Msg), Result),
+    
+    %% The error message should mention connection closure
+    #error{msg = ErrorMsg} = Result,
+    ?assert(binary:match(ErrorMsg, <<"Connection closed during handshake">>) =/= nomatch).
+
 %% --- Helper functions for the above tests ---
 
 %% Convert hex dumps to binaries. This is a helper function for the tests.
