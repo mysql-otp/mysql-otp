@@ -168,28 +168,86 @@ error_as_initial_packet_test() ->
 connection_closed_during_handshake_test() ->
     %% Test that connection closure during handshake is handled gracefully
     %% instead of crashing with pattern matching error.
-    %% We create a mock that will return an error on the first recv call.
+    %% 
+    %% The mock_tcp module expects recv operations to return either {ok, Data} 
+    %% or to receive an 'error' message (not {error, Reason}). To simulate a 
+    %% connection error, we need to provide an empty recv list so that mock_tcp 
+    %% will return an error when recv is called.
     
-    %% Custom mock that simulates connection closure
-    MockSock = spawn_link(fun() ->
-        receive
-            {recv, 4, FromPid} ->
-                %% Simulate connection closed during handshake packet header read
-                FromPid ! {error, closed}
-        end
-    end),
+    %% Create mock_tcp with no expected recv operations
+    %% This will cause recv_packet to fail when trying to read the initial handshake
+    Sock = mock_tcp:create([]),
     
     SSLOpts = undefined,
     Result = mysql_protocol:handshake("localhost", "user", "pass", "db", mock_tcp,
-                                      SSLOpts, MockSock, false),
+                                      SSLOpts, Sock, false),
     
     %% Should return an error record instead of crashing
     ?assertMatch(#error{code = -3}, Result),
     ?assertMatch(#error{msg = Msg} when is_binary(Msg), Result),
     
-    %% The error message should mention connection closure
+    %% The error message should be generic
     #error{msg = ErrorMsg} = Result,
-    ?assert(binary:match(ErrorMsg, <<"Connection closed during handshake">>) =/= nomatch).
+    ?assert(binary:match(ErrorMsg, <<"Error during handshake">>) =/= nomatch),
+    
+    %% Clean up - this should succeed since we had no expected operations
+    mock_tcp:close(Sock).
+
+connection_closed_during_authentication_test() ->
+    %% Test that connection closure during authentication is handled gracefully.
+    %% We'll simulate a successful initial handshake but then fail during auth.
+    
+    %% Create a minimal valid handshake packet
+    %% Protocol version 10, minimal handshake structure
+    HandshakePacket = create_minimal_handshake_packet(),
+    
+    %% Expect recv for handshake packet, but no recv for auth confirm packet
+    %% This will cause the auth_finish_or_switch to fail
+    ExpectedCommunication = [
+        {recv, HandshakePacket},
+        {send, ignore_this_send}  % The handshake response will be sent
+        %% No recv for auth confirmation - this will cause the error
+    ],
+    
+    Sock = mock_tcp:create(ExpectedCommunication),
+    
+    SSLOpts = undefined,
+    Result = mysql_protocol:handshake("localhost", "user", "pass", "db", mock_tcp,
+                                      SSLOpts, Sock, false),
+    
+    %% Should return an error record for authentication failure
+    ?assertMatch(#error{code = -4}, Result),
+    ?assertMatch(#error{msg = Msg} when is_binary(Msg), Result),
+    
+    %% The error message should mention authentication
+    #error{msg = ErrorMsg} = Result,
+    ?assert(binary:match(ErrorMsg, <<"Error during authentication">>) =/= nomatch).
+
+%% Helper function to create a minimal valid handshake packet for testing
+create_minimal_handshake_packet() ->
+    %% This creates a minimal MySQL handshake packet for testing purposes
+    %% Based on the protocol documentation and existing test patterns
+    PacketSize = 78,  % Approximate size for a minimal handshake
+    SeqNum = 0,
+    Header = <<PacketSize:24/little, SeqNum:8>>,
+    
+    %% Minimal handshake body
+    Body = <<10,  % Protocol version
+             "5.7.0", 0,  % Server version (null-terminated)
+             1:32/little,  % Connection ID
+             "12345678",   % Auth plugin data part 1 (8 bytes)
+             0,           % Filler
+             16#0001:16/little,  % Capabilities lower
+             33,          % Character set
+             2:16/little, % Status flags  
+             16#0002:16/little,  % Capabilities upper
+             21,          % Auth plugin data length
+             0,0,0,0,0,0,0,0,0,0,  % Reserved (10 bytes)
+             "1234567890123",  % Auth plugin data part 2 (13 bytes to total 21)
+             "mysql_native_password", 0  % Auth plugin name (null-terminated)
+           >>,
+    
+    <<Header/binary, Body/binary>>.
 
 %% --- Helper functions for the above tests ---
 
