@@ -5,28 +5,44 @@
 -module(mock_tcp).
 
 %% gen_tcp interface functions.
--export([send/2, recv/2, recv/3]).
+-export([send/2, recv/2, recv/3, close/1]).
 
 %% Functions to setup the mock_tcp.
--export([create/1, close/1]).
+-export([expect/1, disconnected/0]).
+-export([with_mock/2]).
+-export([stop/1]).
+
+%% @doc Runs the given function `Fun' with the given mock_tcp process
+%% as argument and returns the result. Makes sure that the given process
+%% is properly stopped afterwards.
+-spec with_mock(MockPid, fun((MockPid) -> Result)) -> Result
+    when MockPid :: pid(),
+         Result :: term().
+with_mock(MockPid, Fun) when is_pid(MockPid), is_function(Fun, 1) ->
+    try
+        Fun(MockPid)
+    after
+        ok = stop(MockPid)
+    end.
 
 %% @doc Creates a mock_tcp process with a buffer of expected recv/2,3 and send/2
 %% calls. The pid of the mock_tcp process is returned.
--spec create([{recv, binary()} | {send, binary()}]) -> pid().
-create(ExpectedEvents) ->
-    spawn_link(fun () -> loop(ExpectedEvents) end).
+-spec expect([{recv, binary()} | {send, binary()}]) -> pid().
+expect(ExpectedEvents) when is_list(ExpectedEvents) ->
+    spawn_link(fun () -> expect_loop(ExpectedEvents) end).
+
+%% @doc Creates a mock_tcp process that simulates that it is closed by returning
+%% `{error, closed}' to all recv/2,3 and send/2 calls. The pid of the mock_tcp
+%% process is returned.
+-spec disconnected() -> pid().
+disconnected() ->
+    spawn_link(fun disconnected_loop/0).
 
 %% @doc Receives NumBytes bytes from mock_tcp Pid. This function can be used
 %% as a replacement for gen_tcp:recv/2 in unit tests. If there not enough data
 %% in the mock_tcp's buffer, an error is raised.
 recv(Pid, NumBytes) ->
-    Pid ! {recv, NumBytes, self()},
-    receive
-        {ok, Data} -> {ok, Data};
-        error -> error({unexpected_recv, NumBytes})
-    after 100 ->
-        error(noreply)
-    end.
+    call(Pid, {recv, NumBytes}).
 
 recv(Pid, NumBytes, _Timeout) ->
     recv(Pid, NumBytes).
@@ -35,68 +51,119 @@ recv(Pid, NumBytes, _Timeout) ->
 %% gen_tcp:send/2 in unit tests. If the data sent is not what the mock_tcp
 %% expected, an error is raised.
 send(Pid, Data) ->
-    Pid ! {send, iolist_to_binary(Data), self()},
-    receive
-        ok -> ok;
-        error -> error({unexpected_send, Data})
-    after 100 ->
-        error(noreply)
-    end.
+    call(Pid, {send, iolist_to_binary(Data)}).
 
-%% Stops the mock_tcp process. If the mock_tcp's buffer is not empty,
-%% an error is raised.
+%% Closes a mock_tcp. If the mock_tcp's buffer is not empty,
+%% an error is raised. Note that the mock_tcp process is not
+%% stopped.
 close(Pid) ->
-    Pid ! {done, self()},
+    call(Pid, close).
+
+%% Stops the mock_tcp process. Always returns `ok'.
+stop(Pid) ->
+    Mon = monitor(process, Pid),
+    Pid ! stop,
     receive
-        ok -> ok;
-        {remains, Remains} -> error({unexpected_close, Remains})
+        {'DOWN', Mon, process, Pid, _Reason} -> ok
+    after 1000 ->
+        error(not_stopped)
+    end,
+    ok.
+
+call(Pid, Msg) ->
+    Tag = make_ref(),
+    Pid ! {{self(), Tag}, Msg},
+    receive
+        {Tag, reply, Reply} -> Reply;
+	{Tag, error, Msg} -> error(Msg)
     after 100 ->
         error(noreply)
     end.
 
-%% Used by create/1.
-loop(AllEvents = [{Func, Data} | Events]) ->
+%% Used by expect/1.
+expect_loop(AllEvents = [{Func, Data} = Event | Events]) ->
     receive
-        {recv, NumBytes, FromPid} when Func == recv, NumBytes == size(Data) ->
-            FromPid ! {ok, Data},
-            loop(Events);
-        {recv, NumBytes, FromPid} when Func == recv, NumBytes < size(Data) ->
+        stop ->
+            ok;
+        {ReplyTo, {recv, NumBytes}} when Func == recv, NumBytes == byte_size(Data) ->
+            reply(ReplyTo, reply, {ok, Data}),
+            expect_loop(Events);
+        {ReplyTo, {recv, NumBytes}} when Func == recv, NumBytes < byte_size(Data) ->
             <<Data1:NumBytes/binary, Rest/binary>> = Data,
-            FromPid ! {ok, Data1},
-            loop([{recv, Rest} | Events]);
-        {send, Bytes, FromPid} when Func == send, Bytes == Data ->
-            FromPid ! ok,
-            loop(Events);
-        {send, Bytes, FromPid} when Func == send, size(Bytes) < size(Data) ->
-            Size = size(Bytes),
+            reply(ReplyTo, reply, {ok, Data1}),
+            expect_loop([{recv, Rest} | Events]);
+        {ReplyTo, {send, Bytes}} when Func == send, Bytes == Data ->
+            reply(ReplyTo, reply, ok),
+            expect_loop(Events);
+        {ReplyTo, {send, Bytes} = CmdData} when Func == send, byte_size(Bytes) < byte_size(Data) ->
+            Size = byte_size(Bytes),
             case Data of
                 <<Bytes:Size/binary, Rest/binary>> ->
-                    FromPid ! ok,
-                    loop([{send, Rest} | Events]);
+                    reply(ReplyTo, reply, ok),
+                    expect_loop([{send, Rest} | Events]);
                 _ ->
-                    FromPid ! error
+                    reply(ReplyTo, error, {unexpected, CmdData, Event}),
+		    expect_loop(Events)
             end;
-        {_, _, FromPid} ->
-            FromPid ! error;
-        {done, FromPid} ->
-            FromPid ! {remains, AllEvents}
+        {ReplyTo, close} ->
+            reply(ReplyTo, error, {unexpected, close, AllEvents}),
+	    expect_loop_closed();
+        {ReplyTo, CmdData} ->
+            reply(ReplyTo, error, {unexpected, CmdData, Event}),
+	    expect_loop(Events)
     end;
-loop([]) ->
+expect_loop([]) ->
     receive
-        {done, FromPid} -> FromPid ! ok;
-        {_, _, FromPid} -> FromPid ! error
+        stop ->
+            ok;
+        {ReplyTo, close} ->
+            reply(ReplyTo, reply, ok),
+	    expect_loop_closed();
+        {ReplyTo, CmdData} ->
+            reply(ReplyTo, error, {unexpected, CmdData}),
+	    expect_loop([])
     end.
+
+expect_loop_closed() ->
+    receive
+        stop ->
+            ok;
+        {ReplyTo, close} ->
+            reply(ReplyTo, reply, ok),
+	    expect_loop_closed();
+        {ReplyTo, CmdData} ->
+            reply(ReplyTo, error, {unexpected, CmdData})
+    end.
+
+%% Used by disconnected/0.
+disconnected_loop() ->
+    receive
+        stop ->
+            ok;
+        {ReplyTo, close} ->
+            reply(ReplyTo, reply, ok),
+	    disconnected_loop();
+        {ReplyTo, {recv, _NumBytes}} ->
+            reply(ReplyTo, reply, {error, closed}),
+	    disconnected_loop();
+        {ReplyTo, {send, _NumBytes}} ->
+            reply(ReplyTo, reply, {error, closed}),
+	    disconnected_loop()
+    end.
+
+reply({Pid, Tag}, Type, Msg) ->
+    Pid ! {Tag, Type, Msg}.
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
 %% Tests for the mock_tcp functions.
 bad_recv_test() ->
-    Pid = create([{recv, <<"foobar">>}]),
+    Pid = expect([{recv, <<"foobar">>}]),
     ?assertError(_, recv(Pid, 10)).
 
 success_test() ->
-    Pid = create([{recv, <<"foobar">>}, {send, <<"baz">>}]),
+    Pid = expect([{recv, <<"foobar">>}, {send, <<"baz">>}]),
     %?assertError({unexpected_close, _}, close(Pid)),
     ?assertEqual({ok, <<"foo">>}, recv(Pid, 3)),
     ?assertEqual({ok, <<"bar">>}, recv(Pid, 3)),

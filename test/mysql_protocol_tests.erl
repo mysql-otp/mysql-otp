@@ -41,12 +41,15 @@ resultset_test() ->
         "53 51 4c 20 43 6f 6d 6d    75 6e 69 74 79 20 53 65    SQL Community Se"
         "72 76 65 72 20 28 47 50    4c 29|05 00 00 05 fe 00    rver (GPL)......"
         "00 02 00                                              ..."),
+    TestFun = fun(Sock) ->
+                  {ok, [Res]} = mysql_protocol:query(Query, mock_tcp, Sock, [], auto,
+                                                     no_filtermap_fun, infinity),
+                  mock_tcp:close(Sock),
+                  Res
+              end,
     ExpectedCommunication = [{send, ExpectedReq},
                              {recv, ExpectedResponse}],
-    Sock = mock_tcp:create(ExpectedCommunication),
-    {ok, [ResultSet]} = mysql_protocol:query(Query, mock_tcp, Sock, [], auto,
-                                             no_filtermap_fun, infinity),
-    mock_tcp:close(Sock),
+    ResultSet = mock_tcp:with_mock(mock_tcp:expect(ExpectedCommunication), TestFun),
     ?assertMatch(#resultset{cols = [#col{name = <<"@@version_comment">>}],
                             rows = [[<<"MySQL Community Server (GPL)">>]]},
                  ResultSet),
@@ -81,11 +84,16 @@ resultset_error_test() ->
         "00 00 05 00 00 0c fe 00    00 02 00 17 00 00 0d ff    ................"
         "48 04 23 48 59 30 30 30    4e 6f 20 74 61 62 6c 65    H.#HY000No table"
         "73 20 75 73 65 64                                     s used"),
-    Sock = mock_tcp:create([{send, ExpectedReq}, {recv, ExpectedResponse}]),
-    {ok, [Result]} = mysql_protocol:query(Query, mock_tcp, Sock, [], auto,
-                                          no_filtermap_fun, infinity),
+    TestFun = fun(Sock) ->
+                  {ok, [Res]} = mysql_protocol:query(Query, mock_tcp, Sock, [], auto,
+                                                     no_filtermap_fun, infinity),
+                  mock_tcp:close(Sock),
+                  Res
+              end,
+    ExpectedCommunication = [{send, ExpectedReq},
+			     {recv, ExpectedResponse}],
+    Result = mock_tcp:with_mock(mock_tcp:expect(ExpectedCommunication), TestFun),
     ?assertMatch(#error{}, Result),
-    mock_tcp:close(Sock),
     ok.
 
 prepare_test() ->
@@ -105,9 +113,14 @@ prepare_test() ->
         "00 00 05 03 64 65 66 00    00 00 04 63 6f 6c 31 00    ....def....col1."
         "0c 3f 00 00 00 00 00 fd    80 00 1f 00 00|05 00 00    .?.............."
         "06 fe 00 00 02 00                                     ......"),
-    Sock = mock_tcp:create([{send, ExpectedReq}, {recv, ExpectedResp}]),
-    Result = mysql_protocol:prepare(Query, mock_tcp, Sock),
-    mock_tcp:close(Sock),
+    TestFun = fun(Sock) ->
+                  Res = mysql_protocol:prepare(Query, mock_tcp, Sock),
+                  mock_tcp:close(Sock),
+                  Res
+              end,
+    ExpectedCommunication = [{send, ExpectedReq},
+			     {recv, ExpectedResp}],
+    Result = mock_tcp:with_mock(mock_tcp:expect(ExpectedCommunication), TestFun),
     ?assertMatch(#prepared{statement_id = StmtId,
                            param_count = 2,
                            warning_count = 0} when is_integer(StmtId),
@@ -115,12 +128,24 @@ prepare_test() ->
     ok.
 
 bad_protocol_version_test() ->
-    Sock = mock_tcp:create([{recv, <<2, 0, 0, 0, 9, 0>>}]),
-    SSLOpts = undefined,
-    ?assertError(unknown_protocol,
-                 mysql_protocol:handshake("foo", "bar", "baz", "db", mock_tcp,
-                                          SSLOpts, Sock, false)),
-    mock_tcp:close(Sock).
+    TestFun = fun(Sock) ->
+                  SSLOpts = undefined,
+                  Res = try
+                            mysql_protocol:handshake("foo", "bar", "baz", "db", mock_tcp,
+                                                     SSLOpts, Sock, false)
+                        of
+                            UnexpectedSuccess ->
+                                {success, UnexpectedSuccess}
+                        catch
+                            Class:Reason ->
+                                {Class, Reason}
+                        end,
+                  mock_tcp:close(Sock),
+                  Res
+              end,
+    Result = mock_tcp:with_mock(mock_tcp:expect([{recv, <<2, 0, 0, 0, 9, 0>>}]), TestFun),
+    ?assertMatch({error, unknown_protocol}, Result),
+    ok.
 
 error_as_initial_packet_test() ->
     %% This behaviour has been observed from MariaDB 10.1.21
@@ -128,12 +153,17 @@ error_as_initial_packet_test() ->
                    99,116,105,111,110,115>>,
     Packet = <<(byte_size(PacketBody)):24/little-integer,
                (_SeqNum = 0):8/integer, PacketBody/binary>>,
-    Sock = mock_tcp:create([{recv, Packet}]),
-    SSLOpts = undefined,
+    TestFun = fun(Sock) ->
+                  SSLOpts = undefined,
+                  Res = mysql_protocol:handshake("foo", "bar", "baz", "db", mock_tcp,
+                                                 SSLOpts, Sock, false),
+                  mock_tcp:close(Sock),
+                  Res
+              end,
+    Result = mock_tcp:with_mock(mock_tcp:expect([{recv, Packet}]), TestFun),
     ?assertMatch(#error{code = 1040, msg = <<"Too many connections">>},
-                 mysql_protocol:handshake("foo", "bar", "baz", "db", mock_tcp,
-                                          SSLOpts, Sock, false)),
-    mock_tcp:close(Sock).
+                 Result),
+    ok.
 
 %% --- Helper functions for the above tests ---
 
