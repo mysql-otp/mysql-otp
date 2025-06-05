@@ -85,29 +85,31 @@ handshake(Host, Username, Password, Database, SockModule0, SSLOpts, Socket0,
             #error{code = -3, msg = iolist_to_binary(io_lib:format("Error during handshake: ~p", [Reason]))}
     end.
 
-%% @doc Process the initial handshake packet from the server
 handshake_process_initial_packet(HandshakePacket, Host, Username, Password, Database,
-                                SockModule0, SSLOpts, Socket0, SeqNum1, SetFoundRows) ->
+                                 SockModule0, SSLOpts, Socket0, SeqNum1, SetFoundRows) ->
     case parse_handshake(HandshakePacket) of
         #handshake{} = Handshake ->
-            handshake_continue_with_ssl(Handshake, Host, Username, Password, Database,
-                                      SockModule0, SSLOpts, Socket0, SeqNum1, SetFoundRows);
+            handshake_upgrade_connection(Handshake, Host, Username, Password, Database,
+                                         SockModule0, SSLOpts, Socket0, SeqNum1, SetFoundRows);
         #error{} = Error ->
             Error
     end.
 
-%% @doc Continue handshake after successful parsing, potentially upgrading to SSL
-handshake_continue_with_ssl(Handshake, Host, Username, Password, Database,
-                           SockModule0, SSLOpts, Socket0, SeqNum1, SetFoundRows) ->
+handshake_upgrade_connection(Handshake, Host, Username, Password, Database,
+                             SockModule0, SSLOpts, Socket0, SeqNum1, SetFoundRows) ->
     {ok, SockModule, Socket, SeqNum2} =
         maybe_do_ssl_upgrade(Host, SockModule0, Socket0, SeqNum1, Handshake,
-                           SSLOpts, Database, SetFoundRows),
+                             SSLOpts, Database, SetFoundRows),
+    handshake_send_response(Handshake, Username, Password, Database, SockModule,
+                            Socket, SeqNum2, SetFoundRows).
+
+handshake_send_response(Handshake, Username, Password, Database, SockModule,
+                        Socket, SeqNum2, SetFoundRows) ->
     Response = build_handshake_response(Handshake, Username, Password,
-                                      Database, SetFoundRows),
+                                        Database, SetFoundRows),
     {ok, SeqNum3} = send_packet(SockModule, Socket, Response, SeqNum2),
     handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket,
-                                  SeqNum3).
-
+                                    SeqNum3).
 
 handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket, SeqNum) ->
     #handshake{auth_plugin_name = AuthPluginName,
@@ -146,91 +148,66 @@ auth_finish_or_switch(AuthPluginName, AuthPluginData, Password,
     case recv_packet(SockModule, Socket, SeqNum0) of
         {ok, ConfirmPacket, SeqNum1} ->
             auth_process_confirm_packet(ConfirmPacket, AuthPluginName, AuthPluginData, 
-                                      Password, SockModule, Socket, ServerVersion, SeqNum1);
+                                        Password, SockModule, Socket, ServerVersion, SeqNum1);
         {error, Reason} ->
             #error{code = -4, msg = iolist_to_binary(io_lib:format("Error during authentication: ~p", [Reason]))}
     end.
 
-%% @doc Process the authentication confirmation packet from the server
 auth_process_confirm_packet(ConfirmPacket, AuthPluginName, AuthPluginData, Password,
-                           SockModule, Socket, ServerVersion, SeqNum1) ->
+                            SockModule, Socket, ServerVersion, SeqNum1) ->
     case parse_handshake_confirm(ConfirmPacket) of
         #ok{} = Ok ->
             %% Authentication success.
             Ok;
         #auth_method_switch{auth_plugin_name = SwitchAuthPluginName,
-                           auth_plugin_data = SwitchAuthPluginData} ->
-            auth_handle_method_switch(SwitchAuthPluginName, SwitchAuthPluginData, Password,
-                                    SockModule, Socket, ServerVersion, SeqNum1);
+                            auth_plugin_data = SwitchAuthPluginData} ->
+            %% Server wants to transition to a different auth method.
+            %% Send hash of password, calculated according to the requested auth method.
+            %% (NOTE: Sending the password hash as a response to an auth method switch
+            %%        is the answer for both mysql_native_password and caching_sha2_password
+            %%        methods. It may be different for future other auth methods.)
+            Hash = hash_password(SwitchAuthPluginName, Password, SwitchAuthPluginData),
+            {ok, SeqNum2} = send_packet(SockModule, Socket, Hash, SeqNum1),
+            auth_finish_or_switch(SwitchAuthPluginName, SwitchAuthPluginData, Password,
+                                  SockModule, Socket, ServerVersion, SeqNum2);
         fast_auth_completed ->
             %% Server signals success by fast authentication (probably specific to
             %% the caching_sha2_password method). This will be followed by an OK Packet.
             auth_finish_or_switch(AuthPluginName, AuthPluginData, Password, SockModule,
-                                Socket, ServerVersion, SeqNum1);
+                                  Socket, ServerVersion, SeqNum1);
         full_auth_requested when SockModule =:= ssl ->
-            auth_handle_full_auth_ssl(AuthPluginName, AuthPluginData, Password,
-                                    SockModule, Socket, ServerVersion, SeqNum1);
+            %% Server wants full authentication (probably specific to the
+            %% caching_sha2_password method), and we are on a secure channel since
+            %% our connection is through SSL. We have to reply with the null-terminated
+            %% clear text password.
+            Password1 = case is_binary(Password) of
+                true -> Password;
+                false -> iolist_to_binary(Password)
+            end,
+            {ok, SeqNum2} = send_packet(SockModule, Socket, <<Password1/binary, 0>>, SeqNum1),
+            auth_finish_or_switch(AuthPluginName, AuthPluginData, Password, SockModule,
+                                  Socket, ServerVersion, SeqNum2);
         full_auth_requested ->
-            auth_handle_full_auth_non_ssl(AuthPluginName, AuthPluginData, Password,
-                                        SockModule, Socket, ServerVersion, SeqNum1);
+            %% Server wants full authentication (probably specific to the
+            %% caching_sha2_password method), and we are not on a secure channel.
+            %% Since we are not implementing the client-side caching of the server's
+            %% public key, we must ask for it by sending a single byte "2".
+            {ok, SeqNum2} = send_packet(SockModule, Socket, <<2:8>>, SeqNum1),
+            auth_finish_or_switch(AuthPluginName, AuthPluginData, Password, SockModule,
+                                  Socket, ServerVersion, SeqNum2);
         {public_key, PubKey} ->
-            auth_handle_public_key(AuthPluginName, AuthPluginData, Password, PubKey,
-                                 SockModule, Socket, ServerVersion, SeqNum1);
+            %% Server has sent its public key (certainly specific to the caching_sha2_password
+            %% method). We encrypt the password with the public key we received and send
+            %% it back to the server.
+            EncryptedPassword = encrypt_password(Password, AuthPluginData, PubKey,
+                                                 ServerVersion),
+            {ok, SeqNum2} = send_packet(SockModule, Socket, EncryptedPassword, SeqNum1),
+            auth_finish_or_switch(AuthPluginName, AuthPluginData, Password, SockModule,
+                                  Socket, ServerVersion, SeqNum2);
         Error ->
             %% Authentication failure.
             Error
     end.
-
-%% @doc Handle authentication method switch
-auth_handle_method_switch(SwitchAuthPluginName, SwitchAuthPluginData, Password,
-                         SockModule, Socket, ServerVersion, SeqNum1) ->
-    %% Server wants to transition to a different auth method.
-    %% Send hash of password, calculated according to the requested auth method.
-    %% (NOTE: Sending the password hash as a response to an auth method switch
-    %%        is the answer for both mysql_native_password and caching_sha2_password
-    %%        methods. It may be different for future other auth methods.)
-    Hash = hash_password(SwitchAuthPluginName, Password, SwitchAuthPluginData),
-    {ok, SeqNum2} = send_packet(SockModule, Socket, Hash, SeqNum1),
-    auth_finish_or_switch(SwitchAuthPluginName, SwitchAuthPluginData, Password,
-                        SockModule, Socket, ServerVersion, SeqNum2).
-
-%% @doc Handle full authentication over SSL
-auth_handle_full_auth_ssl(AuthPluginName, AuthPluginData, Password,
-                         SockModule, Socket, ServerVersion, SeqNum1) ->
-    %% Server wants full authentication (probably specific to the
-    %% caching_sha2_password method), and we are on a secure channel since
-    %% our connection is through SSL. We have to reply with the null-terminated
-    %% clear text password.
-    Password1 = case is_binary(Password) of
-        true -> Password;
-        false -> iolist_to_binary(Password)
-    end,
-    {ok, SeqNum2} = send_packet(SockModule, Socket, <<Password1/binary, 0>>, SeqNum1),
-    auth_finish_or_switch(AuthPluginName, AuthPluginData, Password, SockModule,
-                        Socket, ServerVersion, SeqNum2).
-
-%% @doc Handle full authentication over non-SSL connection
-auth_handle_full_auth_non_ssl(AuthPluginName, AuthPluginData, Password,
-                             SockModule, Socket, ServerVersion, SeqNum1) ->
-    %% Server wants full authentication (probably specific to the
-    %% caching_sha2_password method), and we are not on a secure channel.
-    %% Since we are not implementing the client-side caching of the server's
-    %% public key, we must ask for it by sending a single byte "2".
-    {ok, SeqNum2} = send_packet(SockModule, Socket, <<2:8>>, SeqNum1),
-    auth_finish_or_switch(AuthPluginName, AuthPluginData, Password, SockModule,
-                        Socket, ServerVersion, SeqNum2).
-
-%% @doc Handle authentication with public key
-auth_handle_public_key(AuthPluginName, AuthPluginData, Password, PubKey,
-                      SockModule, Socket, ServerVersion, SeqNum1) ->
-    %% Server has sent its public key (certainly specific to the caching_sha2_password
-    %% method). We encrypt the password with the public key we received and send
-    %% it back to the server.
-    EncryptedPassword = encrypt_password(Password, AuthPluginData, PubKey,
-                                       ServerVersion),
-    {ok, SeqNum2} = send_packet(SockModule, Socket, EncryptedPassword, SeqNum1),
-    auth_finish_or_switch(AuthPluginName, AuthPluginData, Password, SockModule,
-                        Socket, ServerVersion, SeqNum2).
 
 -spec quit(module(), term()) -> ok.
 quit(SockModule, Socket) ->
