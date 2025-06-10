@@ -76,21 +76,40 @@
 handshake(Host, Username, Password, Database, SockModule0, SSLOpts, Socket0,
           SetFoundRows) ->
     SeqNum0 = 0,
-    {ok, HandshakePacket, SeqNum1} = recv_packet(SockModule0, Socket0, SeqNum0),
+    case recv_packet(SockModule0, Socket0, SeqNum0) of
+        {ok, HandshakePacket, SeqNum1} ->
+            handshake_process_initial_packet(HandshakePacket, Host, Username, Password, 
+                                             Database, SockModule0, SSLOpts, Socket0, 
+                                             SeqNum1, SetFoundRows);
+        {error, Reason} ->
+            #error{code = -3, msg = iolist_to_binary(io_lib:format("Error during handshake: ~p", [Reason]))}
+    end.
+
+handshake_process_initial_packet(HandshakePacket, Host, Username, Password, Database,
+                                 SockModule0, SSLOpts, Socket0, SeqNum1, SetFoundRows) ->
     case parse_handshake(HandshakePacket) of
         #handshake{} = Handshake ->
-            {ok, SockModule, Socket, SeqNum2} =
-                maybe_do_ssl_upgrade(Host, SockModule0, Socket0, SeqNum1, Handshake,
-                                     SSLOpts, Database, SetFoundRows),
-            Response = build_handshake_response(Handshake, Username, Password,
-                                                Database, SetFoundRows),
-            {ok, SeqNum3} = send_packet(SockModule, Socket, Response, SeqNum2),
-            handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket,
-                                            SeqNum3);
+            handshake_upgrade_connection(Handshake, Host, Username, Password, Database,
+                                         SockModule0, SSLOpts, Socket0, SeqNum1, SetFoundRows);
         #error{} = Error ->
             Error
     end.
 
+handshake_upgrade_connection(Handshake, Host, Username, Password, Database,
+                             SockModule0, SSLOpts, Socket0, SeqNum1, SetFoundRows) ->
+    {ok, SockModule, Socket, SeqNum2} =
+        maybe_do_ssl_upgrade(Host, SockModule0, Socket0, SeqNum1, Handshake,
+                             SSLOpts, Database, SetFoundRows),
+    handshake_send_response(Handshake, Username, Password, Database, SockModule,
+                            Socket, SeqNum2, SetFoundRows).
+
+handshake_send_response(Handshake, Username, Password, Database, SockModule,
+                        Socket, SeqNum2, SetFoundRows) ->
+    Response = build_handshake_response(Handshake, Username, Password,
+                                        Database, SetFoundRows),
+    {ok, SeqNum3} = send_packet(SockModule, Socket, Response, SeqNum2),
+    handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket,
+                                    SeqNum3).
 
 handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket, SeqNum) ->
     #handshake{auth_plugin_name = AuthPluginName,
@@ -126,7 +145,16 @@ handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket, SeqNum)
 %% and new auth plugin data.
 auth_finish_or_switch(AuthPluginName, AuthPluginData, Password,
                       SockModule, Socket, ServerVersion, SeqNum0) ->
-    {ok, ConfirmPacket, SeqNum1} = recv_packet(SockModule, Socket, SeqNum0),
+    case recv_packet(SockModule, Socket, SeqNum0) of
+        {ok, ConfirmPacket, SeqNum1} ->
+            auth_process_confirm_packet(ConfirmPacket, AuthPluginName, AuthPluginData, 
+                                        Password, SockModule, Socket, ServerVersion, SeqNum1);
+        {error, Reason} ->
+            #error{code = -4, msg = iolist_to_binary(io_lib:format("Error during authentication: ~p", [Reason]))}
+    end.
+
+auth_process_confirm_packet(ConfirmPacket, AuthPluginName, AuthPluginData, Password,
+                            SockModule, Socket, ServerVersion, SeqNum1) ->
     case parse_handshake_confirm(ConfirmPacket) of
         #ok{} = Ok ->
             %% Authentication success.

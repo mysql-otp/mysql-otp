@@ -27,7 +27,7 @@ with_mock(MockPid, Fun) when is_pid(MockPid), is_function(Fun, 1) ->
 
 %% @doc Creates a mock_tcp process with a buffer of expected recv/2,3 and send/2
 %% calls. The pid of the mock_tcp process is returned.
--spec expect([{recv, binary()} | {send, binary()}]) -> pid().
+-spec expect([{recv, binary()} | {send, binary() | 'ignore'} | 'disconnect']) -> pid().
 expect(ExpectedEvents) when is_list(ExpectedEvents) ->
     spawn_link(fun () -> expect_loop(ExpectedEvents) end).
 
@@ -36,7 +36,7 @@ expect(ExpectedEvents) when is_list(ExpectedEvents) ->
 %% process is returned.
 -spec disconnected() -> pid().
 disconnected() ->
-    spawn_link(fun disconnected_loop/0).
+    spawn_link(fun() -> disconnected_loop(false) end).
 
 %% @doc Receives NumBytes bytes from mock_tcp Pid. This function can be used
 %% as a replacement for gen_tcp:recv/2 in unit tests. If there not enough data
@@ -75,24 +75,29 @@ call(Pid, Msg) ->
     Pid ! {{self(), Tag}, Msg},
     receive
         {Tag, reply, Reply} -> Reply;
-	{Tag, error, Msg} -> error(Msg)
+        {Tag, error, Msg} -> error(Msg)
     after 100 ->
         error(noreply)
     end.
 
 %% Used by expect/1.
+expect_loop([disconnect]) ->
+    disconnected_loop(false);
 expect_loop(AllEvents = [{Func, Data} = Event | Events]) ->
     receive
         stop ->
             ok;
-        {ReplyTo, {recv, NumBytes}} when Func == recv, NumBytes == byte_size(Data) ->
+        {ReplyTo, {recv, NumBytes}} when Func =:= recv, NumBytes =:= byte_size(Data) ->
             reply(ReplyTo, reply, {ok, Data}),
             expect_loop(Events);
-        {ReplyTo, {recv, NumBytes}} when Func == recv, NumBytes < byte_size(Data) ->
+        {ReplyTo, {recv, NumBytes}} when Func =:= recv, NumBytes < byte_size(Data) ->
             <<Data1:NumBytes/binary, Rest/binary>> = Data,
             reply(ReplyTo, reply, {ok, Data1}),
             expect_loop([{recv, Rest} | Events]);
-        {ReplyTo, {send, Bytes}} when Func == send, Bytes == Data ->
+        {ReplyTo, {send, _Bytes}} when Func =:= send, Data =:= ignore ->
+            reply(ReplyTo, reply, ok),
+            expect_loop(Events);
+        {ReplyTo, {send, Bytes}} when Func =:= send, Bytes =:= Data ->
             reply(ReplyTo, reply, ok),
             expect_loop(Events);
         {ReplyTo, {send, Bytes} = CmdData} when Func == send, byte_size(Bytes) < byte_size(Data) ->
@@ -103,14 +108,14 @@ expect_loop(AllEvents = [{Func, Data} = Event | Events]) ->
                     expect_loop([{send, Rest} | Events]);
                 _ ->
                     reply(ReplyTo, error, {unexpected, CmdData, Event}),
-		    expect_loop(Events)
+                    expect_loop(Events)
             end;
         {ReplyTo, close} ->
             reply(ReplyTo, error, {unexpected, close, AllEvents}),
-	    expect_loop_closed();
+            expect_loop_closed();
         {ReplyTo, CmdData} ->
             reply(ReplyTo, error, {unexpected, CmdData, Event}),
-	    expect_loop(Events)
+            expect_loop(Events)
     end;
 expect_loop([]) ->
     receive
@@ -118,10 +123,10 @@ expect_loop([]) ->
             ok;
         {ReplyTo, close} ->
             reply(ReplyTo, reply, ok),
-	    expect_loop_closed();
+            expect_loop_closed();
         {ReplyTo, CmdData} ->
             reply(ReplyTo, error, {unexpected, CmdData}),
-	    expect_loop([])
+            expect_loop([])
     end.
 
 expect_loop_closed() ->
@@ -130,25 +135,29 @@ expect_loop_closed() ->
             ok;
         {ReplyTo, close} ->
             reply(ReplyTo, reply, ok),
-	    expect_loop_closed();
+            expect_loop_closed();
         {ReplyTo, CmdData} ->
-            reply(ReplyTo, error, {unexpected, CmdData})
+            reply(ReplyTo, error, {unexpected, CmdData}),
+            expect_loop_closed()
     end.
 
 %% Used by disconnected/0.
-disconnected_loop() ->
+disconnected_loop(Recvd) ->
     receive
         stop ->
             ok;
         {ReplyTo, close} ->
             reply(ReplyTo, reply, ok),
-	    disconnected_loop();
+            disconnected_loop(Recvd);
         {ReplyTo, {recv, _NumBytes}} ->
             reply(ReplyTo, reply, {error, closed}),
-	    disconnected_loop();
-        {ReplyTo, {send, _NumBytes}} ->
+            disconnected_loop(true);
+        {ReplyTo, {send, _Bytes}} when Recvd ->
             reply(ReplyTo, reply, {error, closed}),
-	    disconnected_loop()
+            disconnected_loop(Recvd);
+        {ReplyTo, {send, _Bytes}} ->
+            reply(ReplyTo, reply, ok),
+            disconnected_loop(Recvd)
     end.
 
 reply({Pid, Tag}, Type, Msg) ->

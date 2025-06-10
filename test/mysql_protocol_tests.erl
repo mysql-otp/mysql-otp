@@ -91,7 +91,7 @@ resultset_error_test() ->
                   Res
               end,
     ExpectedCommunication = [{send, ExpectedReq},
-			     {recv, ExpectedResponse}],
+                             {recv, ExpectedResponse}],
     Result = mock_tcp:with_mock(mock_tcp:expect(ExpectedCommunication), TestFun),
     ?assertMatch(#error{}, Result),
     ok.
@@ -119,7 +119,7 @@ prepare_test() ->
                   Res
               end,
     ExpectedCommunication = [{send, ExpectedReq},
-			     {recv, ExpectedResp}],
+                             {recv, ExpectedResp}],
     Result = mock_tcp:with_mock(mock_tcp:expect(ExpectedCommunication), TestFun),
     ?assertMatch(#prepared{statement_id = StmtId,
                            param_count = 2,
@@ -165,6 +165,64 @@ error_as_initial_packet_test() ->
                  Result),
     ok.
 
+connection_closed_during_handshake_test() ->
+    TestFun = fun(Sock) ->
+                  SSLOpts = undefined,
+                  Res = mysql_protocol:handshake("localhost", "user", "pass", "db", mock_tcp,
+                                                 SSLOpts, Sock, false),
+                  mock_tcp:close(Sock),
+                  Res
+              end,
+    Result = mock_tcp:with_mock(mock_tcp:disconnected(), TestFun),
+    ?assertMatch(#error{code = -3}, Result),
+    ?assertMatch(#error{msg = Msg} when is_binary(Msg), Result),
+    #error{msg = ErrorMsg} = Result,
+    ?assert(binary:match(ErrorMsg, <<"Error during handshake">>) =/= nomatch),
+    ok.
+
+connection_closed_during_authentication_test() ->
+    HandshakePacket = create_minimal_handshake_packet(),
+    ExpectedCommunication = [
+        {recv, HandshakePacket},
+        {send, ignore},
+        disconnect
+    ],
+    TestFun = fun(Sock) ->
+                  SSLOpts = undefined,
+                  Res = mysql_protocol:handshake("localhost", "user", "pass", "db", mock_tcp,
+                                                 SSLOpts, Sock, false),
+                  mock_tcp:close(Sock),
+                  Res
+              end,
+    Result = mock_tcp:with_mock(mock_tcp:expect(ExpectedCommunication), TestFun),
+    ?assertMatch(#error{code = -4}, Result),
+    ?assertMatch(#error{msg = Msg} when is_binary(Msg), Result),
+    #error{msg = ErrorMsg} = Result,
+    ?assert(binary:match(ErrorMsg, <<"Error during authentication">>) =/= nomatch),
+    ok.
+
+%% Helper function to create a minimal valid handshake packet for testing
+create_minimal_handshake_packet() ->
+    %% This creates a minimal MySQL handshake packet for testing purposes
+    %% Based on the protocol documentation and existing test patterns
+
+    %% Minimal handshake body
+    Body = <<10,                        % Protocol version
+             "5.7.0", 0,                % Server version
+             1:32/little,               % Connection ID
+             "12345678",                % Auth plugin data part 1
+             0,                         % Filler
+             16#A20A:16/little,         % Capabilities lower
+             33,                        % Character set
+             2:16/little,               % Status flags  
+             16#0000:16/little,         % Capabilities upper
+             21,                        % Auth plugin data length
+             0,0,0,0,0,0,0,0,0,0,       % Reserved (10 bytes)
+             "123456789012", 0,         % Auth plugin data part 2
+             "mysql_native_password", 0 % Auth plugin name
+           >>,
+    <<(byte_size(Body)):24/little, 0, Body/binary>>.
+
 %% --- Helper functions for the above tests ---
 
 %% Convert hex dumps to binaries. This is a helper function for the tests.
@@ -198,3 +256,4 @@ hexdump_to_bin_test() ->
                16#65, 16#63, 16#74, 16#20, 16#55, 16#53, 16#45, 16#52,
                16#28, 16#29>>,
     ?assertEqual(Expect, hexdump_to_bin(HexDump)).
+
