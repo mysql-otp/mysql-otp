@@ -79,8 +79,8 @@ handshake(Host, Username, Password, Database, SockModule0, SSLOpts, Socket0,
     case recv_packet(SockModule0, Socket0, SeqNum0) of
         {ok, HandshakePacket, SeqNum1} ->
             handshake_process_initial_packet(HandshakePacket, Host, Username, Password, 
-                                           Database, SockModule0, SSLOpts, Socket0, 
-                                           SeqNum1, SetFoundRows);
+                                             Database, SockModule0, SSLOpts, Socket0, 
+                                             SeqNum1, SetFoundRows);
         {error, Reason} ->
             #error{code = -3, msg = iolist_to_binary(io_lib:format("Error during handshake: ~p", [Reason]))}
     end.
