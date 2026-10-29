@@ -38,7 +38,8 @@ encode({{Y, M, D}, {H, Mi, S}}) when is_float(S) ->
     io_lib:format("'~4..0b-~2..0b-~2..0b ~2..0b:~2..0b:~9.6.0f'",
                   [Y, M, D, H, Mi, S]);
 encode({D, {H, M, S}}) when D >= 0 ->
-    Args = [H1 = D * 24 + H, M, S],
+    H1 = D * 24 + H,
+    Args = [H1, M, S],
     if
         H1 > 99, is_integer(S) -> io_lib:format("'~b:~2..0b:~2..0b'", Args);
         H1 > 99, is_float(S)   -> io_lib:format("'~b:~2..0b:~9.6.0f'", Args);
@@ -48,7 +49,8 @@ encode({D, {H, M, S}}) when D >= 0 ->
 encode({D, {H, M, S}}) when D < 0, is_integer(S) ->
     Sec = (D * 24 + H) * 3600 + M * 60 + S,
     {D1, {H1, M1, S1}} = calendar:seconds_to_daystime(-Sec),
-    Args = [H2 = D1 * 24 + H1, M1, S1],
+    H2 = D1 * 24 + H1,
+    Args = [H2, M1, S1],
     if
         H2 > 99 -> io_lib:format("'-~b:~2..0b:~2..0b'", Args);
         true    -> io_lib:format("'-~2..0b:~2..0b:~2..0b'", Args)
@@ -61,7 +63,8 @@ encode({D, {H, M, S}}) when D < 0, is_float(S) ->
     end,
     Sec = (D * 24 + H) * 3600 + M * 60 + SInt1,
     {D1, {H1, M1, S1}} = calendar:seconds_to_daystime(-Sec),
-    Args = [H2 = D1 * 24 + H1, M1, S1 + Frac],
+    H2 = D1 * 24 + H1,
+    Args = [H2, M1, S1 + Frac],
     if
         H2 > 99 -> io_lib:format("'-~b:~2..0b:~9.6.0f'", Args);
         true    -> io_lib:format("'-~2..0b:~2..0b:~9.6.0f'", Args)
