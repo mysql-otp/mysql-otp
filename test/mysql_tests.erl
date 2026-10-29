@@ -306,33 +306,34 @@ unix_socket_test() ->
                           "Not supported on this OS.~n")
     end.
 
+-if(?OTP_RELEASE < 23).
 socket_backend_test() ->
-    case ?OTP_RELEASE of
-        Rel when Rel < 23 ->
+    logger:notice("Skipping socket backend test. "
+                  "Not supported on OTP ~b.", [?OTP_RELEASE]).
+-elif(?OTP_RELEASE =:= 23).
+socket_backend_test() ->
+    logger:notice("Skipping socket backend test. "
+                  "Unstable on OTP 23.").
+-else.
+socket_backend_test() ->
+    {ok, Pid1} = mysql:start_link([{user, ?user},
+                                   {password, ?password},
+                                   {tcp_options, [{inet_backend, socket}]}]),
+    Dir = run_dir(),
+    {ok, [<<"@@socket">>], [[SockFile0]]} = mysql:query(Pid1, <<"SELECT @@socket">>),
+    SockFile = filename:join([Dir, filename:basename(SockFile0)]),
+    mysql:stop(Pid1),
+    case mysql:start_link([{host, {local, SockFile}},
+                           {user, ?user}, {password, ?password},
+                           {tcp_options, [{inet_backend, socket}]}]) of
+        {ok, Pid2} ->
+            ?assertEqual({ok, [<<"1">>], [[1]]}, mysql:query(Pid2, <<"SELECT 1">>)),
+            mysql:stop(Pid2);
+        {error, eafnosupport} ->
             logger:notice("Skipping socket backend test. "
-                          "Not supported on OTP ~b.", [Rel]);
-        23 ->
-            logger:notice("Skipping socket backend test. "
-                          "Unstable on OTP 23.");
-        _ ->
-            {ok, Pid1} = mysql:start_link([{user, ?user},
-                                           {password, ?password},
-                                           {tcp_options, [{inet_backend, socket}]}]),
-            Dir = run_dir(),
-            {ok, [<<"@@socket">>], [[SockFile0]]} = mysql:query(Pid1, <<"SELECT @@socket">>),
-            SockFile = filename:join([Dir, filename:basename(SockFile0)]),
-            mysql:stop(Pid1),
-            case mysql:start_link([{host, {local, SockFile}},
-                                   {user, ?user}, {password, ?password},
-                                   {tcp_options, [{inet_backend, socket}]}]) of
-                {ok, Pid2} ->
-                    ?assertEqual({ok, [<<"1">>], [[1]]}, mysql:query(Pid2, <<"SELECT 1">>)),
-                    mysql:stop(Pid2);
-                {error, eafnotsupported} ->
-                    logger:notice("Skipping socket backend test. "
-                                  "Not supported on this OS.~n")
-            end
+                          "Not supported on this OS.~n")
     end.
+-endif.
 
 connect_queries_failure_test() ->
     process_flag(trap_exit, true),

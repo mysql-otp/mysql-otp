@@ -10,24 +10,25 @@ on:
 jobs:
   ci:
     name: OTP ${{matrix.otp[0]}} + ${{matrix.image[0]}} ${{matrix.image[1]}}
-    runs-on: ${{matrix.os}}
+    runs-on: ${{matrix.otp[2]}}
     strategy:
       fail-fast: false
       matrix:
         otp:
-          - [24, "3.21.0"]
-          - [25, "3.24.0"]
-          - [26, "3.24.0"]
-          - [27, "3.24.0"]
+          - [24, "3.21.0", ubuntu-24.04]
+          - [25, "3.24.0", ubuntu-24.04]
+          - [26, "3.25.1", ubuntu-latest]
+          - [27, "3.28.0", ubuntu-latest]
+          - [28, "3.28.0", ubuntu-latest]
+          - [29, "3.28.0", ubuntu-latest]
         image:
           - ["mysql", "5.7"]
           - ["mysql", "8.4"]
           - ["mysql", "9.0"]
           - ["mariadb", "10"]
           - ["mariadb", "11"]
-        os: [ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: erlef/setup-beam@v1
         with:
           otp-version: ${{matrix.otp[0]}}
