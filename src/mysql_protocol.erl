@@ -1006,9 +1006,9 @@ decode_binary(#col{type = T, decimals = S, length = L,
 decode_binary(#col{type = ?TYPE_DOUBLE},
               <<Value:64/float-little, Rest/binary>>) ->
     {Value, Rest};
-decode_binary(#col{type = ?TYPE_FLOAT}, <<0.0:32/float-little, Rest/binary>>) ->
-    %% TYPE_FLOAT conversation fails on math:log10(0.0)
-    {0.0, Rest};
+decode_binary(#col{type = ?TYPE_FLOAT},
+              <<Value:32/float-little, Rest/binary>>) when Value == 0 ->
+    {Value, Rest};
 decode_binary(#col{type = ?TYPE_FLOAT},
               <<Value:32/float-little, Rest/binary>>) ->
     %% There is a precision loss when storing and fetching a 32-bit float.
@@ -1781,6 +1781,15 @@ decode_binary_test() ->
     ?assertEqual({1234.57, <<>>},
                  decode_binary(#col{type = ?TYPE_FLOAT},
                                <<1234.56789:32/float-little>>)),
+    ok.
+
+decode_binary_float_zero_test() ->
+    ?assertMatch({V, <<>>} when V == 0,
+                 decode_binary(#col{type = ?TYPE_FLOAT},
+                               <<0.0:32/float-little>>)),
+    ?assertMatch({V, <<>>} when V == 0,
+                 decode_binary(#col{type = ?TYPE_FLOAT},
+                               <<-0.0:32/float-little>>)),
     ok.
 
 null_bitmap_test() ->
