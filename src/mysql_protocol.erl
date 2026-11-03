@@ -1198,7 +1198,7 @@ encode_param({D, {H, M, S}}) when is_float(S), S > 0.0, D < 0 ->
     IntS = trunc(S),
     Micro = round(1000000 * (1 - S + IntS)),
     Seconds = (D * 24 + H) * 3600 + M * 60 + IntS + 1,
-    {D1, {M1, H1, S1}} = calendar:seconds_to_daystime(-Seconds),
+    {D1, {H1, M1, S1}} = calendar:seconds_to_daystime(-Seconds),
     {<<?TYPE_TIME, 0>>, <<12, 1, D1:32/little, H1, M1, S1, Micro:32/little>>};
 encode_param({D, {H, M, V}}) when abs(V) =:= +0.0 ->
     encode_param({D, {H, M, 0}}).
@@ -1790,6 +1790,13 @@ decode_binary_float_zero_test() ->
     ?assertMatch({V, <<>>} when V == 0,
                  decode_binary(#col{type = ?TYPE_FLOAT},
                                <<-0.0:32/float-little>>)),
+    ok.
+
+encode_param_negative_time_with_fraction_test() ->
+    %% -1 day + 22:30:00.5 = -01:29:59.5
+    ?assertEqual({<<?TYPE_TIME, 0>>,
+                  <<12, 1, 0:32/little, 1, 29, 59, 500000:32/little>>},
+                 encode_param({-1, {22, 30, 0.5}})),
     ok.
 
 null_bitmap_test() ->
