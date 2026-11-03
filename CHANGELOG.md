@@ -2,6 +2,43 @@ Change log
 ==========
 
 
+1.9.1
+-----
+* Bump version [2026-11-03 11:18:02 +0100]
+* Fix variable bindings inside a list [2026-10-29 13:15:56 +0100]
+* Fix CI [2026-10-29 12:58:31 +0100]
+* Fix crash when connection closes during handshake [2025-06-10 12:02:30 +0200]
+* Refactor mock_tcp [2025-06-04 11:00:35 +0200]
+
+1.9.0
+-----
+* Bump version [2025-03-16 22:42:12 +0100]
+* Update `erlang.mk` (#218) [2024-12-05 09:47:34 +0100]
+* Replace usages of `dict`s with `map`s (#221) [2024-12-03 10:41:53 +0100]
+* Include OTP 27 in CI (#220) [2024-12-02 14:00:41 +0100]
+* Fix test for `socket` backend (#219) [2024-12-02 13:35:44 +0100]
+* Fix failing edoc (#217) [2024-12-01 22:23:28 +0100]
+* Replace `error_logger` with logger (#216) [2024-11-29 16:55:23 +0100]
+* Call SockMod:close before stop (#215) [2024-11-22 09:26:05 +0100]
+* Fix `public_key:encrypt_public` deprecation warning (#214) [2024-11-21 13:40:57 +0100]
+* Hide sensitive information in state and use `gen_server:format_status/1,2` depending on OTP release (#212) [2024-11-07 13:20:28 +0100]
+* Bump to minimum OTP 21 and remove exceptions workaround (#211) [2024-11-06 10:44:20 +0100]
+* Delete stale code (#208) [2024-10-24 10:24:26 +0200]
+* GitHub Actions (#207) [2024-10-23 12:07:04 +0200]
+* Allow binary as the name of prepared statement (#206) [2024-10-07 14:50:15 +0200]
+* Add 'decode_decimal' option to control how DECIMALs are returned (#194) [2023-09-10 22:25:31 +0200]
+* Fix undetected closing of connection (#203) [2023-07-11 12:54:45 +0200]
+* Change test passwords to pass STRONG validation policy [2023-07-10 14:41:25 +0200]
+* Handle socket error from tcp conn (#201) [2023-06-01 15:44:34 +0200]
+* Use all available TLS/SSL versions by default (#185) [2022-04-13 14:42:34 +0200]
+* Fix typos in comments (#192) [2022-03-07 08:35:08 +0100]
+* Obfuscate password and critical SSL options in logs (#191) [2022-02-04 15:41:36 +0100]
+* Detect transaction owned by another process and return error (#190) [2022-02-03 13:30:32 +0100]
+* Fix and extend server version parsing [2022-01-07 19:07:02 +0100]
+* Exit when ssl_options are provided but the server does not support SSL [2022-01-07 18:49:54 +0100]
+* Remove and do not auto-add TCP option nodelay if not supported (#184) [2021-12-09 11:33:02 +0100]
+* Update CHANGELOG.md [2021-08-12 14:56:59 +0200]
+
 1.8.0
 -----
 * Tag version [2021-08-12 14:38:57 +0200]
