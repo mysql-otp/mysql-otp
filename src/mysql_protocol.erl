@@ -1300,7 +1300,10 @@ recv_packet(SockModule, Socket, Timeout, ExpectSeqNum, Acc) ->
         {ok, Header} ->
             {Size, SeqNum, More} = parse_packet_header(Header),
             true = SeqNum == ExpectSeqNum orelse ExpectSeqNum == any,
-            {ok, Body} = SockModule:recv(Socket, Size),
+            {ok, Body} = case Size of
+                             0 -> {ok, <<>>};
+                             _ -> SockModule:recv(Socket, Size)
+                         end,
             Acc1 = <<Acc/binary, Body/binary>>,
             NextSeqNum = (SeqNum + 1) band 16#ff,
             case More of

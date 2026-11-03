@@ -55,6 +55,38 @@ resultset_test() ->
                  ResultSet),
     ok.
 
+resultset_row_size_multiple_of_max_packet_size_test() ->
+    %% A row with a payload of exactly 16#ffffff bytes is followed by an empty
+    %% packet. The empty packet must not be read with recv(Socket, 0), which
+    %% would return all available data.
+    Query = <<"SELECT @@version_comment">>,
+    ExpectedReq = <<(size(Query) + 1):24/little, 0, ?COM_QUERY, Query/binary>>,
+    ColDef = hexdump_to_bin(
+        "03 64 65 66 00 00 00 11    40 40 76 65 72 73 69 6f    .def....@@versio"
+        "6e 5f 63 6f 6d 6d 65 6e    74 00 0c 08 00 1c 00 00    n_comment......."
+        "00 fd 00 00 1f 00 00                                  ......."),
+    Eof = <<16#fe, 0, 0, 2, 0>>,
+    Value = binary:copy(<<"x">>, 16#ffffff - 4),
+    Row = <<16#fd, (byte_size(Value)):24/little, Value/binary>>,
+    16#ffffff = byte_size(Row),
+    ExpectedResponse = <<1:24/little, 1, 1,
+                         (byte_size(ColDef)):24/little, 2, ColDef/binary,
+                         (byte_size(Eof)):24/little, 3, Eof/binary,
+                         16#ffffff:24/little, 4, Row/binary,
+                         0:24/little, 5,
+                         (byte_size(Eof)):24/little, 6, Eof/binary>>,
+    TestFun = fun(Sock) ->
+                  {ok, [Res]} = mysql_protocol:query(Query, mock_tcp, Sock, [], auto,
+                                                     no_filtermap_fun, infinity),
+                  mock_tcp:close(Sock),
+                  Res
+              end,
+    ExpectedCommunication = [{send, ExpectedReq},
+                             {recv, ExpectedResponse}],
+    ResultSet = mock_tcp:with_mock(mock_tcp:expect(ExpectedCommunication), TestFun),
+    ?assertMatch(#resultset{rows = [[Value]]}, ResultSet),
+    ok.
+
 resultset_error_test() ->
     %% A query that returns a response starting as a result set but then
     %% interrupts itself and decides that it is an error.
