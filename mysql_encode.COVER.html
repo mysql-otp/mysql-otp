@@ -3,7 +3,30 @@
 <head>
 <meta charset="utf-8">
 <title>cover/mysql_encode.COVER.html</title>
-<style>body {
+<style>/*
+ %CopyrightBegin%
+
+ SPDX-License-Identifier: Apache-2.0
+
+ Copyright Milton Mazzarri <me@milmazz.uno>
+ Copyright Ericsson AB 2018-2025. All Rights Reserved.
+ 
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+ 
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+
+ %CopyrightEnd%
+*/
+
+body {
   font: 14px/1.6 "Helvetica Neue", Helvetica, Arial, sans-serif;
   margin: 0;
   padding: 0;
@@ -99,11 +122,25 @@ td.source {
   white-space: pre;
   font: 12px monospace;
 }
+
+
+@media (prefers-color-scheme: dark) {
+  body {
+    filter: invert(100%) hue-rotate(180deg) brightness(105%) contrast(95%);
+    background-color: #000000;
+  }
+  a:link {
+    color: #2B507D;
+  }
+  a:visited, a:active {
+    color: #85ABD5;
+  }
+}
 </style>
 </head>
 <body>
 <h1><code>cover/mysql_encode.COVER.html</code></h1>
-<footer><p>File generated from <code>/home/w3work/contrib/mysql-otp/ebin/../src/mysql_encode.erl</code> by <a href="http://erlang.org/doc/man/cover.html">cover</a> at 2020-10-12 at 11:28:18</p></footer>
+<footer><p>File generated from <code>src/mysql_encode.erl</code> by <a href="http://erlang.org/doc/man/cover.html">cover</a> at 2026-11-03 at 11:50:45</p></footer>
 <table>
 <tbody>
 <tr>
@@ -193,7 +230,7 @@ td.source {
 </tr>
 <tr class="hit">
 <td class="line" id="L18"><a href="#L18">18</a></td>
-<td class="hits">1</td>
+<td class="hits">2</td>
 <td class="source"><code>    io_lib:format("~w", [Float]);</code></td>
 </tr>
 <tr>
@@ -234,215 +271,260 @@ td.source {
 <tr>
 <td class="line" id="L26"><a href="#L26">26</a></td>
 <td class="hits"></td>
-<td class="source"><code>encode({Y, M, D}) -&gt;</code></td>
+<td class="source"><code>encode({decimal, Num}) when is_float(Num); is_integer(Num) -&gt;</code></td>
 </tr>
 <tr class="hit">
 <td class="line" id="L27"><a href="#L27">27</a></td>
-<td class="hits">2</td>
-<td class="source"><code>    io_lib:format("'~4..0b-~2..0b-~2..0b'", [Y, M, D]);</code></td>
+<td class="hits">1</td>
+<td class="source"><code>    encode(Num);</code></td>
 </tr>
 <tr>
 <td class="line" id="L28"><a href="#L28">28</a></td>
 <td class="hits"></td>
-<td class="source"><code>encode({{Y, M, D}, {H, Mi, S}}) when is_integer(S) -&gt;</code></td>
+<td class="source"><code>encode({decimal, Str}) when is_binary(Str); is_list(Str) -&gt;</code></td>
 </tr>
-<tr class="hit">
+<tr>
 <td class="line" id="L29"><a href="#L29">29</a></td>
-<td class="hits">3</td>
-<td class="source"><code>    io_lib:format("'~4..0b-~2..0b-~2..0b ~2..0b:~2..0b:~2..0b'",</code></td>
-</tr>
-<tr>
-<td class="line" id="L30"><a href="#L30">30</a></td>
 <td class="hits"></td>
-<td class="source"><code>                  [Y, M, D, H, Mi, S]);</code></td>
-</tr>
-<tr>
-<td class="line" id="L31"><a href="#L31">31</a></td>
-<td class="hits"></td>
-<td class="source"><code>encode({{Y, M, D}, {H, Mi, S}}) when is_float(S) -&gt;</code></td>
+<td class="source"><code>    %% Simple injection block</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L32"><a href="#L32">32</a></td>
+<td class="line" id="L30"><a href="#L30">30</a></td>
 <td class="hits">1</td>
-<td class="source"><code>    io_lib:format("'~4..0b-~2..0b-~2..0b ~2..0b:~2..0b:~9.6.0f'",</code></td>
+<td class="source"><code>    nomatch = re:run(Str, &lt;&lt;"[^0-9.+\\-eE]"&gt;&gt;),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L31"><a href="#L31">31</a></td>
+<td class="hits">1</td>
+<td class="source"><code>    Str;</code></td>
 </tr>
 <tr>
-<td class="line" id="L33"><a href="#L33">33</a></td>
+<td class="line" id="L32"><a href="#L32">32</a></td>
 <td class="hits"></td>
-<td class="source"><code>                  [Y, M, D, H, Mi, S]);</code></td>
+<td class="source"><code>encode({Y, M, D}) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L33"><a href="#L33">33</a></td>
+<td class="hits">2</td>
+<td class="source"><code>    io_lib:format("'~4..0b-~2..0b-~2..0b'", [Y, M, D]);</code></td>
 </tr>
 <tr>
 <td class="line" id="L34"><a href="#L34">34</a></td>
 <td class="hits"></td>
-<td class="source"><code>encode({D, {H, M, S}}) when D &gt;= 0 -&gt;</code></td>
+<td class="source"><code>encode({{Y, M, D}, {H, Mi, S}}) when is_integer(S) -&gt;</code></td>
 </tr>
 <tr class="hit">
 <td class="line" id="L35"><a href="#L35">35</a></td>
-<td class="hits">5</td>
-<td class="source"><code>    Args = [H1 = D * 24 + H, M, S],</code></td>
+<td class="hits">3</td>
+<td class="source"><code>    io_lib:format("'~4..0b-~2..0b-~2..0b ~2..0b:~2..0b:~2..0b'",</code></td>
 </tr>
-<tr class="hit">
+<tr>
 <td class="line" id="L36"><a href="#L36">36</a></td>
-<td class="hits">5</td>
-<td class="source"><code>    if</code></td>
+<td class="hits"></td>
+<td class="source"><code>                  [Y, M, D, H, Mi, S]);</code></td>
 </tr>
-<tr class="hit">
+<tr>
 <td class="line" id="L37"><a href="#L37">37</a></td>
-<td class="hits">1</td>
-<td class="source"><code>        H1 &gt; 99, is_integer(S) -&gt; io_lib:format("'~b:~2..0b:~2..0b'", Args);</code></td>
+<td class="hits"></td>
+<td class="source"><code>encode({{Y, M, D}, {H, Mi, S}}) when is_float(S) -&gt;</code></td>
 </tr>
 <tr class="hit">
 <td class="line" id="L38"><a href="#L38">38</a></td>
 <td class="hits">1</td>
-<td class="source"><code>        H1 &gt; 99, is_float(S)   -&gt; io_lib:format("'~b:~2..0b:~9.6.0f'", Args);</code></td>
+<td class="source"><code>    io_lib:format("'~4..0b-~2..0b-~2..0b ~2..0b:~2..0b:~9.6.0f'",</code></td>
 </tr>
-<tr class="hit">
+<tr>
 <td class="line" id="L39"><a href="#L39">39</a></td>
-<td class="hits">2</td>
-<td class="source"><code>        is_integer(S)          -&gt; io_lib:format("'~2..0b:~2..0b:~2..0b'", Args);</code></td>
+<td class="hits"></td>
+<td class="source"><code>                  [Y, M, D, H, Mi, S]);</code></td>
+</tr>
+<tr>
+<td class="line" id="L40"><a href="#L40">40</a></td>
+<td class="hits"></td>
+<td class="source"><code>encode({D, {H, M, S}}) when D &gt;= 0 -&gt;</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L40"><a href="#L40">40</a></td>
-<td class="hits">1</td>
-<td class="source"><code>        is_float(S)            -&gt; io_lib:format("'~2..0b:~2..0b:~9.6.0f'", Args)</code></td>
-</tr>
-<tr>
 <td class="line" id="L41"><a href="#L41">41</a></td>
-<td class="hits"></td>
-<td class="source"><code>    end;</code></td>
+<td class="hits">5</td>
+<td class="source"><code>    H1 = D * 24 + H,</code></td>
 </tr>
-<tr>
+<tr class="hit">
 <td class="line" id="L42"><a href="#L42">42</a></td>
-<td class="hits"></td>
-<td class="source"><code>encode({D, {H, M, S}}) when D &lt; 0, is_integer(S) -&gt;</code></td>
+<td class="hits">5</td>
+<td class="source"><code>    Args = [H1, M, S],</code></td>
 </tr>
 <tr class="hit">
 <td class="line" id="L43"><a href="#L43">43</a></td>
 <td class="hits">5</td>
-<td class="source"><code>    Sec = (D * 24 + H) * 3600 + M * 60 + S,</code></td>
+<td class="source"><code>    if</code></td>
 </tr>
 <tr class="hit">
 <td class="line" id="L44"><a href="#L44">44</a></td>
-<td class="hits">5</td>
-<td class="source"><code>    {D1, {H1, M1, S1}} = calendar:seconds_to_daystime(-Sec),</code></td>
+<td class="hits">1</td>
+<td class="source"><code>        H1 &gt; 99, is_integer(S) -&gt; io_lib:format("'~b:~2..0b:~2..0b'", Args);</code></td>
 </tr>
 <tr class="hit">
 <td class="line" id="L45"><a href="#L45">45</a></td>
-<td class="hits">5</td>
-<td class="source"><code>    Args = [H2 = D1 * 24 + H1, M1, S1],</code></td>
+<td class="hits">1</td>
+<td class="source"><code>        H1 &gt; 99, is_float(S)   -&gt; io_lib:format("'~b:~2..0b:~9.6.0f'", Args);</code></td>
 </tr>
 <tr class="hit">
 <td class="line" id="L46"><a href="#L46">46</a></td>
-<td class="hits">5</td>
-<td class="source"><code>    if</code></td>
+<td class="hits">2</td>
+<td class="source"><code>        is_integer(S)          -&gt; io_lib:format("'~2..0b:~2..0b:~2..0b'", Args);</code></td>
 </tr>
 <tr class="hit">
 <td class="line" id="L47"><a href="#L47">47</a></td>
 <td class="hits">1</td>
-<td class="source"><code>        H2 &gt; 99 -&gt; io_lib:format("'-~b:~2..0b:~2..0b'", Args);</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L48"><a href="#L48">48</a></td>
-<td class="hits">4</td>
-<td class="source"><code>        true    -&gt; io_lib:format("'-~2..0b:~2..0b:~2..0b'", Args)</code></td>
+<td class="source"><code>        is_float(S)            -&gt; io_lib:format("'~2..0b:~2..0b:~9.6.0f'", Args)</code></td>
 </tr>
 <tr>
-<td class="line" id="L49"><a href="#L49">49</a></td>
+<td class="line" id="L48"><a href="#L48">48</a></td>
 <td class="hits"></td>
 <td class="source"><code>    end;</code></td>
 </tr>
 <tr>
+<td class="line" id="L49"><a href="#L49">49</a></td>
+<td class="hits"></td>
+<td class="source"><code>encode({D, {H, M, S}}) when D &lt; 0, is_integer(S) -&gt;</code></td>
+</tr>
+<tr class="hit">
 <td class="line" id="L50"><a href="#L50">50</a></td>
+<td class="hits">5</td>
+<td class="source"><code>    Sec = (D * 24 + H) * 3600 + M * 60 + S,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L51"><a href="#L51">51</a></td>
+<td class="hits">5</td>
+<td class="source"><code>    {D1, {H1, M1, S1}} = calendar:seconds_to_daystime(-Sec),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L52"><a href="#L52">52</a></td>
+<td class="hits">5</td>
+<td class="source"><code>    H2 = D1 * 24 + H1,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L53"><a href="#L53">53</a></td>
+<td class="hits">5</td>
+<td class="source"><code>    Args = [H2, M1, S1],</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L54"><a href="#L54">54</a></td>
+<td class="hits">5</td>
+<td class="source"><code>    if</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L55"><a href="#L55">55</a></td>
+<td class="hits">1</td>
+<td class="source"><code>        H2 &gt; 99 -&gt; io_lib:format("'-~b:~2..0b:~2..0b'", Args);</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L56"><a href="#L56">56</a></td>
+<td class="hits">4</td>
+<td class="source"><code>        true    -&gt; io_lib:format("'-~2..0b:~2..0b:~2..0b'", Args)</code></td>
+</tr>
+<tr>
+<td class="line" id="L57"><a href="#L57">57</a></td>
+<td class="hits"></td>
+<td class="source"><code>    end;</code></td>
+</tr>
+<tr>
+<td class="line" id="L58"><a href="#L58">58</a></td>
 <td class="hits"></td>
 <td class="source"><code>encode({D, {H, M, S}}) when D &lt; 0, is_float(S) -&gt;</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L51"><a href="#L51">51</a></td>
+<td class="line" id="L59"><a href="#L59">59</a></td>
 <td class="hits">3</td>
 <td class="source"><code>    SInt = trunc(S), % trunc(57.654321) = 57</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L52"><a href="#L52">52</a></td>
-<td class="hits">3</td>
-<td class="source"><code>    {SInt1, Frac} = case S - SInt of % 57.6543 - 57 = 0.654321</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L53"><a href="#L53">53</a></td>
-<td class="hits">2</td>
-<td class="source"><code>        0.0  -&gt; {SInt, 0.0};</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L54"><a href="#L54">54</a></td>
-<td class="hits">1</td>
-<td class="source"><code>        Rest -&gt; {SInt + 1, 1 - Rest} % {58, 0.345679}</code></td>
-</tr>
-<tr>
-<td class="line" id="L55"><a href="#L55">55</a></td>
-<td class="hits"></td>
-<td class="source"><code>    end,</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L56"><a href="#L56">56</a></td>
-<td class="hits">3</td>
-<td class="source"><code>    Sec = (D * 24 + H) * 3600 + M * 60 + SInt1,</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L57"><a href="#L57">57</a></td>
-<td class="hits">3</td>
-<td class="source"><code>    {D1, {H1, M1, S1}} = calendar:seconds_to_daystime(-Sec),</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L58"><a href="#L58">58</a></td>
-<td class="hits">3</td>
-<td class="source"><code>    Args = [H2 = D1 * 24 + H1, M1, S1 + Frac],</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L59"><a href="#L59">59</a></td>
-<td class="hits">3</td>
-<td class="source"><code>    if</code></td>
-</tr>
-<tr class="hit">
 <td class="line" id="L60"><a href="#L60">60</a></td>
-<td class="hits">1</td>
-<td class="source"><code>        H2 &gt; 99 -&gt; io_lib:format("'-~b:~2..0b:~9.6.0f'", Args);</code></td>
+<td class="hits">3</td>
+<td class="source"><code>    {SInt1, Frac} = case abs(S - SInt) of % 57.6543 - 57 = 0.654321</code></td>
 </tr>
 <tr class="hit">
 <td class="line" id="L61"><a href="#L61">61</a></td>
 <td class="hits">2</td>
-<td class="source"><code>        true    -&gt; io_lib:format("'-~2..0b:~2..0b:~9.6.0f'", Args)</code></td>
+<td class="source"><code>        +0.0  -&gt; {SInt, 0.0};</code></td>
 </tr>
-<tr>
+<tr class="hit">
 <td class="line" id="L62"><a href="#L62">62</a></td>
-<td class="hits"></td>
-<td class="source"><code>    end.</code></td>
+<td class="hits">1</td>
+<td class="source"><code>        Rest -&gt; {SInt + 1, 1 - Rest} % {58, 0.345679}</code></td>
 </tr>
 <tr>
 <td class="line" id="L63"><a href="#L63">63</a></td>
 <td class="hits"></td>
+<td class="source"><code>    end,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L64"><a href="#L64">64</a></td>
+<td class="hits">3</td>
+<td class="source"><code>    Sec = (D * 24 + H) * 3600 + M * 60 + SInt1,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L65"><a href="#L65">65</a></td>
+<td class="hits">3</td>
+<td class="source"><code>    {D1, {H1, M1, S1}} = calendar:seconds_to_daystime(-Sec),</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L66"><a href="#L66">66</a></td>
+<td class="hits">3</td>
+<td class="source"><code>    H2 = D1 * 24 + H1,</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L67"><a href="#L67">67</a></td>
+<td class="hits">3</td>
+<td class="source"><code>    Args = [H2, M1, S1 + Frac],</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L68"><a href="#L68">68</a></td>
+<td class="hits">3</td>
+<td class="source"><code>    if</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L69"><a href="#L69">69</a></td>
+<td class="hits">1</td>
+<td class="source"><code>        H2 &gt; 99 -&gt; io_lib:format("'-~b:~2..0b:~9.6.0f'", Args);</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L70"><a href="#L70">70</a></td>
+<td class="hits">2</td>
+<td class="source"><code>        true    -&gt; io_lib:format("'-~2..0b:~2..0b:~9.6.0f'", Args)</code></td>
+</tr>
+<tr>
+<td class="line" id="L71"><a href="#L71">71</a></td>
+<td class="hits"></td>
+<td class="source"><code>    end.</code></td>
+</tr>
+<tr>
+<td class="line" id="L72"><a href="#L72">72</a></td>
+<td class="hits"></td>
 <td class="source"><code></code></td>
 </tr>
 <tr>
-<td class="line" id="L64"><a href="#L64">64</a></td>
+<td class="line" id="L73"><a href="#L73">73</a></td>
 <td class="hits"></td>
 <td class="source"><code>%% @doc Escapes backslashes with an extra backslash. This is necessary if</code></td>
 </tr>
 <tr>
-<td class="line" id="L65"><a href="#L65">65</a></td>
+<td class="line" id="L74"><a href="#L74">74</a></td>
 <td class="hits"></td>
 <td class="source"><code>%% backslash escapes are enabled in the session.</code></td>
 </tr>
 <tr>
-<td class="line" id="L66"><a href="#L66">66</a></td>
+<td class="line" id="L75"><a href="#L75">75</a></td>
 <td class="hits"></td>
 <td class="source"><code>backslash_escape(String) -&gt;</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L67"><a href="#L67">67</a></td>
+<td class="line" id="L76"><a href="#L76">76</a></td>
 <td class="hits">2</td>
 <td class="source"><code>    Bin = iolist_to_binary(String),</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L68"><a href="#L68">68</a></td>
+<td class="line" id="L77"><a href="#L77">77</a></td>
 <td class="hits">2</td>
 <td class="source"><code>    binary:replace(Bin, &lt;&lt;"\\"&gt;&gt;, &lt;&lt;"\\\\"&gt;&gt;, [global]).</code></td>
 </tr>

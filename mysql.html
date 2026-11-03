@@ -21,63 +21,67 @@
 <h2><a name="types">Data Types</a></h2>
 
 <h3 class="typedecl"><a name="type-column_name">column_name()</a></h3>
-<p><tt>column_name() = binary()</tt></p>
+<p><code>column_name() = binary()</code></p>
 
 
 <h3 class="typedecl"><a name="type-connection">connection()</a></h3>
-<p><tt>connection() = atom() | {Name::atom(), Node::atom()} | {global, GlobalName::term()} | {via, Module::atom(), ViaName::term()} | pid()</tt></p>
+<p><code>connection() = atom() | {Name::atom(), Node::atom()} | {global, GlobalName::term()} | {via, Module::atom(), ViaName::term()} | pid()</code></p>
+
+
+<h3 class="typedecl"><a name="type-decode_decimal">decode_decimal()</a></h3>
+<p><code>decode_decimal() = auto | binary | float | number</code></p>
 
 
 <h3 class="typedecl"><a name="type-option">option()</a></h3>
-<p><tt>option() = {name, ServerName::<a href="#type-server_name">server_name()</a>} | {host, <a href="inet.html#type-socket_address">inet:socket_address()</a> | <a href="inet.html#type-hostname">inet:hostname()</a>} | {port, integer()} | {user, iodata()} | {password, iodata()} | {database, iodata()} | {connect_mode, synchronous | asynchronous | lazy} | {connect_timeout, timeout()} | {allowed_local_paths, [binary()]} | {log_warnings, boolean()} | {log_slow_queries, boolean()} | {keep_alive, boolean() | timeout()} | {prepare, [{StatementName::<a href="#type-statement_name">statement_name()</a>, Statement::<a href="#type-query">query()</a>}]} | {queries, [<a href="#type-query">query()</a>]} | {query_timeout, timeout()} | {found_rows, boolean()} | {query_cache_time, non_neg_integer()} | {tcp_options, [<a href="gen_tcp.html#type-connect_option">gen_tcp:connect_option()</a>]} | {ssl, term()}</tt></p>
+<p><code>option() = {name, ServerName::<a href="#type-server_name" docgen-rel="seetype" docgen-href="#server_name/0">server_name()</a>} | {host, <a href="http://www.erlang.org/edoc/doc/kernel/doc/inet.html#type-socket_address" docgen-rel="seetype" docgen-href="kernel:inet#socket_address/0">inet:socket_address()</a> | <a href="http://www.erlang.org/edoc/doc/kernel/doc/inet.html#type-hostname" docgen-rel="seetype" docgen-href="kernel:inet#hostname/0">inet:hostname()</a>} | {port, integer()} | {user, iodata()} | {password, iodata()} | {database, iodata()} | {connect_mode, synchronous | asynchronous | lazy} | {connect_timeout, timeout()} | {allowed_local_paths, [binary()]} | {log_warnings, boolean()} | {log_slow_queries, boolean()} | {keep_alive, boolean() | timeout()} | {prepare, [{StatementName::<a href="#type-statement_name" docgen-rel="seetype" docgen-href="#statement_name/0">statement_name()</a>, Statement::<a href="#type-query" docgen-rel="seetype" docgen-href="#query/0">query()</a>}]} | {queries, [<a href="#type-query" docgen-rel="seetype" docgen-href="#query/0">query()</a>]} | {query_timeout, timeout()} | {found_rows, boolean()} | {query_cache_time, non_neg_integer()} | {tcp_options, [<a href="http://www.erlang.org/edoc/doc/kernel/doc/gen_tcp.html#type-connect_option" docgen-rel="seetype" docgen-href="kernel:gen_tcp#connect_option/0">gen_tcp:connect_option()</a>]} | {ssl, term()} | {float_as_decimal, boolean() | non_neg_integer()} | {decode_decimal, <a href="#type-decode_decimal" docgen-rel="seetype" docgen-href="#decode_decimal/0">decode_decimal()</a>}</code></p>
 
 
 <h3 class="typedecl"><a name="type-query">query()</a></h3>
-<p><tt>query() = iodata()</tt></p>
+<p><code>query() = iodata()</code></p>
 
 
 <h3 class="typedecl"><a name="type-query_filtermap_fun">query_filtermap_fun()</a></h3>
-<p><tt>query_filtermap_fun() = fun((<a href="#type-row">row()</a>) -&gt; <a href="#type-query_filtermap_res">query_filtermap_res()</a>) | fun(([<a href="#type-column_name">column_name()</a>], <a href="#type-row">row()</a>) -&gt; <a href="#type-query_filtermap_res">query_filtermap_res()</a>)</tt></p>
+<p><code>query_filtermap_fun() = fun((<a href="#type-row" docgen-rel="seetype" docgen-href="#row/0">row()</a>) -&gt; <a href="#type-query_filtermap_res" docgen-rel="seetype" docgen-href="#query_filtermap_res/0">query_filtermap_res()</a>) | fun(([<a href="#type-column_name" docgen-rel="seetype" docgen-href="#column_name/0">column_name()</a>], <a href="#type-row" docgen-rel="seetype" docgen-href="#row/0">row()</a>) -&gt; <a href="#type-query_filtermap_res" docgen-rel="seetype" docgen-href="#query_filtermap_res/0">query_filtermap_res()</a>)</code></p>
 
 
 <h3 class="typedecl"><a name="type-query_filtermap_res">query_filtermap_res()</a></h3>
-<p><tt>query_filtermap_res() = boolean() | {true, term()}</tt></p>
+<p><code>query_filtermap_res() = boolean() | {true, term()}</code></p>
 
 
 <h3 class="typedecl"><a name="type-query_param">query_param()</a></h3>
-<p><tt>query_param() = term()</tt></p>
+<p><code>query_param() = term()</code></p>
 
 
 <h3 class="typedecl"><a name="type-query_result">query_result()</a></h3>
-<p><tt>query_result() = ok | {ok, [<a href="#type-column_name">column_name()</a>], [<a href="#type-row">row()</a>]} | {ok, [{[<a href="#type-column_name">column_name()</a>], [<a href="#type-row">row()</a>]}, ...]} | {error, <a href="#type-server_reason">server_reason()</a>}</tt></p>
+<p><code>query_result() = ok | {ok, [<a href="#type-column_name" docgen-rel="seetype" docgen-href="#column_name/0">column_name()</a>], [<a href="#type-row" docgen-rel="seetype" docgen-href="#row/0">row()</a>]} | {ok, [{[<a href="#type-column_name" docgen-rel="seetype" docgen-href="#column_name/0">column_name()</a>], [<a href="#type-row" docgen-rel="seetype" docgen-href="#row/0">row()</a>]}, ...]} | {error, <a href="#type-server_reason" docgen-rel="seetype" docgen-href="#server_reason/0">server_reason()</a> | busy}</code></p>
 
 
 <h3 class="typedecl"><a name="type-row">row()</a></h3>
-<p><tt>row() = [term()]</tt></p>
+<p><code>row() = [term()]</code></p>
 
 
 <h3 class="typedecl"><a name="type-server_name">server_name()</a></h3>
-<p><tt>server_name() = {local, Name::atom()} | {global, GlobalName::term()} | {via, Via::module(), ViaName::term()}</tt></p>
+<p><code>server_name() = {local, Name::atom()} | {global, GlobalName::term()} | {via, Via::module(), ViaName::term()}</code></p>
 
 
 <h3 class="typedecl"><a name="type-server_reason">server_reason()</a></h3>
-<p><tt>server_reason() = {Code::integer(), SQLState::binary() | undefined, Message::binary()}</tt></p>
+<p><code>server_reason() = {Code::integer(), SQLState::binary() | undefined, Message::binary()}</code></p>
 
 
 <h3 class="typedecl"><a name="type-statement_id">statement_id()</a></h3>
-<p><tt>statement_id() = integer()</tt></p>
+<p><code>statement_id() = integer()</code></p>
 
 
 <h3 class="typedecl"><a name="type-statement_name">statement_name()</a></h3>
-<p><tt>statement_name() = atom()</tt></p>
+<p><code>statement_name() = atom() | binary()</code></p>
 
 
 <h3 class="typedecl"><a name="type-statement_ref">statement_ref()</a></h3>
-<p><tt>statement_ref() = <a href="#type-statement_id">statement_id()</a> | <a href="#type-statement_name">statement_name()</a></tt></p>
+<p><code>statement_ref() = <a href="#type-statement_id" docgen-rel="seetype" docgen-href="#statement_id/0">statement_id()</a> | <a href="#type-statement_name" docgen-rel="seetype" docgen-href="#statement_name/0">statement_name()</a></code></p>
 
 
 <h3 class="typedecl"><a name="type-transaction_result">transaction_result()</a></h3>
-<p><tt>transaction_result(Result) = {atomic, Result} | {aborted, Reason::term()}</tt></p>
+<p><code>transaction_result(Result) = {atomic, Result} | {aborted, Reason::term()}</code></p>
 
 
 <h2><a name="index">Function Index</a></h2>
@@ -119,7 +123,7 @@ a transaction.</td></tr>
 
 <h3 class="function"><a name="affected_rows-1">affected_rows/1</a></h3>
 <div class="spec">
-<p><tt>affected_rows(Conn::<a href="#type-connection">connection()</a>) -&gt; integer()</tt><br></p>
+<p><code>affected_rows(Conn::<a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a>) -&gt; integer()</code><br></p>
 <p> </p>
 </div><p>Returns the number of inserted, updated and deleted rows of the last
   executed query or prepared statement. If found_rows is set on the
@@ -128,22 +132,22 @@ a transaction.</td></tr>
 
 <h3 class="function"><a name="autocommit-1">autocommit/1</a></h3>
 <div class="spec">
-<p><tt>autocommit(Conn::<a href="#type-connection">connection()</a>) -&gt; boolean()</tt><br></p>
+<p><code>autocommit(Conn::<a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a>) -&gt; boolean()</code><br></p>
 <p> </p>
 </div><p>Returns true if auto-commit is enabled and false otherwise.</p>
 
 <h3 class="function"><a name="change_user-3">change_user/3</a></h3>
 <div class="spec">
-<p><tt>change_user(Conn, Username, Password) -&gt; Result</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Username = iodata()</tt></li><li><tt>Password = iodata()</tt></li><li><tt>Result = ok</tt></li></ul></p>
+<p><code>change_user(Conn, Username, Password) -&gt; Result</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>Username = iodata()</code></li><li><code>Password = iodata()</code></li><li><code>Result = ok</code></li></ul></p>
 <p> </p>
 </div><p>Equivalent to <code>change_user(Conn, Username, Password, [])</code>.</p>
-<p><b>See also:</b> <a href="#change_user-4">change_user/4</a>.</p>
+<p><b>See also:</b> <a href="#change_user-4" docgen-rel="seemfa" docgen-href="#change_user/4">change_user/4</a>.</p>
 
 <h3 class="function"><a name="change_user-4">change_user/4</a></h3>
 <div class="spec">
-<p><tt>change_user(Conn, Username, Password, Options) -&gt; Result</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Username = iodata()</tt></li><li><tt>Password = iodata()</tt></li><li><tt>Options = [Option]</tt></li><li><tt>Result = ok</tt></li><li><tt>Option = {database, iodata()} | {queries, [<a href="#type-query">query()</a>]} | {prepare, [NamedStatement]}</tt></li><li><tt>NamedStatement = {StatementName::<a href="#type-statement_name">statement_name()</a>, Statement::<a href="#type-query">query()</a>}</tt></li></ul></p>
+<p><code>change_user(Conn, Username, Password, Options) -&gt; Result</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>Username = iodata()</code></li><li><code>Password = iodata()</code></li><li><code>Options = [Option]</code></li><li><code>Result = ok</code></li><li><code>Option = {database, iodata()} | {queries, [<a href="#type-query" docgen-rel="seetype" docgen-href="#query/0">query()</a>]} | {prepare, [NamedStatement]}</code></li><li><code>NamedStatement = {StatementName::<a href="#type-statement_name" docgen-rel="seetype" docgen-href="#statement_name/0">statement_name()</a>, Statement::<a href="#type-query" docgen-rel="seetype" docgen-href="#query/0">query()</a>}</code></li></ul></p>
 <p> </p>
 </div><p><p>Changes the user of the active connection without closing and  
 and re-opening it. The currently active session will be reset (ie,  
@@ -166,11 +170,11 @@ process will exit with the same reason and cannot be used any longer.</p>
   For a description of the <code>database</code>, <code>queries</code> and <code>prepare</code>
   options, see <code>start_link/1</code>.
  </p>
-<p><b>See also:</b> <a href="#start_link-1">start_link/1</a>.</p>
+<p><b>See also:</b> <a href="#start_link-1" docgen-rel="seemfa" docgen-href="#start_link/1">start_link/1</a>.</p>
 
 <h3 class="function"><a name="encode-2">encode/2</a></h3>
 <div class="spec">
-<p><tt>encode(Conn::<a href="#type-connection">connection()</a>, Term::term()) -&gt; iodata()</tt><br></p>
+<p><code>encode(Conn::<a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a>, Term::term()) -&gt; iodata()</code><br></p>
 <p> </p>
 </div><p><p>Encodes a term as a MySQL literal so that it can be used to inside a  
 query. If backslash escapes are enabled, backslashes and single quotes in  
@@ -179,29 +183,29 @@ strings and binaries are escaped. Otherwise only single quotes are escaped.</p>
   Note that the preferred way of sending values is by prepared statements or
   parametrized queries with placeholders.
  </p>
-<p><b>See also:</b> <a href="#execute-3">execute/3</a>, <a href="#query-3">query/3</a>.</p>
+<p><b>See also:</b> <a href="#execute-3" docgen-rel="seemfa" docgen-href="#execute/3">execute/3</a>, <a href="#query-3" docgen-rel="seemfa" docgen-href="#query/3">query/3</a>.</p>
 
 <h3 class="function"><a name="execute-3">execute/3</a></h3>
 <div class="spec">
-<p><tt>execute(Conn, StatementRef, Params) -&gt; Result | {error, not_prepared}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = <a href="#type-statement_ref">statement_ref()</a></tt></li><li><tt>Params = [<a href="#type-query_param">query_param()</a>]</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<p><code>execute(Conn, StatementRef, Params) -&gt; Result | {error, not_prepared}</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>StatementRef = <a href="#type-statement_ref" docgen-rel="seetype" docgen-href="#statement_ref/0">statement_ref()</a></code></li><li><code>Params = [<a href="#type-query_param" docgen-rel="seetype" docgen-href="#query_param/0">query_param()</a>]</code></li><li><code>Result = <a href="#type-query_result" docgen-rel="seetype" docgen-href="#query_result/0">query_result()</a></code></li></ul></p>
 <p> </p>
 </div><p>Executes a prepared statement with the default query timeout as given
   to start_link/1.</p>
-<p><b>See also:</b> <a href="#execute-5">execute/5</a>, <a href="#prepare-2">prepare/2</a>, <a href="#prepare-3">prepare/3</a>, <a href="#prepare-4">prepare/4</a>.</p>
+<p><b>See also:</b> <a href="#execute-5" docgen-rel="seemfa" docgen-href="#execute/5">execute/5</a>, <a href="#prepare-2" docgen-rel="seemfa" docgen-href="#prepare/2">prepare/2</a>, <a href="#prepare-3" docgen-rel="seemfa" docgen-href="#prepare/3">prepare/3</a>, <a href="#prepare-4" docgen-rel="seemfa" docgen-href="#prepare/4">prepare/4</a>.</p>
 
 <h3 class="function"><a name="execute-4">execute/4</a></h3>
 <div class="spec">
-<p><tt>execute(Conn, StatementRef, Params, Timeout::FilterMap | Timeout) -&gt; Result | {error, not_prepared}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = <a href="#type-statement_ref">statement_ref()</a></tt></li><li><tt>Params = [<a href="#type-query_param">query_param()</a>]</tt></li><li><tt>FilterMap = <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<p><code>execute(Conn, StatementRef, Params, Timeout::FilterMap | Timeout) -&gt; Result | {error, not_prepared}</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>StatementRef = <a href="#type-statement_ref" docgen-rel="seetype" docgen-href="#statement_ref/0">statement_ref()</a></code></li><li><code>Params = [<a href="#type-query_param" docgen-rel="seetype" docgen-href="#query_param/0">query_param()</a>]</code></li><li><code>FilterMap = <a href="#type-query_filtermap_fun" docgen-rel="seetype" docgen-href="#query_filtermap_fun/0">query_filtermap_fun()</a></code></li><li><code>Timeout = timeout()</code></li><li><code>Result = <a href="#type-query_result" docgen-rel="seetype" docgen-href="#query_result/0">query_result()</a></code></li></ul></p>
 <p> </p>
 </div><p>Executes a prepared statement.</p>
-<p><b>See also:</b> <a href="#execute-5">execute/5</a>, <a href="#prepare-2">prepare/2</a>, <a href="#prepare-3">prepare/3</a>, <a href="#prepare-4">prepare/4</a>.</p>
+<p><b>See also:</b> <a href="#execute-5" docgen-rel="seemfa" docgen-href="#execute/5">execute/5</a>, <a href="#prepare-2" docgen-rel="seemfa" docgen-href="#prepare/2">prepare/2</a>, <a href="#prepare-3" docgen-rel="seemfa" docgen-href="#prepare/3">prepare/3</a>, <a href="#prepare-4" docgen-rel="seemfa" docgen-href="#prepare/4">prepare/4</a>.</p>
 
 <h3 class="function"><a name="execute-5">execute/5</a></h3>
 <div class="spec">
-<p><tt>execute(Conn, StatementRef, Params, FilterMap, Timeout) -&gt; Result | {error, not_prepared}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = <a href="#type-statement_ref">statement_ref()</a></tt></li><li><tt>Params = [<a href="#type-query_param">query_param()</a>]</tt></li><li><tt>FilterMap = <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<p><code>execute(Conn, StatementRef, Params, FilterMap, Timeout) -&gt; Result | {error, not_prepared}</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>StatementRef = <a href="#type-statement_ref" docgen-rel="seetype" docgen-href="#statement_ref/0">statement_ref()</a></code></li><li><code>Params = [<a href="#type-query_param" docgen-rel="seetype" docgen-href="#query_param/0">query_param()</a>]</code></li><li><code>FilterMap = <a href="#type-query_filtermap_fun" docgen-rel="seetype" docgen-href="#query_filtermap_fun/0">query_filtermap_fun()</a></code></li><li><code>Timeout = timeout()</code></li><li><code>Result = <a href="#type-query_result" docgen-rel="seetype" docgen-href="#query_result/0">query_result()</a></code></li></ul></p>
 <p> </p>
 </div><p><p>Executes a prepared statement.</p>
  
@@ -214,74 +218,77 @@ strings and binaries are escaped. Otherwise only single quotes are escaped.</p>
         the timeout given in <code>start_link/1</code> is used.</li>
   </ul>
  
-  See <code>query/5</code> for an explanation of the <code>FilterMap</code> argument.
+  <p>See <code>query/5</code> for an explanation of the <code>FilterMap</code> argument.</p>
+ 
+  Note that if this function is called on a connection which is already in transaction
+  owned by another process, <code>{error, busy}</code> will be returned.
  </p>
-<p><b>See also:</b> <a href="#prepare-2">prepare/2</a>, <a href="#prepare-3">prepare/3</a>, <a href="#prepare-4">prepare/4</a>, <a href="#query-5">query/5</a>.</p>
+<p><b>See also:</b> <a href="#prepare-2" docgen-rel="seemfa" docgen-href="#prepare/2">prepare/2</a>, <a href="#prepare-3" docgen-rel="seemfa" docgen-href="#prepare/3">prepare/3</a>, <a href="#prepare-4" docgen-rel="seemfa" docgen-href="#prepare/4">prepare/4</a>, <a href="#query-5" docgen-rel="seemfa" docgen-href="#query/5">query/5</a>.</p>
 
 <h3 class="function"><a name="in_transaction-1">in_transaction/1</a></h3>
 <div class="spec">
-<p><tt>in_transaction(Conn::<a href="#type-connection">connection()</a>) -&gt; boolean()</tt><br></p>
+<p><code>in_transaction(Conn::<a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a>) -&gt; boolean()</code><br></p>
 <p> </p>
 </div><p>Returns true if the connection is in a transaction and false otherwise.
   This works regardless of whether the transaction has been started using
   transaction/2,3 or using a plain <code>mysql:query(Connection, "BEGIN")</code>.</p>
-<p><b>See also:</b> <a href="#transaction-2">transaction/2</a>, <a href="#transaction-4">transaction/4</a>.</p>
+<p><b>See also:</b> <a href="#transaction-2" docgen-rel="seemfa" docgen-href="#transaction/2">transaction/2</a>, <a href="#transaction-4" docgen-rel="seemfa" docgen-href="#transaction/4">transaction/4</a>.</p>
 
 <h3 class="function"><a name="insert_id-1">insert_id/1</a></h3>
 <div class="spec">
-<p><tt>insert_id(Conn::<a href="#type-connection">connection()</a>) -&gt; integer()</tt><br></p>
+<p><code>insert_id(Conn::<a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a>) -&gt; integer()</code><br></p>
 <p> </p>
 </div><p>Returns the last insert-id.</p>
 
 <h3 class="function"><a name="prepare-2">prepare/2</a></h3>
 <div class="spec">
-<p><tt>prepare(Conn, Query) -&gt; {ok, StatementId} | {error, Reason}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = <a href="#type-query">query()</a></tt></li><li><tt>StatementId = <a href="#type-statement_id">statement_id()</a></tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a></tt></li></ul></p>
+<p><code>prepare(Conn, Query) -&gt; {ok, StatementId} | {error, Reason}</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>Query = <a href="#type-query" docgen-rel="seetype" docgen-href="#query/0">query()</a></code></li><li><code>StatementId = <a href="#type-statement_id" docgen-rel="seetype" docgen-href="#statement_id/0">statement_id()</a></code></li><li><code>Reason = <a href="#type-server_reason" docgen-rel="seetype" docgen-href="#server_reason/0">server_reason()</a></code></li></ul></p>
 <p> </p>
 </div><p>Creates a prepared statement from the passed query.</p>
-<p><b>See also:</b> <a href="#prepare-3">prepare/3</a>.</p>
+<p><b>See also:</b> <a href="#prepare-3" docgen-rel="seemfa" docgen-href="#prepare/3">prepare/3</a>.</p>
 
 <h3 class="function"><a name="prepare-3">prepare/3</a></h3>
 <div class="spec">
-<p><tt>prepare(Conn, Name, Query) -&gt; {ok, Name} | {error, Reason}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Name = <a href="#type-statement_name">statement_name()</a></tt></li><li><tt>Query = <a href="#type-query">query()</a></tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a></tt></li></ul></p>
+<p><code>prepare(Conn, Name, Query) -&gt; {ok, Name} | {error, Reason}</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>Name = <a href="#type-statement_name" docgen-rel="seetype" docgen-href="#statement_name/0">statement_name()</a></code></li><li><code>Query = <a href="#type-query" docgen-rel="seetype" docgen-href="#query/0">query()</a></code></li><li><code>Reason = <a href="#type-server_reason" docgen-rel="seetype" docgen-href="#server_reason/0">server_reason()</a></code></li></ul></p>
 <p> </p>
 </div><p>Creates a prepared statement from the passed query and associates it
   with the given name.</p>
-<p><b>See also:</b> <a href="#prepare-2">prepare/2</a>.</p>
+<p><b>See also:</b> <a href="#prepare-2" docgen-rel="seemfa" docgen-href="#prepare/2">prepare/2</a>.</p>
 
 <h3 class="function"><a name="query-2">query/2</a></h3>
 <div class="spec">
-<p><tt>query(Conn, Query) -&gt; Result</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = iodata()</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<p><code>query(Conn, Query) -&gt; Result</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>Query = iodata()</code></li><li><code>Result = <a href="#type-query_result" docgen-rel="seetype" docgen-href="#query_result/0">query_result()</a></code></li></ul></p>
 <p> </p>
 </div><p>Executes a plain query.</p>
-<p><b>See also:</b> <a href="#query-5">query/5</a>.</p>
+<p><b>See also:</b> <a href="#query-5" docgen-rel="seemfa" docgen-href="#query/5">query/5</a>.</p>
 
 <h3 class="function"><a name="query-3">query/3</a></h3>
 <div class="spec">
-<p><tt>query(Conn, Query, Params::Params | FilterMap | Timeout) -&gt; Result</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = <a href="#type-query">query()</a></tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>Params = [<a href="#type-query_param">query_param()</a>]</tt></li><li><tt>FilterMap = <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<p><code>query(Conn, Query, Params::Params | FilterMap | Timeout) -&gt; Result</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>Query = <a href="#type-query" docgen-rel="seetype" docgen-href="#query/0">query()</a></code></li><li><code>Timeout = timeout()</code></li><li><code>Params = [<a href="#type-query_param" docgen-rel="seetype" docgen-href="#query_param/0">query_param()</a>]</code></li><li><code>FilterMap = <a href="#type-query_filtermap_fun" docgen-rel="seetype" docgen-href="#query_filtermap_fun/0">query_filtermap_fun()</a></code></li><li><code>Result = <a href="#type-query_result" docgen-rel="seetype" docgen-href="#query_result/0">query_result()</a></code></li></ul></p>
 <p> </p>
 </div><p>Executes a query.</p>
-<p><b>See also:</b> <a href="#query-5">query/5</a>.</p>
+<p><b>See also:</b> <a href="#query-5" docgen-rel="seemfa" docgen-href="#query/5">query/5</a>.</p>
 
 <h3 class="function"><a name="query-4">query/4</a></h3>
 <div class="spec">
-<p><tt>query(Conn, Query, Params, Timeout) -&gt; Result</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = <a href="#type-query">query()</a></tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>Params = [<a href="#type-query_param">query_param()</a>]</tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p><p><tt>query(Conn, Query, FilterMap, Timeout) -&gt; Result</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = <a href="#type-query">query()</a></tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>FilterMap = <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p><p><tt>query(Conn, Query, Params, FilterMap) -&gt; Result</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = <a href="#type-query">query()</a></tt></li><li><tt>Params = [<a href="#type-query_param">query_param()</a>]</tt></li><li><tt>FilterMap = <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<p><code>query(Conn, Query, Params, Timeout) -&gt; Result</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>Query = <a href="#type-query" docgen-rel="seetype" docgen-href="#query/0">query()</a></code></li><li><code>Timeout = timeout()</code></li><li><code>Params = [<a href="#type-query_param" docgen-rel="seetype" docgen-href="#query_param/0">query_param()</a>]</code></li><li><code>Result = <a href="#type-query_result" docgen-rel="seetype" docgen-href="#query_result/0">query_result()</a></code></li></ul></p><p><code>query(Conn, Query, FilterMap, Timeout) -&gt; Result</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>Query = <a href="#type-query" docgen-rel="seetype" docgen-href="#query/0">query()</a></code></li><li><code>Timeout = timeout()</code></li><li><code>FilterMap = <a href="#type-query_filtermap_fun" docgen-rel="seetype" docgen-href="#query_filtermap_fun/0">query_filtermap_fun()</a></code></li><li><code>Result = <a href="#type-query_result" docgen-rel="seetype" docgen-href="#query_result/0">query_result()</a></code></li></ul></p><p><code>query(Conn, Query, Params, FilterMap) -&gt; Result</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>Query = <a href="#type-query" docgen-rel="seetype" docgen-href="#query/0">query()</a></code></li><li><code>Params = [<a href="#type-query_param" docgen-rel="seetype" docgen-href="#query_param/0">query_param()</a>]</code></li><li><code>FilterMap = <a href="#type-query_filtermap_fun" docgen-rel="seetype" docgen-href="#query_filtermap_fun/0">query_filtermap_fun()</a></code></li><li><code>Result = <a href="#type-query_result" docgen-rel="seetype" docgen-href="#query_result/0">query_result()</a></code></li></ul></p>
 <p> </p>
 <p> </p>
 <p> </p>
 </div><p>Executes a query.</p>
-<p><b>See also:</b> <a href="#query-5">query/5</a>.</p>
+<p><b>See also:</b> <a href="#query-5" docgen-rel="seemfa" docgen-href="#query/5">query/5</a>.</p>
 
 <h3 class="function"><a name="query-5">query/5</a></h3>
 <div class="spec">
-<p><tt>query(Conn, Query, Params, FilterMap, Timeout) -&gt; Result</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Query = <a href="#type-query">query()</a></tt></li><li><tt>Timeout = timeout()</tt></li><li><tt>Params = [<a href="#type-query_param">query_param()</a>]</tt></li><li><tt>FilterMap = <a href="#type-query_filtermap_fun">query_filtermap_fun()</a></tt></li><li><tt>Result = <a href="#type-query_result">query_result()</a></tt></li></ul></p>
+<p><code>query(Conn, Query, Params, FilterMap, Timeout) -&gt; Result</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>Query = <a href="#type-query" docgen-rel="seetype" docgen-href="#query/0">query()</a></code></li><li><code>Timeout = timeout()</code></li><li><code>Params = [<a href="#type-query_param" docgen-rel="seetype" docgen-href="#query_param/0">query_param()</a>]</code></li><li><code>FilterMap = <a href="#type-query_filtermap_fun" docgen-rel="seetype" docgen-href="#query_filtermap_fun/0">query_filtermap_fun()</a></code></li><li><code>Result = <a href="#type-query_result" docgen-rel="seetype" docgen-href="#query_result/0">query_result()</a></code></li></ul></p>
 <p> </p>
 </div><p><p>Executes a query.</p>
  
@@ -320,9 +327,12 @@ multiple queries are specified at the same time, separated by semicolons.</p>
   <p>For queries that don't return any rows (INSERT, UPDATE, etc.) only the atom
   <code>ok</code> is returned.</p>
  
-  <h4><a name="FilterMap_details">FilterMap details</a></h4>
+  <p>If this function is called on a connection which is already in transaction
+  owned by another process, <code>{error, busy}` will be returned.
  
-  <p>If the <code>FilterMap</code> argument is used, it must be a function of arity 1 or 2
+  === FilterMap details ===
+ 
+  If the `FilterMap</code> argument is used, it must be a function of arity 1 or 2
   that returns either <code>true</code>, <code>false</code>, or <code>{true, Value}</code>.</p>
  
   <p>Each result row is handed to the given function as soon as it is received
@@ -376,14 +386,14 @@ to another process etc.</p>
 
 <h3 class="function"><a name="reset_connection-1">reset_connection/1</a></h3>
 <div class="spec">
-<p><tt>reset_connection(Conn) -&gt; ok | {error, Reason}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a></tt></li></ul></p>
+<p><code>reset_connection(Conn) -&gt; ok | {error, Reason}</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>Reason = <a href="#type-server_reason" docgen-rel="seetype" docgen-href="#server_reason/0">server_reason()</a></code></li></ul></p>
 <p> </p>
 </div>
 
 <h3 class="function"><a name="start_link-1">start_link/1</a></h3>
 <div class="spec">
-<p><tt>start_link(Options::[<a href="#type-option">option()</a>]) -&gt; {ok, pid()} | ignore | {error, term()}</tt><br></p>
+<p><code>start_link(Options::[<a href="#type-option" docgen-rel="seetype" docgen-href="#option/0">option()</a>]) -&gt; {ok, pid()} | ignore | {error, term()}</code><br></p>
 <p> </p>
 </div><p><p>Starts a connection gen_server process and connects to a database. To
   disconnect use <code>mysql:stop/1,2</code>.</p>
@@ -440,10 +450,10 @@ to another process etc.</p>
         The default is an empty list, meaning the client will not send any
         local files to the server.</dd>
     <dt><code>{log_warnings, boolean()}</code></dt>
-    <dd>Whether to fetch warnings and log them using error_logger; default
+    <dd>Whether to fetch warnings and log them using logger; default
         true.</dd>
     <dt><code>{log_slow_queries, boolean()}</code></dt>
-    <dd>Whether to log slow queries using error_logger; default false. Queries
+    <dd>Whether to log slow queries using logger; default false. Queries
         are flagged as slow by the server if their execution time exceeds the
         value in the <code>long_query_time</code> variable.</dd>
     <dt><code>{keep_alive, boolean() | timeout()}</code></dt>
@@ -481,20 +491,33 @@ to another process etc.</p>
         The <code>server_name_indication</code> option, if omitted, defaults to the value
         of the <code>host</code> option if it is a hostname string, otherwise no default
         value is set.</dd>
+    <dt><code>{float_as_decimal, boolean() | non_neg_integer()}</code></dt>
+    <dd>Encode floats as decimals when sending parameters for parametrized
+        queries and prepared statements to the server. This prevents float
+        rounding and truncation errors from happening on the server side. If a
+        number is specified, the float is rounded to this number of
+        decimals. This is off (false) by default.</dd>
+    <dt><code>{decode_decimal, auto | float | number | binary}</code></dt>
+    <dd>When decoding <code>decimal</code> columns from the server, force the return the
+        value as either a <code>binary()</code>, <code>float()`, or `number()</code> (specified by
+        the atoms <code>binary</code>, <code>float</code>, <code>number</code> respectively). Defaults to
+        <code>auto</code>, which will return a number (<code>integer()</code> or <code>float()</code>) unless
+        the conversion to <code>float()</code> would result in a loss of precision, in
+        which case, <code>binary()</code> is returned.</dd>
   </dl></p>
 
 <h3 class="function"><a name="stop-1">stop/1</a></h3>
 <div class="spec">
-<p><tt>stop(Conn) -&gt; ok</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li></ul></p>
+<p><code>stop(Conn) -&gt; ok</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li></ul></p>
 <p> </p>
 </div>
-<p><b>See also:</b> <a href="#stop-2">stop/2</a>.</p>
+<p><b>See also:</b> <a href="#stop-2" docgen-rel="seemfa" docgen-href="#stop/2">stop/2</a>.</p>
 
 <h3 class="function"><a name="stop-2">stop/2</a></h3>
 <div class="spec">
-<p><tt>stop(Conn, Timeout) -&gt; ok</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>Timeout = timeout()</tt></li></ul></p>
+<p><code>stop(Conn, Timeout) -&gt; ok</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>Timeout = timeout()</code></li></ul></p>
 <p> </p>
 </div><p><p>Stops a connection process and closes the connection. The
   process calling <code>stop</code> will be blocked until the connection  
@@ -508,24 +531,24 @@ process stops or the given timeout expires.</p>
 
 <h3 class="function"><a name="transaction-2">transaction/2</a></h3>
 <div class="spec">
-<p><tt>transaction(Conn, TransactionFun) -&gt; TransactionResult</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>TransactionFun = fun(() -&gt; Result)</tt></li><li><tt>TransactionResult = <a href="#type-transaction_result">transaction_result</a>(Result)</tt></li></ul></p>
+<p><code>transaction(Conn, TransactionFun) -&gt; TransactionResult</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>TransactionFun = fun(() -&gt; Result)</code></li><li><code>TransactionResult = <a href="#type-transaction_result" docgen-rel="seetype" docgen-href="#transaction_result/0">transaction_result</a>(Result)</code></li></ul></p>
 <p> </p>
 </div><p>This function executes the functional object Fun as a transaction.</p>
-<p><b>See also:</b> <a href="#transaction-4">transaction/4</a>.</p>
+<p><b>See also:</b> <a href="#transaction-4" docgen-rel="seemfa" docgen-href="#transaction/4">transaction/4</a>.</p>
 
 <h3 class="function"><a name="transaction-3">transaction/3</a></h3>
 <div class="spec">
-<p><tt>transaction(Conn, TransactionFun, Retries) -&gt; TransactionResult</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>TransactionFun = fun(() -&gt; Result)</tt></li><li><tt>Retries = non_neg_integer() | infinity</tt></li><li><tt>TransactionResult = <a href="#type-transaction_result">transaction_result</a>(Result)</tt></li></ul></p>
+<p><code>transaction(Conn, TransactionFun, Retries) -&gt; TransactionResult</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>TransactionFun = fun(() -&gt; Result)</code></li><li><code>Retries = non_neg_integer() | infinity</code></li><li><code>TransactionResult = <a href="#type-transaction_result" docgen-rel="seetype" docgen-href="#transaction_result/0">transaction_result</a>(Result)</code></li></ul></p>
 <p> </p>
 </div><p>This function executes the functional object Fun as a transaction.</p>
-<p><b>See also:</b> <a href="#transaction-4">transaction/4</a>.</p>
+<p><b>See also:</b> <a href="#transaction-4" docgen-rel="seemfa" docgen-href="#transaction/4">transaction/4</a>.</p>
 
 <h3 class="function"><a name="transaction-4">transaction/4</a></h3>
 <div class="spec">
-<p><tt>transaction(Conn, TransactionFun, Args, Retries) -&gt; TransactionResult</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>TransactionFun = fun((...) -&gt; Result)</tt></li><li><tt>Args = list()</tt></li><li><tt>Retries = non_neg_integer() | infinity</tt></li><li><tt>TransactionResult = <a href="#type-transaction_result">transaction_result</a>(Result)</tt></li></ul></p>
+<p><code>transaction(Conn, TransactionFun, Args, Retries) -&gt; TransactionResult</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>TransactionFun = fun((...) -&gt; Result)</code></li><li><code>Args = list()</code></li><li><code>Retries = non_neg_integer() | infinity</code></li><li><code>TransactionResult = <a href="#type-transaction_result" docgen-rel="seetype" docgen-href="#transaction_result/0">transaction_result</a>(Result)</code></li></ul></p>
 <p> </p>
 </div><p><p>This function executes the functional object Fun with arguments Args as  
 a transaction.</p>
@@ -534,10 +557,15 @@ a transaction.</p>
 can be nested and are restarted automatically when deadlocks are detected.  
 MySQL's savepoints are used to implement nested transactions.</p>
  
-  <p>Fun must be a function and Args must be a list of the same length as the  
-arity of Fun.</p>
+  <p>If this function is called on a connection which is already in a transaction
+  owned by another process, <code>{aborted, busy}` is returned. The idea of nested
+  transactions is that this function can be called in the Fun, but all within
+  the same process.
  
-  <p>If an exception occurs within Fun, the exception is caught and <code>{aborted,
+  Fun must be a function and Args must be a list of the same length as the
+  arity of Fun.
+ 
+  If an exception occurs within Fun, the exception is caught and `{aborted,
   Reason}</code> is returned. The value of <code>Reason</code> depends on the class of the  
 exception.</p>
  
@@ -546,7 +574,7 @@ exception.</p>
   using e.g. <code>ok = mysql:query(Pid, "SELECT some_non_existent_value")</code>. An  
 exception to this is the error 1213 "Deadlock", after the specified number  
 of retries, all failed. In this case, the transaction is aborted and the  
-error is retured as the reason for the aborted transaction, along with a  
+error is returned as the reason for the aborted transaction, along with a  
 stacktrace pointing to where the last deadlock was detected. (In earlier  
 versions, up to and including 1.3.2, transactions where automatically  
 restarted also for the error 1205 "Lock wait timeout". This is no longer the  
@@ -574,14 +602,14 @@ executed as a plain query within a managed transaction. (Don't do that!)</p>
 
 <h3 class="function"><a name="unprepare-2">unprepare/2</a></h3>
 <div class="spec">
-<p><tt>unprepare(Conn, StatementRef) -&gt; ok | {error, Reason}</tt>
-<ul class="definitions"><li><tt>Conn = <a href="#type-connection">connection()</a></tt></li><li><tt>StatementRef = <a href="#type-statement_ref">statement_ref()</a></tt></li><li><tt>Reason = <a href="#type-server_reason">server_reason()</a> | not_prepared</tt></li></ul></p>
+<p><code>unprepare(Conn, StatementRef) -&gt; ok | {error, Reason}</code>
+<ul class="definitions"><li><code>Conn = <a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a></code></li><li><code>StatementRef = <a href="#type-statement_ref" docgen-rel="seetype" docgen-href="#statement_ref/0">statement_ref()</a></code></li><li><code>Reason = <a href="#type-server_reason" docgen-rel="seetype" docgen-href="#server_reason/0">server_reason()</a> | not_prepared</code></li></ul></p>
 <p> </p>
 </div><p>Deallocates a prepared statement.</p>
 
 <h3 class="function"><a name="warning_count-1">warning_count/1</a></h3>
 <div class="spec">
-<p><tt>warning_count(Conn::<a href="#type-connection">connection()</a>) -&gt; integer()</tt><br></p>
+<p><code>warning_count(Conn::<a href="#type-connection" docgen-rel="seetype" docgen-href="#connection/0">connection()</a>) -&gt; integer()</code><br></p>
 <p> </p>
 </div><p>Returns the number of warnings generated by the last query/2 or
   execute/3 calls.</p>

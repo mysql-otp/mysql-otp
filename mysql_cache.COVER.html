@@ -3,7 +3,30 @@
 <head>
 <meta charset="utf-8">
 <title>cover/mysql_cache.COVER.html</title>
-<style>body {
+<style>/*
+ %CopyrightBegin%
+
+ SPDX-License-Identifier: Apache-2.0
+
+ Copyright Milton Mazzarri <me@milmazz.uno>
+ Copyright Ericsson AB 2018-2025. All Rights Reserved.
+ 
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+ 
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+
+ %CopyrightEnd%
+*/
+
+body {
   font: 14px/1.6 "Helvetica Neue", Helvetica, Arial, sans-serif;
   margin: 0;
   padding: 0;
@@ -99,11 +122,25 @@ td.source {
   white-space: pre;
   font: 12px monospace;
 }
+
+
+@media (prefers-color-scheme: dark) {
+  body {
+    filter: invert(100%) hue-rotate(180deg) brightness(105%) contrast(95%);
+    background-color: #000000;
+  }
+  a:link {
+    color: #2B507D;
+  }
+  a:visited, a:active {
+    color: #85ABD5;
+  }
+}
 </style>
 </head>
 <body>
 <h1><code>cover/mysql_cache.COVER.html</code></h1>
-<footer><p>File generated from <code>/home/w3work/contrib/mysql-otp/ebin/../src/mysql_cache.erl</code> by <a href="http://erlang.org/doc/man/cover.html">cover</a> at 2020-10-12 at 11:28:18</p></footer>
+<footer><p>File generated from <code>src/mysql_cache.erl</code> by <a href="http://erlang.org/doc/man/cover.html">cover</a> at 2026-11-03 at 11:50:45</p></footer>
 <table>
 <tbody>
 <tr>
@@ -189,7 +226,7 @@ td.source {
 <tr>
 <td class="line" id="L17"><a href="#L17">17</a></td>
 <td class="hits"></td>
-<td class="source"><code>%% @doc A minimalistic time triggered dict based cache data structure.</code></td>
+<td class="source"><code>%% @doc A minimalistic time triggered maps based cache data structure.</code></td>
 </tr>
 <tr>
 <td class="line" id="L18"><a href="#L18">18</a></td>
@@ -219,7 +256,7 @@ td.source {
 <tr>
 <td class="line" id="L23"><a href="#L23">23</a></td>
 <td class="hits"></td>
-<td class="source"><code>%% A cache can be initialized to 'empty' which represents the empty cache.</code></td>
+<td class="source"><code>%% Properties:</code></td>
 </tr>
 <tr>
 <td class="line" id="L24"><a href="#L24">24</a></td>
@@ -229,52 +266,52 @@ td.source {
 <tr>
 <td class="line" id="L25"><a href="#L25">25</a></td>
 <td class="hits"></td>
-<td class="source"><code>%% Properties:</code></td>
+<td class="source"><code>%% &lt;ul&gt;</code></td>
 </tr>
 <tr>
 <td class="line" id="L26"><a href="#L26">26</a></td>
 <td class="hits"></td>
-<td class="source"><code>%%</code></td>
+<td class="source"><code>%%   &lt;li&gt;Embeddable in a gen_server or other process&lt;/li&gt;</code></td>
 </tr>
 <tr>
 <td class="line" id="L27"><a href="#L27">27</a></td>
 <td class="hits"></td>
-<td class="source"><code>%% &lt;ul&gt;</code></td>
+<td class="source"><code>%%   &lt;li&gt;Evicting K elements is O(N + K * log N) which means low overhead when</code></td>
 </tr>
 <tr>
 <td class="line" id="L28"><a href="#L28">28</a></td>
 <td class="hits"></td>
-<td class="source"><code>%%   &lt;li&gt;Embeddable in a gen_server or other process&lt;/li&gt;</code></td>
+<td class="source"><code>%%       nothing or few elements are evicted&lt;/li&gt;</code></td>
 </tr>
 <tr>
 <td class="line" id="L29"><a href="#L29">29</a></td>
 <td class="hits"></td>
-<td class="source"><code>%%   &lt;li&gt;Small overhead when unused (the empty cache is a single atom)&lt;/li&gt;</code></td>
+<td class="source"><code>%% &lt;/ul&gt;</code></td>
 </tr>
 <tr>
 <td class="line" id="L30"><a href="#L30">30</a></td>
 <td class="hits"></td>
-<td class="source"><code>%%   &lt;li&gt;Evicting K elements is O(N + K * log N) which means low overhead when</code></td>
+<td class="source"><code>%% @private</code></td>
 </tr>
 <tr>
 <td class="line" id="L31"><a href="#L31">31</a></td>
 <td class="hits"></td>
-<td class="source"><code>%%       nothing or few elements are evicted&lt;/li&gt;</code></td>
+<td class="source"><code>-module(mysql_cache).</code></td>
 </tr>
 <tr>
 <td class="line" id="L32"><a href="#L32">32</a></td>
 <td class="hits"></td>
-<td class="source"><code>%% &lt;/ul&gt;</code></td>
+<td class="source"><code></code></td>
 </tr>
 <tr>
 <td class="line" id="L33"><a href="#L33">33</a></td>
 <td class="hits"></td>
-<td class="source"><code>%% @private</code></td>
+<td class="source"><code>-export_type([cache/2]).</code></td>
 </tr>
 <tr>
 <td class="line" id="L34"><a href="#L34">34</a></td>
 <td class="hits"></td>
-<td class="source"><code>-module(mysql_cache).</code></td>
+<td class="source"><code>-export([evict_older_than/2, is_empty/1, lookup/2, new/0, size/1, store/3]).</code></td>
 </tr>
 <tr>
 <td class="line" id="L35"><a href="#L35">35</a></td>
@@ -284,262 +321,262 @@ td.source {
 <tr>
 <td class="line" id="L36"><a href="#L36">36</a></td>
 <td class="hits"></td>
-<td class="source"><code>-export_type([cache/2]).</code></td>
+<td class="source"><code>-opaque cache(K, V) :: #{K =&gt; {V, integer()}}.</code></td>
 </tr>
 <tr>
 <td class="line" id="L37"><a href="#L37">37</a></td>
 <td class="hits"></td>
-<td class="source"><code>-export([evict_older_than/2, lookup/2, new/0, size/1, store/3]).</code></td>
+<td class="source"><code></code></td>
 </tr>
 <tr>
 <td class="line" id="L38"><a href="#L38">38</a></td>
 <td class="hits"></td>
-<td class="source"><code></code></td>
+<td class="source"><code>%% @doc Deletes the entries that have not been used for `MaxAge' milliseconds</code></td>
 </tr>
 <tr>
 <td class="line" id="L39"><a href="#L39">39</a></td>
 <td class="hits"></td>
-<td class="source"><code>-type cache(K, V) ::</code></td>
+<td class="source"><code>%% and returns them along with the new state.</code></td>
 </tr>
 <tr>
 <td class="line" id="L40"><a href="#L40">40</a></td>
 <td class="hits"></td>
-<td class="source"><code>    {cache, erlang:timestamp(), dict:dict(K, {V, non_neg_integer()})} | empty.</code></td>
+<td class="source"><code>-spec evict_older_than(Cache :: cache(K, V), MaxAge :: non_neg_integer()) -&gt;</code></td>
 </tr>
 <tr>
 <td class="line" id="L41"><a href="#L41">41</a></td>
 <td class="hits"></td>
-<td class="source"><code></code></td>
+<td class="source"><code>    {Evicted :: [{K, V}], NewCache :: cache(K, V)}.</code></td>
 </tr>
 <tr>
 <td class="line" id="L42"><a href="#L42">42</a></td>
 <td class="hits"></td>
-<td class="source"><code>%% @doc Deletes the entries that have not been used for `MaxAge' milliseconds</code></td>
+<td class="source"><code>evict_older_than(Cache = #{}, MaxAge) -&gt;</code></td>
 </tr>
-<tr>
+<tr class="hit">
 <td class="line" id="L43"><a href="#L43">43</a></td>
-<td class="hits"></td>
-<td class="source"><code>%% and returns them along with the new state.</code></td>
+<td class="hits">6</td>
+<td class="source"><code>    MinTime = timestamp() - MaxAge * 1000,</code></td>
 </tr>
-<tr>
+<tr class="hit">
 <td class="line" id="L44"><a href="#L44">44</a></td>
-<td class="hits"></td>
-<td class="source"><code>-spec evict_older_than(Cache :: cache(K, V), MaxAge :: non_neg_integer()) -&gt;</code></td>
+<td class="hits">6</td>
+<td class="source"><code>    {Evicted, Cache1} = maps:fold(</code></td>
 </tr>
 <tr>
 <td class="line" id="L45"><a href="#L45">45</a></td>
 <td class="hits"></td>
-<td class="source"><code>    {Evicted :: [{K, V}], NewCache :: cache(K, V)}.</code></td>
+<td class="source"><code>        fun</code></td>
 </tr>
 <tr>
 <td class="line" id="L46"><a href="#L46">46</a></td>
 <td class="hits"></td>
-<td class="source"><code>evict_older_than({cache, StartTs, Dict}, MaxAge) -&gt;</code></td>
+<td class="source"><code>            (_Key, {_Value, Time}, Acc) when Time &gt;= MinTime -&gt;</code></td>
 </tr>
 <tr class="hit">
 <td class="line" id="L47"><a href="#L47">47</a></td>
-<td class="hits">5</td>
-<td class="source"><code>    MinTime = timer:now_diff(os:timestamp(), StartTs) div 1000 - MaxAge,</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L48"><a href="#L48">48</a></td>
-<td class="hits">5</td>
-<td class="source"><code>    {Evicted, Dict1} = dict:fold(</code></td>
-</tr>
-<tr>
-<td class="line" id="L49"><a href="#L49">49</a></td>
-<td class="hits"></td>
-<td class="source"><code>        fun (Key, {Value, Time}, {EvictedAcc, DictAcc}) -&gt;</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L50"><a href="#L50">50</a></td>
-<td class="hits">5</td>
-<td class="source"><code>            if</code></td>
-</tr>
-<tr>
-<td class="line" id="L51"><a href="#L51">51</a></td>
-<td class="hits"></td>
-<td class="source"><code>                Time &lt; MinTime -&gt;</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L52"><a href="#L52">52</a></td>
-<td class="hits">2</td>
-<td class="source"><code>                    {[{Key, Value} | EvictedAcc], dict:erase(Key, DictAcc)};</code></td>
-</tr>
-<tr>
-<td class="line" id="L53"><a href="#L53">53</a></td>
-<td class="hits"></td>
-<td class="source"><code>                Time &gt;= MinTime -&gt;</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L54"><a href="#L54">54</a></td>
 <td class="hits">3</td>
-<td class="source"><code>                    {EvictedAcc, DictAcc}</code></td>
+<td class="source"><code>                Acc;</code></td>
 </tr>
 <tr>
-<td class="line" id="L55"><a href="#L55">55</a></td>
+<td class="line" id="L48"><a href="#L48">48</a></td>
 <td class="hits"></td>
-<td class="source"><code>            end</code></td>
+<td class="source"><code>	    (Key, {Value, _Time}, {EvictedAcc, CacheAcc}) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L49"><a href="#L49">49</a></td>
+<td class="hits">2</td>
+<td class="source"><code>                {[{Key, Value} | EvictedAcc], maps:remove(Key, CacheAcc)}</code></td>
 </tr>
 <tr>
-<td class="line" id="L56"><a href="#L56">56</a></td>
+<td class="line" id="L50"><a href="#L50">50</a></td>
 <td class="hits"></td>
 <td class="source"><code>        end,</code></td>
 </tr>
 <tr>
-<td class="line" id="L57"><a href="#L57">57</a></td>
+<td class="line" id="L51"><a href="#L51">51</a></td>
 <td class="hits"></td>
-<td class="source"><code>        {[], Dict},</code></td>
+<td class="source"><code>        {[], Cache},</code></td>
 </tr>
 <tr>
-<td class="line" id="L58"><a href="#L58">58</a></td>
+<td class="line" id="L52"><a href="#L52">52</a></td>
 <td class="hits"></td>
-<td class="source"><code>        Dict),</code></td>
+<td class="source"><code>        Cache),</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L59"><a href="#L59">59</a></td>
-<td class="hits">5</td>
-<td class="source"><code>    Cache1 = case dict:size(Dict1) of</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L60"><a href="#L60">60</a></td>
-<td class="hits">2</td>
-<td class="source"><code>        0 -&gt; empty;</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L61"><a href="#L61">61</a></td>
-<td class="hits">3</td>
-<td class="source"><code>        _ -&gt; {cache, StartTs, Dict1}</code></td>
+<td class="line" id="L53"><a href="#L53">53</a></td>
+<td class="hits">6</td>
+<td class="source"><code>    {Evicted, Cache1}.</code></td>
 </tr>
 <tr>
-<td class="line" id="L62"><a href="#L62">62</a></td>
-<td class="hits"></td>
-<td class="source"><code>    end,</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L63"><a href="#L63">63</a></td>
-<td class="hits">5</td>
-<td class="source"><code>    {Evicted, Cache1};</code></td>
-</tr>
-<tr>
-<td class="line" id="L64"><a href="#L64">64</a></td>
-<td class="hits"></td>
-<td class="source"><code>evict_older_than(empty, _) -&gt;</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L65"><a href="#L65">65</a></td>
-<td class="hits">1</td>
-<td class="source"><code>    {[], empty}.</code></td>
-</tr>
-<tr>
-<td class="line" id="L66"><a href="#L66">66</a></td>
+<td class="line" id="L54"><a href="#L54">54</a></td>
 <td class="hits"></td>
 <td class="source"><code></code></td>
 </tr>
 <tr>
-<td class="line" id="L67"><a href="#L67">67</a></td>
+<td class="line" id="L55"><a href="#L55">55</a></td>
 <td class="hits"></td>
 <td class="source"><code>%% @doc Looks up a key in a cache. If found, returns the value and a new cache</code></td>
 </tr>
 <tr>
-<td class="line" id="L68"><a href="#L68">68</a></td>
+<td class="line" id="L56"><a href="#L56">56</a></td>
 <td class="hits"></td>
 <td class="source"><code>%% with the 'last used' timestamp updated for the key.</code></td>
 </tr>
 <tr>
-<td class="line" id="L69"><a href="#L69">69</a></td>
+<td class="line" id="L57"><a href="#L57">57</a></td>
 <td class="hits"></td>
 <td class="source"><code>-spec lookup(Key :: K, Cache :: cache(K, V)) -&gt;</code></td>
 </tr>
 <tr>
-<td class="line" id="L70"><a href="#L70">70</a></td>
+<td class="line" id="L58"><a href="#L58">58</a></td>
 <td class="hits"></td>
 <td class="source"><code>    {found, Value :: V, UpdatedCache :: cache(K, V)} | not_found.</code></td>
 </tr>
 <tr>
-<td class="line" id="L71"><a href="#L71">71</a></td>
+<td class="line" id="L59"><a href="#L59">59</a></td>
 <td class="hits"></td>
-<td class="source"><code>lookup(Key, {cache, StartTs, Dict}) -&gt;</code></td>
+<td class="source"><code>lookup(Key, Cache = #{}) -&gt;</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L72"><a href="#L72">72</a></td>
-<td class="hits">10</td>
-<td class="source"><code>    case dict:find(Key, Dict) of</code></td>
+<td class="line" id="L60"><a href="#L60">60</a></td>
+<td class="hits">21</td>
+<td class="source"><code>    case maps:find(Key, Cache) of</code></td>
 </tr>
 <tr>
-<td class="line" id="L73"><a href="#L73">73</a></td>
+<td class="line" id="L61"><a href="#L61">61</a></td>
 <td class="hits"></td>
 <td class="source"><code>        {ok, {Value, _OldTime}} -&gt;</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L74"><a href="#L74">74</a></td>
+<td class="line" id="L62"><a href="#L62">62</a></td>
 <td class="hits">4</td>
-<td class="source"><code>            NewTime = timer:now_diff(os:timestamp(), StartTs) div 1000,</code></td>
+<td class="source"><code>            Cache1 = Cache#{Key =&gt; {Value, timestamp()}},</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L75"><a href="#L75">75</a></td>
-<td class="hits">4</td>
-<td class="source"><code>            Dict1 = dict:store(Key, {Value, NewTime}, Dict),</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L76"><a href="#L76">76</a></td>
-<td class="hits">4</td>
-<td class="source"><code>            Cache1 = {cache, StartTs, Dict1},</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L77"><a href="#L77">77</a></td>
+<td class="line" id="L63"><a href="#L63">63</a></td>
 <td class="hits">4</td>
 <td class="source"><code>            {found, Value, Cache1};</code></td>
 </tr>
 <tr>
-<td class="line" id="L78"><a href="#L78">78</a></td>
+<td class="line" id="L64"><a href="#L64">64</a></td>
 <td class="hits"></td>
 <td class="source"><code>        error -&gt;</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L79"><a href="#L79">79</a></td>
-<td class="hits">6</td>
+<td class="line" id="L65"><a href="#L65">65</a></td>
+<td class="hits">17</td>
 <td class="source"><code>            not_found</code></td>
 </tr>
 <tr>
-<td class="line" id="L80"><a href="#L80">80</a></td>
+<td class="line" id="L66"><a href="#L66">66</a></td>
 <td class="hits"></td>
-<td class="source"><code>    end;</code></td>
+<td class="source"><code>    end.</code></td>
 </tr>
 <tr>
-<td class="line" id="L81"><a href="#L81">81</a></td>
-<td class="hits"></td>
-<td class="source"><code>lookup(_Key, empty) -&gt;</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L82"><a href="#L82">82</a></td>
-<td class="hits">7</td>
-<td class="source"><code>    not_found.</code></td>
-</tr>
-<tr>
-<td class="line" id="L83"><a href="#L83">83</a></td>
+<td class="line" id="L67"><a href="#L67">67</a></td>
 <td class="hits"></td>
 <td class="source"><code></code></td>
 </tr>
 <tr>
-<td class="line" id="L84"><a href="#L84">84</a></td>
+<td class="line" id="L68"><a href="#L68">68</a></td>
 <td class="hits"></td>
 <td class="source"><code>%% @doc Returns the atom `empty' which represents an empty cache.</code></td>
 </tr>
 <tr>
-<td class="line" id="L85"><a href="#L85">85</a></td>
+<td class="line" id="L69"><a href="#L69">69</a></td>
 <td class="hits"></td>
 <td class="source"><code>-spec new() -&gt; cache(K :: term(), V :: term()).</code></td>
 </tr>
 <tr>
-<td class="line" id="L86"><a href="#L86">86</a></td>
+<td class="line" id="L70"><a href="#L70">70</a></td>
 <td class="hits"></td>
 <td class="source"><code>new() -&gt;</code></td>
 </tr>
 <tr class="hit">
+<td class="line" id="L71"><a href="#L71">71</a></td>
+<td class="hits">58</td>
+<td class="source"><code>    #{}.</code></td>
+</tr>
+<tr>
+<td class="line" id="L72"><a href="#L72">72</a></td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L73"><a href="#L73">73</a></td>
+<td class="hits"></td>
+<td class="source"><code>-spec is_empty(cache(K :: term(), V :: term())) -&gt; boolean().</code></td>
+</tr>
+<tr>
+<td class="line" id="L74"><a href="#L74">74</a></td>
+<td class="hits"></td>
+<td class="source"><code>is_empty(Cache = #{}) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L75"><a href="#L75">75</a></td>
+<td class="hits">15</td>
+<td class="source"><code>    Cache =:= #{}.</code></td>
+</tr>
+<tr>
+<td class="line" id="L76"><a href="#L76">76</a></td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L77"><a href="#L77">77</a></td>
+<td class="hits"></td>
+<td class="source"><code>%% @doc Returns the number of elements in the cache.</code></td>
+</tr>
+<tr>
+<td class="line" id="L78"><a href="#L78">78</a></td>
+<td class="hits"></td>
+<td class="source"><code>-spec size(cache(K :: term(), V :: term())) -&gt; non_neg_integer().</code></td>
+</tr>
+<tr>
+<td class="line" id="L79"><a href="#L79">79</a></td>
+<td class="hits"></td>
+<td class="source"><code>size(Cache = #{}) -&gt;</code></td>
+</tr>
+<tr class="hit">
+<td class="line" id="L80"><a href="#L80">80</a></td>
+<td class="hits">2</td>
+<td class="source"><code>    maps:size(Cache).</code></td>
+</tr>
+<tr>
+<td class="line" id="L81"><a href="#L81">81</a></td>
+<td class="hits"></td>
+<td class="source"><code></code></td>
+</tr>
+<tr>
+<td class="line" id="L82"><a href="#L82">82</a></td>
+<td class="hits"></td>
+<td class="source"><code>%% @doc Stores a key-value pair in the cache. If the key already exists, the</code></td>
+</tr>
+<tr>
+<td class="line" id="L83"><a href="#L83">83</a></td>
+<td class="hits"></td>
+<td class="source"><code>%% associated value is replaced by `Value'.</code></td>
+</tr>
+<tr>
+<td class="line" id="L84"><a href="#L84">84</a></td>
+<td class="hits"></td>
+<td class="source"><code>-spec store(Key :: K, Value :: V, Cache :: cache(K, V)) -&gt; cache(K, V)</code></td>
+</tr>
+<tr>
+<td class="line" id="L85"><a href="#L85">85</a></td>
+<td class="hits"></td>
+<td class="source"><code>    when K :: term(), V :: term().</code></td>
+</tr>
+<tr>
+<td class="line" id="L86"><a href="#L86">86</a></td>
+<td class="hits"></td>
+<td class="source"><code>store(Key, Value, Cache = #{}) -&gt;</code></td>
+</tr>
+<tr class="hit">
 <td class="line" id="L87"><a href="#L87">87</a></td>
-<td class="hits">1</td>
-<td class="source"><code>    empty.</code></td>
+<td class="hits">16</td>
+<td class="source"><code>    Cache#{Key =&gt; {Value, timestamp()}}.</code></td>
 </tr>
 <tr>
 <td class="line" id="L88"><a href="#L88">88</a></td>
@@ -549,215 +586,145 @@ td.source {
 <tr>
 <td class="line" id="L89"><a href="#L89">89</a></td>
 <td class="hits"></td>
-<td class="source"><code>%% @doc Returns the number of elements in the cache.</code></td>
+<td class="source"><code>timestamp() -&gt;</code></td>
 </tr>
-<tr>
+<tr class="hit">
 <td class="line" id="L90"><a href="#L90">90</a></td>
-<td class="hits"></td>
-<td class="source"><code>-spec size(cache(K :: term(), V :: term())) -&gt; non_neg_integer().</code></td>
+<td class="hits">26</td>
+<td class="source"><code>    erlang:monotonic_time(microsecond).</code></td>
 </tr>
 <tr>
 <td class="line" id="L91"><a href="#L91">91</a></td>
 <td class="hits"></td>
-<td class="source"><code>size({cache, _, Dict}) -&gt;</code></td>
+<td class="source"><code></code></td>
 </tr>
-<tr class="hit">
+<tr>
 <td class="line" id="L92"><a href="#L92">92</a></td>
-<td class="hits">1</td>
-<td class="source"><code>    dict:size(Dict);</code></td>
-</tr>
-<tr>
-<td class="line" id="L93"><a href="#L93">93</a></td>
-<td class="hits"></td>
-<td class="source"><code>size(empty) -&gt;</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L94"><a href="#L94">94</a></td>
-<td class="hits">2</td>
-<td class="source"><code>    0.</code></td>
-</tr>
-<tr>
-<td class="line" id="L95"><a href="#L95">95</a></td>
-<td class="hits"></td>
-<td class="source"><code></code></td>
-</tr>
-<tr>
-<td class="line" id="L96"><a href="#L96">96</a></td>
-<td class="hits"></td>
-<td class="source"><code>%% @doc Stores a key-value pair in the cache. If the key already exists, the</code></td>
-</tr>
-<tr>
-<td class="line" id="L97"><a href="#L97">97</a></td>
-<td class="hits"></td>
-<td class="source"><code>%% associated value is replaced by `Value'.</code></td>
-</tr>
-<tr>
-<td class="line" id="L98"><a href="#L98">98</a></td>
-<td class="hits"></td>
-<td class="source"><code>-spec store(Key :: K, Value :: V, Cache :: cache(K, V)) -&gt; cache(K, V)</code></td>
-</tr>
-<tr>
-<td class="line" id="L99"><a href="#L99">99</a></td>
-<td class="hits"></td>
-<td class="source"><code>    when K :: term(), V :: term().</code></td>
-</tr>
-<tr>
-<td class="line" id="L100"><a href="#L100">100</a></td>
-<td class="hits"></td>
-<td class="source"><code>store(Key, Value, {cache, StartTs, Dict}) -&gt;</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L101"><a href="#L101">101</a></td>
-<td class="hits">5</td>
-<td class="source"><code>    Time = timer:now_diff(os:timestamp(), StartTs) div 1000,</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L102"><a href="#L102">102</a></td>
-<td class="hits">5</td>
-<td class="source"><code>    {cache, StartTs, dict:store(Key, {Value, Time}, Dict)};</code></td>
-</tr>
-<tr>
-<td class="line" id="L103"><a href="#L103">103</a></td>
-<td class="hits"></td>
-<td class="source"><code>store(Key, Value, empty) -&gt;</code></td>
-</tr>
-<tr class="hit">
-<td class="line" id="L104"><a href="#L104">104</a></td>
-<td class="hits">7</td>
-<td class="source"><code>    {cache, os:timestamp(), dict:store(Key, {Value, 0}, dict:new())}.</code></td>
-</tr>
-<tr>
-<td class="line" id="L105"><a href="#L105">105</a></td>
-<td class="hits"></td>
-<td class="source"><code></code></td>
-</tr>
-<tr>
-<td class="line" id="L106"><a href="#L106">106</a></td>
 <td class="hits"></td>
 <td class="source"><code>-ifdef(TEST).</code></td>
 </tr>
 <tr>
-<td class="line" id="L107"><a href="#L107">107</a></td>
+<td class="line" id="L93"><a href="#L93">93</a></td>
 <td class="hits"></td>
 <td class="source"><code>-include_lib("eunit/include/eunit.hrl").</code></td>
 </tr>
 <tr>
-<td class="line" id="L108"><a href="#L108">108</a></td>
+<td class="line" id="L94"><a href="#L94">94</a></td>
 <td class="hits"></td>
 <td class="source"><code></code></td>
 </tr>
 <tr>
-<td class="line" id="L109"><a href="#L109">109</a></td>
+<td class="line" id="L95"><a href="#L95">95</a></td>
 <td class="hits"></td>
 <td class="source"><code>empty_test() -&gt;</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L110"><a href="#L110">110</a></td>
+<td class="line" id="L96"><a href="#L96">96</a></td>
 <td class="hits">1</td>
-<td class="source"><code>    ?assertEqual(empty, ?MODULE:new()),</code></td>
+<td class="source"><code>    ?assertEqual(#{}, ?MODULE:new()),</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L111"><a href="#L111">111</a></td>
+<td class="line" id="L97"><a href="#L97">97</a></td>
 <td class="hits">1</td>
-<td class="source"><code>    ?assertEqual(0, ?MODULE:size(empty)),</code></td>
+<td class="source"><code>    ?assertEqual(0, ?MODULE:size(#{})),</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L112"><a href="#L112">112</a></td>
+<td class="line" id="L98"><a href="#L98">98</a></td>
 <td class="hits">1</td>
-<td class="source"><code>    ?assertEqual(not_found, ?MODULE:lookup(foo, empty)),</code></td>
+<td class="source"><code>    ?assertEqual(not_found, ?MODULE:lookup(foo, #{})),</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L113"><a href="#L113">113</a></td>
+<td class="line" id="L99"><a href="#L99">99</a></td>
 <td class="hits">1</td>
-<td class="source"><code>    ?assertMatch({[], empty}, ?MODULE:evict_older_than(empty, 10)).</code></td>
+<td class="source"><code>    ?assertMatch({[], #{}}, ?MODULE:evict_older_than(#{}, 10)).</code></td>
 </tr>
 <tr>
-<td class="line" id="L114"><a href="#L114">114</a></td>
+<td class="line" id="L100"><a href="#L100">100</a></td>
 <td class="hits"></td>
 <td class="source"><code></code></td>
 </tr>
 <tr>
-<td class="line" id="L115"><a href="#L115">115</a></td>
+<td class="line" id="L101"><a href="#L101">101</a></td>
 <td class="hits"></td>
 <td class="source"><code>nonempty_test() -&gt;</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L116"><a href="#L116">116</a></td>
+<td class="line" id="L102"><a href="#L102">102</a></td>
 <td class="hits">1</td>
-<td class="source"><code>    Cache = ?MODULE:store(foo, bar, empty),</code></td>
+<td class="source"><code>    Cache = ?MODULE:store(foo, bar, #{}),</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L117"><a href="#L117">117</a></td>
+<td class="line" id="L103"><a href="#L103">103</a></td>
 <td class="hits">1</td>
-<td class="source"><code>    ?assertMatch({found, bar, _}, ?MODULE:lookup(foo, Cache)),</code></td>
+<td class="source"><code>    ?assertMatch({found, bar, #{}}, ?MODULE:lookup(foo, Cache)),</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L118"><a href="#L118">118</a></td>
+<td class="line" id="L104"><a href="#L104">104</a></td>
 <td class="hits">1</td>
 <td class="source"><code>    ?assertMatch(not_found, ?MODULE:lookup(baz, Cache)),</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L119"><a href="#L119">119</a></td>
+<td class="line" id="L105"><a href="#L105">105</a></td>
 <td class="hits">1</td>
-<td class="source"><code>    ?assertMatch({[], _}, ?MODULE:evict_older_than(Cache, 50)),</code></td>
+<td class="source"><code>    ?assertMatch({[], #{}}, ?MODULE:evict_older_than(Cache, 50)),</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L120"><a href="#L120">120</a></td>
+<td class="line" id="L106"><a href="#L106">106</a></td>
 <td class="hits">1</td>
-<td class="source"><code>    ?assertMatch({cache, _, _}, Cache),</code></td>
+<td class="source"><code>    ?assertMatch(#{}, Cache),</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L121"><a href="#L121">121</a></td>
+<td class="line" id="L107"><a href="#L107">107</a></td>
 <td class="hits">1</td>
 <td class="source"><code>    ?assertEqual(1, ?MODULE:size(Cache)),</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L122"><a href="#L122">122</a></td>
+<td class="line" id="L108"><a href="#L108">108</a></td>
 <td class="hits">1</td>
 <td class="source"><code>    receive after 51 -&gt; ok end, %% expire cache</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L123"><a href="#L123">123</a></td>
+<td class="line" id="L109"><a href="#L109">109</a></td>
 <td class="hits">1</td>
-<td class="source"><code>    ?assertEqual({[{foo, bar}], empty}, ?MODULE:evict_older_than(Cache, 50)),</code></td>
+<td class="source"><code>    ?assertEqual({[{foo, bar}], #{}}, ?MODULE:evict_older_than(Cache, 50)),</code></td>
 </tr>
 <tr>
-<td class="line" id="L124"><a href="#L124">124</a></td>
+<td class="line" id="L110"><a href="#L110">110</a></td>
 <td class="hits"></td>
 <td class="source"><code>    %% lookup un-expires cache</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L125"><a href="#L125">125</a></td>
+<td class="line" id="L111"><a href="#L111">111</a></td>
 <td class="hits">1</td>
 <td class="source"><code>    {found, bar, NewCache} = ?MODULE:lookup(foo, Cache),</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L126"><a href="#L126">126</a></td>
+<td class="line" id="L112"><a href="#L112">112</a></td>
 <td class="hits">1</td>
-<td class="source"><code>    ?assertMatch({[], {cache, _, _}}, ?MODULE:evict_older_than(NewCache, 50)),</code></td>
+<td class="source"><code>    ?assertMatch({[], #{}}, ?MODULE:evict_older_than(NewCache, 50)),</code></td>
 </tr>
 <tr>
-<td class="line" id="L127"><a href="#L127">127</a></td>
+<td class="line" id="L113"><a href="#L113">113</a></td>
 <td class="hits"></td>
 <td class="source"><code>    %% store also un-expires</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L128"><a href="#L128">128</a></td>
+<td class="line" id="L114"><a href="#L114">114</a></td>
 <td class="hits">1</td>
 <td class="source"><code>    NewCache2 = ?MODULE:store(foo, baz, Cache),</code></td>
 </tr>
 <tr class="hit">
-<td class="line" id="L129"><a href="#L129">129</a></td>
+<td class="line" id="L115"><a href="#L115">115</a></td>
 <td class="hits">1</td>
-<td class="source"><code>    ?assertMatch({[], {cache, _, _}}, ?MODULE:evict_older_than(NewCache2, 50)).</code></td>
+<td class="source"><code>    ?assertMatch({[], #{}}, ?MODULE:evict_older_than(NewCache2, 50)).</code></td>
 </tr>
 <tr>
-<td class="line" id="L130"><a href="#L130">130</a></td>
+<td class="line" id="L116"><a href="#L116">116</a></td>
 <td class="hits"></td>
 <td class="source"><code></code></td>
 </tr>
 <tr>
-<td class="line" id="L131"><a href="#L131">131</a></td>
+<td class="line" id="L117"><a href="#L117">117</a></td>
 <td class="hits"></td>
 <td class="source"><code>-endif.</code></td>
 </tr>

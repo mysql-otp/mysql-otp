@@ -58,12 +58,14 @@ The project page is on Github:
       <td>DECIMAL(P, S)</td>
       <td><code>integer()</code> when S == 0<br>
           <code>float()</code> when P =&lt; 15 and S &gt; 0<br>
-          <code>binary()</code> when P &gt;= 16 and S &gt; 0 [<a href="#vn2">2</a>]</td>
-      <td><code>42</code><br><code>3.14</code><br><code>&lt;&lt;"3.14159265358979323846"&gt;&gt;</code></td>
+          <code>binary()</code> when P &gt;= 16 and S &gt; 0 [<a href="#vn2">2</a>]<br>
+          <code>{decimal, Value}</code> [<a href="#vn3">3</a>] (parameter only)</td>
+      <td><code>42</code><br><code>3.14</code><br><code>&lt;&lt;"3.14159265358979323846"&gt;&gt;</code><br>
+          <code>{decimal, 10.2}</code></td>
     </tr>
     <tr>
       <td>DATETIME, TIMESTAMP</td>
-      <td><code>calendar:datetime()</code> [<a href="#vn3">3</a>]</td>
+      <td><code>calendar:datetime()</code> [<a href="#vn4">4</a>]</td>
       <td><code>{{2014, 11, 18}, {10, 22, 36}}</code></td>
     </tr>
     <tr>
@@ -73,8 +75,8 @@ The project page is on Github:
     </tr>
     <tr>
       <td>TIME</td>
-      <td><code>{Days, calendar:time()}</code> [<a href="#vn3">3</a>,
-          <a href="#vn4">4</a>]</td>
+      <td><code>{Days, calendar:time()}</code> [<a href="#vn4">4</a>,
+          <a href="#vn5">5</a>]</td>
       <td><code>{0, {10, 22, 36}}</code></td>
     </tr>
     <tr>
@@ -100,17 +102,20 @@ The project page is on Github:
     can be represented without precision loss and as <code>binary()</code> for high
     precision DECIMAL values. This is similar to how the <code>odbc</code> OTP application
     treats DECIMALs.</li>
-  <li id="vn3">For <code>DATETIME</code>, <code>TIMESTAMP</code> and <code>TIME</code> values with fractions of
+  <li id="vn3">DECIMALs can be sent as <code>{decimal, Value}</code> (where Value is a
+    number, string or binary) but values received from the database are
+    never returned in this format.</li>
+  <li id="vn4">For <code>DATETIME</code>, <code>TIMESTAMP</code> and <code>TIME</code> values with fractions of
     seconds, we use a float for the seconds part. (These are unusual and were
     added to MySQL in version 5.6.4.)</li>
-  <li id="vn4">Since <code>TIME</code> can be outside the <code>calendar:time()</code> interval, we use
+  <li id="vn5">Since <code>TIME</code> can be outside the <code>calendar:time()</code> interval, we use
     the format as returned by <code>calendar:seconds_to_daystime/1</code> for <code>TIME</code>
     values.</li>
 </ol>
 
 <h2>Copying</h2>
 
-<p>Copyright 2014-2019 The authors of MySQL/OTP. See the project page at
+<p>Copyright 2014-2021 The authors of MySQL/OTP. See the project page at
 <a href="https://github.com/mysql-otp/mysql-otp" target="_top">https://github.com/mysql-otp/mysql-otp</a>.</p>
 
 This library is free software licensed under the GNU LGPL which allows you to

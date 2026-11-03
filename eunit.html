@@ -3,81 +3,85 @@
 <title>Coverage report</title></head>
 <body>
 <h1>Coverage</h1>
-<p>Total: 92%</p>
+<p>Total: 94%</p>
 <table><tr><th>Module</th><th>Coverage</th></tr>
-<tr><td><a href=mysql_protocol.COVER.html>mysql_protocol</a></td><td>91%</td></tr>
-<tr><td><a href=mysql_conn.COVER.html>mysql_conn</a></td><td>93%</td></tr>
-<tr><td><a href=mysql.COVER.html>mysql</a></td><td>83%</td></tr>
+<tr><td><a href=mysql_protocol.COVER.html>mysql_protocol</a></td><td>95%</td></tr>
+<tr><td><a href=mysql_conn.COVER.html>mysql_conn</a></td><td>91%</td></tr>
 <tr><td><a href=mysql_encode.COVER.html>mysql_encode</a></td><td>100%</td></tr>
 <tr><td><a href=mysql_cache.COVER.html>mysql_cache</a></td><td>100%</td></tr>
+<tr><td><a href=mysql.COVER.html>mysql</a></td><td>91%</td></tr>
 </table>
-<p>Generated using /home/w3work/contrib/mysql-otp/eunit and erlang.mk on 2020-10-12T09:28:18Z.</p>
+<p>Generated using cover/eunit and erlang.mk on 2026-11-03T10:50:45Z.</p>
 <h3>Output of <code>make --no-print-directory tests COVER=1 COVER_REPORT_DIR=</code></h3><pre>
- GEN    test-dir
+ GEN    test-build
  GEN    eunit
 ======================== EUnit ========================
 module 'mysql'
   module 'mysql_tests'
-    mysql_tests: connect_synchronous_test...[0.027 s] ok
+    mysql_tests: connect_synchronous_test...[0.013 s] ok
     mysql_tests: connect_asynchronous_successful_test...[0.002 s] ok
-    mysql_tests: connect_asynchronous_failing_test...[0.011 s] ok
+    mysql_tests: connect_asynchronous_failing_test...[1.022 s] ok
     mysql_tests: connect_lazy_test...[0.004 s] ok
-    mysql_tests: failing_connect_test...[0.003 s] ok
-    mysql_tests: successful_connect_test...[0.007 s] ok
-    mysql_tests: exit_normal_test...[0.004 s] ok
-    mysql_tests: server_disconnect_test...[1.011 s] ok
-    mysql_tests: tcp_error_test...[0.004 s] ok
-    mysql_tests: keep_alive_test...[0.096 s] ok
-    mysql_tests: reset_connection_test...[0.013 s] ok
-    mysql_tests: unix_socket_test...[0.006 s] ok
-    mysql_tests: connect_queries_failure_test...[0.003 s] ok
-    mysql_tests: connect_prepare_failure_test...[0.005 s] ok
-    mysql_tests: query_test_ (Select db on connect)...[0.003 s] ok
-    mysql_tests: query_test_ (Autocommit)...[0.001 s] ok
-    mysql_tests: query_test_ (Encode)...[0.005 s] ok
-    mysql_tests: query_test_ (Basic queries)...[0.002 s] ok
-    mysql_tests: query_test_ (Filtermap queries)...[0.018 s] ok
-    mysql_tests: query_test_ (FOUND_ROWS option)...[0.016 s] ok
-    mysql_tests: query_test_ (Multi statements)...[0.019 s] ok
-    mysql_tests: query_test_ (Text protocol)...[0.019 s] ok
-    mysql_tests: query_test_ (Binary protocol)...[0.018 s] ok
-    mysql_tests: query_test_ (FLOAT rounding)...[0.100 s] ok
-    mysql_tests: query_test_ (DECIMAL)...[0.094 s] ok
-    mysql_tests: query_test_ (INT)...[0.221 s] ok
-    mysql_tests: query_test_ (BIT(N))...[0.027 s] ok
-    mysql_tests: query_test_ (DATE)...[0.031 s] ok
-    mysql_tests: query_test_ (TIME)...[0.081 s] ok
-    mysql_tests: query_test_ (DATETIME)...[0.033 s] ok
-    mysql_tests: query_test_ (JSON)...=INFO REPORT==== 12-Oct-2020::11:28:11.746642 ===
-Skipping JSON test. Current MySQL version is 5.6.33-0ubuntu0.14.04.1. Required version is &gt;= 5.7.8.
-
-[0.001 s] ok
-    mysql_tests: query_test_ (Microseconds)...[0.045 s] ok
-    mysql_tests: query_test_ (Invalid params)...[0.001 s] ok
-    mysql_tests: local_files_test_ (Single statement)...[0.014 s] ok
-    mysql_tests: local_files_test_ (Missing file)...[0.015 s] ok
-    mysql_tests: local_files_test_ (Not allowed)...[0.012 s] ok
-    mysql_tests: local_files_test_ (Multi statements)...[0.015 s] ok
-    mysql_tests: log_warnings_test...[0.025 s] ok
-    mysql_tests: log_slow_queries_test...[0.612 s] ok
-    mysql_tests: timeout_test_...[0.155 s] ok
-    mysql_tests: with_table_foo_test_ (Prepared statements)...[0.003 s] ok
-    mysql_tests: with_table_foo_test_ (Parametrized queries)...[0.160 s] ok
+    mysql_tests: failing_connect_test...[1.005 s] ok
+    mysql_tests: successful_connect_test...[0.005 s] ok
+    mysql_tests: successful_connect_binary_ref_test...[0.004 s] ok
+    mysql_tests: exit_normal_test...[1.003 s] ok
+    mysql_tests: server_disconnect_test...[2.006 s] ok
+    mysql_tests: unexpected_message_test...[0.002 s] ok
+    mysql_tests: tcp_error_test...[1.012 s] ok
+    mysql_tests: keep_alive_test...[1.087 s] ok
+    mysql_tests: reset_connection_test...[0.035 s] ok
+    mysql_tests: unix_socket_test...[0.010 s] ok
+    mysql_tests: socket_backend_test...[0.024 s] ok
+    mysql_tests: connect_queries_failure_test...[1.003 s] ok
+    mysql_tests: connect_prepare_failure_test...[1.004 s] ok
+    mysql_tests: -query_test_/0-fun-21- (Select db on connect)...[0.004 s] ok
+    mysql_tests: -query_test_/0-fun-20- (Autocommit)...ok
+    mysql_tests: -query_test_/0-fun-19- (Encode)...[0.001 s] ok
+    mysql_tests: -query_test_/0-fun-18- (Basic queries)...[0.003 s] ok
+    mysql_tests: -query_test_/0-fun-17- (Filtermap queries)...[0.038 s] ok
+    mysql_tests: -query_test_/0-fun-16- (FOUND_ROWS option)...[0.029 s] ok
+    mysql_tests: -query_test_/0-fun-15- (Multi statements)...[0.048 s] ok
+    mysql_tests: -query_test_/0-fun-14- (Text protocol)...[0.033 s] ok
+    mysql_tests: -query_test_/0-fun-13- (Binary protocol)...[0.033 s] ok
+    mysql_tests: -query_test_/0-fun-12- (FLOAT rounding)...[0.138 s] ok
+    mysql_tests: -query_test_/0-fun-11- (DECIMAL)...[0.161 s] ok
+    mysql_tests: -query_test_/0-fun-10- (DECIMAL truncated)...[3.080 s] ok
+    mysql_tests: -query_test_/0-fun-9- (Float as decimal)...[1.041 s] ok
+    mysql_tests: -query_test_/0-fun-8- (Float as decimal(2))...[0.030 s] ok
+    mysql_tests: -query_test_/0-fun-7- (INT)...[0.354 s] ok
+    mysql_tests: -query_test_/0-fun-6- (BIT(N))...[0.045 s] ok
+    mysql_tests: -query_test_/0-fun-5- (DATE)...[0.043 s] ok
+    mysql_tests: -query_test_/0-fun-4- (TIME)...[0.113 s] ok
+    mysql_tests: -query_test_/0-fun-3- (DATETIME)...[0.048 s] ok
+    mysql_tests: -query_test_/0-fun-2- (JSON)...[0.048 s] ok
+    mysql_tests: -query_test_/0-fun-1- (Microseconds)...[0.065 s] ok
+    mysql_tests: -query_test_/0-fun-0- (Invalid params)...ok
+    mysql_tests: -local_files_test_/0-fun-3- (Single statement)...[0.026 s] ok
+    mysql_tests: -local_files_test_/0-fun-2- (Missing file)...[0.025 s] ok
+    mysql_tests: -local_files_test_/0-fun-1- (Not allowed)...[0.023 s] ok
+    mysql_tests: -local_files_test_/0-fun-0- (Multi statements)...[0.021 s] ok
+    mysql_tests: log_warnings_test...[1.032 s] ok
+    mysql_tests: log_slow_queries_test...[2.607 s] ok
+    mysql_tests: -timeout_test_/0-fun-1-...[0.134 s] ok
+    mysql_tests: -with_table_foo_test_/0-fun-1- (Prepared statements)...[0.004 s] ok
+    mysql_tests: -with_table_foo_test_/0-fun-0- (Parametrized queries)...[0.154 s] ok
     mysql_tests: gen_server_coverage_test...ok
-    [done in 3.192 s]
-  [done in 3.192 s]
+    [done in 18.855 s]
+  [done in 18.855 s]
 module 'mysql_cache'
   mysql_cache: empty_test...ok
   mysql_cache: nonempty_test...[0.052 s] ok
-  [done in 0.060 s]
+  [done in 0.058 s]
 module 'mysql_conn'
 module 'mysql_encode'
   module 'mysql_encode_tests'
-    mysql_encode_tests: encode_test...[0.001 s] ok
+    mysql_encode_tests: encode_test...ok
     mysql_encode_tests: backslash_escape_test...ok
-    [done in 0.008 s]
-  [done in 0.008 s]
+    [done in 0.006 s]
+  [done in 0.006 s]
 module 'mysql_protocol'
+  mysql_protocol: server_info_test...[0.001 s] ok
   mysql_protocol: decode_text_test...ok
   mysql_protocol: decode_binary_test...ok
   mysql_protocol: null_bitmap_test...ok
@@ -85,61 +89,110 @@ module 'mysql_protocol'
   mysql_protocol: lenenc_str_test...ok
   mysql_protocol: nulterm_test...ok
   mysql_protocol: parse_header_test...ok
-  mysql_protocol: add_packet_headers_test...[0.001 s] ok
-  mysql_protocol: add_packet_headers_equal_to_0xffffff_test...[0.676 s] ok
-  mysql_protocol: add_packet_headers_greater_than_0xffffff_test...[0.672 s] ok
-  mysql_protocol: add_packet_headers_2_times_greater_than_0xffffff_test...[0.725 s] ok
+  mysql_protocol: add_packet_headers_test...ok
+  mysql_protocol: add_packet_headers_equal_to_0xffffff_test...[0.160 s] ok
+  mysql_protocol: add_packet_headers_greater_than_0xffffff_test...[0.125 s] ok
+  mysql_protocol: add_packet_headers_2_times_greater_than_0xffffff_test...[0.165 s] ok
   mysql_protocol: parse_ok_test...ok
   mysql_protocol: parse_error_test...ok
   mysql_protocol: parse_eof_test...ok
   mysql_protocol: hash_password_test...ok
   mysql_protocol: valid_params_test...ok
   mysql_protocol: valid_path_test...ok
-  mysql_protocol: allowed_path_test...[0.001 s] ok
+  mysql_protocol: allowed_path_test...ok
   module 'mysql_protocol_tests'
-    mysql_protocol_tests: resultset_test...[0.013 s] ok
-    mysql_protocol_tests: resultset_error_test...[0.006 s] ok
-    mysql_protocol_tests: prepare_test...[0.002 s] ok
+    mysql_protocol_tests: resultset_test...[0.003 s] ok
+    mysql_protocol_tests: resultset_error_test...ok
+    mysql_protocol_tests: prepare_test...ok
     mysql_protocol_tests: bad_protocol_version_test...ok
     mysql_protocol_tests: error_as_initial_packet_test...ok
+    mysql_protocol_tests: connection_closed_during_handshake_test...ok
+    mysql_protocol_tests: connection_closed_during_authentication_test...ok
     mysql_protocol_tests: hexdump_to_bin_test...ok
-    [done in 0.053 s]
-  [done in 2.270 s]
+    [done in 0.027 s]
+  [done in 0.535 s]
+module 'logger_acc'
+  logger_acc: capture_success_test...[1.001 s] ok
+  logger_acc: capture_failure_test...[1.001 s] ok
+  [done in 2.008 s]
 module 'mock_tcp'
-  mock_tcp: bad_recv_test...ok
-  mock_tcp: success_test...[0.102 s] ok
-  [done in 0.109 s]
-ssl_tests: successful_ssl_connect_test (module 'ssl_tests')...[0.477 s] ok
-module 'transaction_tests'
-  transaction_tests: single_connection_test_ (Simple atomic)...[0.003 s] ok
-  transaction_tests: single_connection_test_ (Simple aborted)...[0.005 s] ok
-  transaction_tests: single_connection_test_ (Nested atomic)...[0.005 s] ok
-  transaction_tests: single_connection_test_ (Nested inner aborted)...[0.005 s] ok
-  transaction_tests: single_connection_test_ (Implicit commit)...[0.017 s] ok
-  transaction_tests: fun.application_process_kill...[0.020 s] ok
-  transaction_tests: deadlock_test_ (Plain queries)...[0.008 s] ok
-  transaction_tests: deadlock_test_ (Prep stmts)...[0.008 s] ok
-  transaction_tests: deadlock_test_ (No retry)...[0.006 s] ok
-  transaction_tests: deadlock_test_ (Lock wait timeout)...[2.006 s] ok
-  [done in 2.152 s]
-module 'error_logger_acc'
-  error_logger_acc: capture_success_test...[0.002 s] ok
-  error_logger_acc: capture_failure_test...[0.002 s] ok
-  [done in 0.010 s]
+  mock_tcp: bad_recv_test...[0.101 s] ok
+  mock_tcp: success_test...[0.101 s] ok
+  [done in 0.208 s]
 module 'mysql_change_user_tests'
-  mysql_change_user_tests: correct_credentials_test...[0.004 s] ok
-  mysql_change_user_tests: incorrect_credentials_fail_test...[0.006 s] ok
-  mysql_change_user_tests: reset_variables_test...[0.004 s] ok
-  mysql_change_user_tests: reset_temptables_test...[0.013 s] ok
-  mysql_change_user_tests: fail_in_unmanaged_transaction_test...[0.004 s] ok
-  mysql_change_user_tests: fail_in_managed_transaction_test...[0.004 s] ok
-  mysql_change_user_tests: with_db_test...[0.006 s] ok
+  mysql_change_user_tests: correct_credentials_test...[0.005 s] ok
+  mysql_change_user_tests: incorrect_credentials_fail_test...[1.012 s] ok
+  mysql_change_user_tests: reset_variables_test...[0.006 s] ok
+  mysql_change_user_tests: reset_temptables_test...[0.017 s] ok
+  mysql_change_user_tests: fail_in_unmanaged_transaction_test...[0.003 s] ok
+  mysql_change_user_tests: fail_in_managed_transaction_test...[0.003 s] ok
+  mysql_change_user_tests: with_db_test...[0.010 s] ok
   mysql_change_user_tests: execute_queries_test...[0.004 s] ok
-  mysql_change_user_tests: execute_queries_failure_test...[0.006 s] ok
+  mysql_change_user_tests: execute_queries_failure_test...[1.005 s] ok
   mysql_change_user_tests: prepare_statements_test...[0.005 s] ok
-  mysql_change_user_tests: prepare_statements_failure_test...[0.007 s] ok
-  [done in 0.099 s]
+  mysql_change_user_tests: prepare_statements_failure_test...[1.004 s] ok
+  [done in 3.107 s]
+module 'ssl_tests'
+  ssl_tests: successful_ssl_connect_test...[0.123 s] ok
+  ssl_tests: owner_down_test...=ERROR REPORT==== 3-Nov-2026::11:50:43.360894 ===
+** Generic server tardis terminating 
+** Last message in was {'DOWN',#Ref&lt;0.3889025527.1281884166.60175&gt;,process,
+                               &lt;0.349.0&gt;,normal}
+** When Server state == {state,[8,4,13],
+                               undefined,undefined,ssl,[],
+                               [{server_name_indication,disable},
+                                {cacertfile,"test/ssl/ca.pem"}],
+                               "localhost",3306,"otptestssl",hidden,undefined,
+                               ["SET @foo = 'bar'","SELECT 1",
+                                "SELECT 1; SELECT 2"],
+                               [{foo,"SELECT @foo"}],
+                               &lt;&lt;"caching_sha2_password"&gt;&gt;,
+                               &lt;&lt;90,101,63,117,23,112,14,65,19,54,119,94,19,21,
+                                 17,113,75,9,3,91,0&gt;&gt;,
+                               [],true,false,5000,infinity,infinity,60000,0,3,
+                               0,0,
+                               [{&lt;0.349.0&gt;,
+                                 #Ref&lt;0.3889025527.1281884166.60175&gt;}],
+                               undefined,
+                               #{foo =&gt; {prepared,1,"SELECT @foo",0,0}},
+                               #{},false,false,auto}
+** Reason for termination ==
+** {application_process_died,&lt;0.349.0&gt;}
+
+=CRASH REPORT==== 3-Nov-2026::11:50:43.361086 ===
+  crasher:
+    initial call: mysql_conn:init/1
+    pid: &lt;0.344.0&gt;
+    registered_name: tardis
+    exception exit: {application_process_died,&lt;0.349.0&gt;}
+      in function  gen_server:handle_common_reply/5 (gen_server.erl:2562)
+    ancestors: [&lt;0.93.0&gt;]
+    message_queue_len: 0
+    messages: []
+    links: []
+    dictionary: [{'$logger_metadata$',#{domain =&gt; [mysql]}}]
+    trap_exit: true
+    status: running
+    heap_size: 6772
+    stack_size: 29
+    reductions: 11148
+  neighbours:
+
+[0.013 s] ok
+  [done in 0.142 s]
+module 'transaction_tests'
+  transaction_tests: -single_connection_test_/0-fun-4- (Simple atomic)...[0.006 s] ok
+  transaction_tests: -single_connection_test_/0-fun-3- (Simple aborted)...[0.009 s] ok
+  transaction_tests: -single_connection_test_/0-fun-2- (Nested atomic)...[0.007 s] ok
+  transaction_tests: -single_connection_test_/0-fun-1- (Nested inner aborted)...[0.006 s] ok
+  transaction_tests: -single_connection_test_/0-fun-0- (Implicit commit)...[0.022 s] ok
+  transaction_tests: application_process_kill...[1.044 s] ok
+  transaction_tests: -deadlock_test_/0-fun-3- (Plain queries)...[0.007 s] ok
+  transaction_tests: -deadlock_test_/0-fun-2- (Prep stmts)...[0.009 s] ok
+  transaction_tests: -deadlock_test_/0-fun-1- (No retry)...[0.005 s] ok
+  transaction_tests: -deadlock_test_/0-fun-0- (Lock wait timeout)...[1.012 s] ok
+  [done in 2.223 s]
 =======================================================
-  All 97 tests passed.
+  All 107 tests passed.
 </pre>
 </body></html>
