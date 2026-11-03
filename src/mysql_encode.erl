@@ -20,7 +20,10 @@ encode(Bin) when is_binary(Bin) ->
     Escaped = binary:replace(Bin, <<"'">>, <<"''">>, [global]),
     [$', Escaped, $'];
 encode(String) when is_list(String) ->
-    encode(unicode:characters_to_binary(String));
+    case unicode:characters_to_binary(String) of
+        Bin when is_binary(Bin) -> encode(Bin);
+        _ -> error(badarg)
+    end;
 encode(Bitstring) when is_bitstring(Bitstring) ->
     ["b'", [ case B of 0 -> $0; 1 -> $1 end || <<B:1>> <= Bitstring ], $'];
 encode({decimal, Num}) when is_float(Num); is_integer(Num) ->
