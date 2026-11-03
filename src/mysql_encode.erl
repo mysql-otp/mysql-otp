@@ -74,6 +74,10 @@ encode({D, {H, M, S}}) when D < 0, is_float(S) ->
 
 %% @doc Escapes backslashes with an extra backslash. This is necessary if
 %% backslash escapes are enabled in the session.
-backslash_escape(String) ->
-    Bin = iolist_to_binary(String),
-    binary:replace(Bin, <<"\\">>, <<"\\\\">>, [global]).
+backslash_escape(Bin) when is_binary(Bin) ->
+    binary:replace(Bin, <<"\\">>, <<"\\\\">>, [global]);
+backslash_escape(String) when is_list(String) ->
+    case unicode:characters_to_binary(String) of
+        Bin when is_binary(Bin) -> backslash_escape(Bin);
+        _ -> error(badarg)
+    end.

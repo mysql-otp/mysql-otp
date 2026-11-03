@@ -70,3 +70,16 @@ decimal_invalid_test() ->
 backslash_escape_test() ->
     ?assertEqual(<<"a'b\\\\c'd\\\\e">>,
                  iolist_to_binary(mysql_encode:backslash_escape("a'b\\c'd\\e"))).
+
+backslash_escape_unicode_test() ->
+    %% Unicode codepoints in lists get encoded as UTF-8, as in encode/1
+    ?assertEqual(<<"Caf", 195, 169>>,
+                 iolist_to_binary(mysql_encode:backslash_escape("Café"))),
+    ?assertEqual(<<"100 ", 226, 130, 172>>,
+                 iolist_to_binary(mysql_encode:backslash_escape("100 €"))),
+    ?assertEqual(<<"a\\\\b", 195, 169>>,
+                 iolist_to_binary(mysql_encode:backslash_escape("a\\bé"))),
+    %% Binaries are not converted
+    ?assertEqual(<<255, 0>>,
+                 iolist_to_binary(mysql_encode:backslash_escape(<<255, 0>>))),
+    ?assertError(badarg, mysql_encode:backslash_escape([16#110000])).
