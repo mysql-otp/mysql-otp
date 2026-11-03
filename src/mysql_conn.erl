@@ -387,7 +387,7 @@ handle_call({prepare, Query}, _From, State) ->
         #error{} = E ->
             {reply, {error, error_to_reason(E)}, State1};
         #prepared{statement_id = Id} = Stmt ->
-            State2 = State#state{stmts = Stmts1#{Id => Stmt}},
+            State2 = State1#state{stmts = Stmts1#{Id => Stmt}},
             {reply, {ok, Id}, State2}
     end;
 handle_call({prepare, Name, Query}, _From, State) when is_atom(Name);
