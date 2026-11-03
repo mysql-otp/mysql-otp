@@ -26,9 +26,11 @@ encode(Bitstring) when is_bitstring(Bitstring) ->
 encode({decimal, Num}) when is_float(Num); is_integer(Num) ->
     encode(Num);
 encode({decimal, Str}) when is_binary(Str); is_list(Str) ->
-    %% Simple injection block
-    nomatch = re:run(Str, <<"[^0-9.+\\-eE]">>),
-    Str;
+    case re:run(Str, <<"\\A[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?\\z">>,
+                [{capture, none}]) of
+        match -> Str;
+        nomatch -> error(badarg)
+    end;
 encode({Y, M, D}) ->
     io_lib:format("'~4..0b-~2..0b-~2..0b'", [Y, M, D]);
 encode({{Y, M, D}, {H, Mi, S}}) when is_integer(S) ->
