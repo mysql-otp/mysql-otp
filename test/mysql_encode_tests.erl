@@ -50,6 +50,22 @@ encode_test() ->
          {{{2014, 11, 23}, {23, 59, 57.654321}}, "'2014-11-23 23:59:57.654321'"}]
     ).
 
+microsecond_rounding_test() ->
+    %% Fractions that would round up to a whole second are capped at
+    %% 999999 microseconds instead of carrying over.
+    lists:foreach(
+        fun ({Term, Sql}) ->
+            ?assertEqual(iolist_to_binary(Sql),
+                         iolist_to_binary(mysql_encode:encode(Term)))
+        end,
+        [{{{2014, 12, 31}, {23, 59, 59.9999997}}, "'2014-12-31 23:59:59.999999'"},
+         {{{9999, 12, 31}, {23, 59, 59.9999997}}, "'9999-12-31 23:59:59.999999'"},
+         {{{2014, 2, 30}, {23, 59, 59.9999997}},  "'2014-02-30 23:59:59.999999'"},
+         {{0, {23, 59, 59.9999997}},              "'23:59:59.999999'"},
+         {{5, {0, 0, 59.9999997}},                "'120:00:59.999999'"},
+         {{-1, {0, 0, 0.0000003}},                "'-23:59:59.999999'"},
+         {{-5, {0, 0, 0.0000003}},                "'-119:59:59.999999'"}]).
+
 decimal_test() ->
     lists:foreach(
         fun (Str) ->

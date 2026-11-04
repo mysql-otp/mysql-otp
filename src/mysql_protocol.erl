@@ -1177,8 +1177,7 @@ encode_param({{Y, M, D}, {H, Mi, S}}) when is_float(S) ->
     %% calendar:datetime() with a float for seconds. This way it looks very
     %% similar to a datetime. Microseconds in MySQL timestamps are possible but
     %% not very common.
-    Sec = trunc(S),
-    Micro = round(1000000 * (S - Sec)),
+    {Sec, Micro} = mysql_encode:split_seconds(S),
     {<<?TYPE_DATETIME, 0>>, <<11, Y:16/little, M, D, H, Mi, Sec,
                               Micro:32/little>>};
 encode_param({D, {H, M, S}}) when is_integer(S), D >= 0 ->
@@ -1191,14 +1190,13 @@ encode_param({D, {H, M, S}}) when is_integer(S), D < 0 ->
     {D1, {H1, M1, S1}} = calendar:seconds_to_daystime(-Seconds),
     {<<?TYPE_TIME, 0>>, <<8, 1, D1:32/little, H1, M1, S1>>};
 encode_param({D, {H, M, S}}) when is_float(S), D >= 0 ->
-    S1 = trunc(S),
-    Micro = round(1000000 * (S - S1)),
+    {S1, Micro} = mysql_encode:split_seconds(S),
     {<<?TYPE_TIME, 0>>, <<12, 0, D:32/little, H, M, S1, Micro:32/little>>};
 encode_param({D, {H, M, S}}) when is_float(S), S > 0.0, D < 0 ->
-    IntS = trunc(S),
-    Micro = round(1000000 * (1 - S + IntS)),
-    Seconds = (D * 24 + H) * 3600 + M * 60 + IntS + 1,
-    {D1, {H1, M1, S1}} = calendar:seconds_to_daystime(-Seconds),
+    %% Split the absolute value, then set the minus flag.
+    {Seconds, Micro} =
+        mysql_encode:split_seconds(-((D * 24 + H) * 3600 + M * 60 + S)),
+    {D1, {H1, M1, S1}} = calendar:seconds_to_daystime(Seconds),
     {<<?TYPE_TIME, 0>>, <<12, 1, D1:32/little, H1, M1, S1, Micro:32/little>>};
 encode_param({D, {H, M, V}}) when abs(V) =:= +0.0 ->
     encode_param({D, {H, M, 0}}).
@@ -1800,6 +1798,31 @@ encode_param_negative_time_with_fraction_test() ->
     ?assertEqual({<<?TYPE_TIME, 0>>,
                   <<12, 1, 0:32/little, 1, 29, 59, 500000:32/little>>},
                  encode_param({-1, {22, 30, 0.5}})),
+    ok.
+
+encode_param_microsecond_rounding_test() ->
+    %% Fractions that would round up to a whole second are capped at
+    %% 999999 microseconds instead of carrying over.
+    ?assertEqual({<<?TYPE_DATETIME, 0>>,
+                  <<11, 2014:16/little, 12, 31, 23, 59, 59,
+                    999999:32/little>>},
+                 encode_param({{2014, 12, 31}, {23, 59, 59.9999997}})),
+    ?assertEqual({<<?TYPE_TIME, 0>>,
+                  <<12, 0, 0:32/little, 23, 59, 59, 999999:32/little>>},
+                 encode_param({0, {23, 59, 59.9999997}})),
+    %% -1 day + 0.0000003 s = -23:59:59.9999997
+    ?assertEqual({<<?TYPE_TIME, 0>>,
+                  <<12, 1, 0:32/little, 23, 59, 59, 999999:32/little>>},
+                 encode_param({-1, {0, 0, 0.0000003}})),
+    %% Negative with a whole float second: -6 days + 23:59:57 = -5d 00:00:03
+    ?assertEqual({<<?TYPE_TIME, 0>>,
+                  <<12, 1, 5:32/little, 0, 0, 3, 0:32/little>>},
+                 encode_param({-6, {23, 59, 57.0}})),
+    %% Regular fractions are rounded as before
+    ?assertEqual({<<?TYPE_DATETIME, 0>>,
+                  <<11, 2014:16/little, 11, 23, 23, 59, 57,
+                    654321:32/little>>},
+                 encode_param({{2014, 11, 23}, {23, 59, 57.654321}})),
     ok.
 
 null_bitmap_test() ->
