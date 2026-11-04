@@ -23,7 +23,7 @@
 %% found under "MySQL Documentation: Expert Guides" on http://dev.mysql.com/.
 %%
 %% TCP communication is not handled in this module. Most of the public functions
-%% take funs for data communitaction as parameters.
+%% take funs for data communication as parameters.
 %% @private
 -module(mysql_protocol).
 
@@ -139,7 +139,7 @@ handshake_finish_or_switch_auth(Handshake, Password, SockModule, Socket, SeqNum)
 %% If the authentication process requires more data to be exchanged between
 %% the server and client, this is done via More Data Packets. The formats and
 %% meanings of the payloads in such packets depend on the auth method.
-%% 
+%%
 %% An Auth Method Switch Packet signals a request for transition to another
 %% auth method. The packet contains the name of the auth method to switch to,
 %% and new auth plugin data.
@@ -165,7 +165,7 @@ auth_process_confirm_packet(ConfirmPacket, AuthPluginName, AuthPluginData, Passw
             %% Send hash of password, calculated according to the requested auth method.
             %% (NOTE: Sending the password hash as a response to an auth method switch
             %%        is the answer for both mysql_native_password and caching_sha2_password
-            %%        methods. It may be different for future other auth methods.)
+            %%        methods. It may be different for other, future auth methods.)
             Hash = hash_password(SwitchAuthPluginName, Password, SwitchAuthPluginData),
             {ok, SeqNum2} = send_packet(SockModule, Socket, Hash, SeqNum1),
             auth_finish_or_switch(SwitchAuthPluginName, SwitchAuthPluginData, Password,
@@ -233,7 +233,7 @@ query(Query, SockModule, Socket, AllowedPaths, DecodeDecimal, FilterMap, Timeout
     fetch_query_response(SockModule, Socket, AllowedPaths, DecodeDecimal, FilterMap, Timeout).
 
 %% @doc This is used by query/4. If query/4 returns {error, timeout}, this
-%% function can be called to retry to fetch the results of the query.
+%% function can be called to retry fetching the results of the query.
 fetch_query_response(SockModule, Socket, AllowedPaths, DecodeDecimal, FilterMap, Timeout) ->
     fetch_response(SockModule, Socket, Timeout, text, AllowedPaths, DecodeDecimal, FilterMap, []).
 
@@ -315,7 +315,7 @@ execute(#prepared{statement_id = Id, param_count = ParamCount}, ParamValues,
     fetch_execute_response(SockModule, Socket, AllowedPaths, DecodeDecimal, FilterMap, Timeout).
 
 %% @doc This is used by execute/5. If execute/5 returns {error, timeout}, this
-%% function can be called to retry to fetch the results of the query.
+%% function can be called to retry fetching the results of the query.
 fetch_execute_response(SockModule, Socket, AllowedPaths, DecodeDecimal, FilterMap, Timeout) ->
     fetch_response(SockModule, Socket, Timeout, binary, AllowedPaths, DecodeDecimal, FilterMap, []).
 
@@ -356,7 +356,7 @@ reset_connnection(SockModule, Socket) ->
 %% --- internal ---
 
 %% @doc Parses a handshake. This is the first thing that comes from the server
-%% when connecting. If an unsupported version or variant of the protocol is used
+%% when connecting. If an unsupported version or variant of the protocol is used,
 %% an error is raised.
 -spec parse_handshake(binary()) -> #handshake{} | #error{}.
 parse_handshake(<<10, Rest/binary>>) ->
@@ -422,7 +422,7 @@ get_server_info(ServerVersion) ->
     end,
     {Vendor, Version}.
 
-%% @doc Converts a version on the form `<<"5.6.21">' to a list `[5, 6, 21]'.
+%% @doc Converts a version of the form `<<"5.6.21">>' to a list `[5, 6, 21]'.
 -spec server_version_to_list(binary()) -> [integer()].
 server_version_to_list(ServerVersion) ->
     %% This must work with e.g. "5.5.40-0ubuntu0.12.04.1-log" and "5.5.33a".
@@ -471,8 +471,8 @@ ssl_connect(Handshake, Host, Port, ConfigSSLOpts, Timeout) ->
     ssl:connect(Port, MergedSSLOpts, Timeout).
 
 
-%% @doc Determines which ssl versions to use according to server vendor and version
-%% since almostly, mysql &lt; 5.7.0 and mariadb &lt; 10.1.0 supports only tlsv1
+%% @doc Determines which ssl versions to use according to the server vendor and
+%% version, since MySQL &lt; 5.7.0 and MariaDB &lt; 10.1.0 support only `tlsv1'.
 -spec determine_ssl_versions(#handshake{}) -> list().
 determine_ssl_versions(#handshake{server_vendor = mysql, server_version = Version}) when Version < [5, 7, 0] ->
     [tlsv1];
@@ -491,7 +491,7 @@ merge_ssl_options(DefaultSSLOpts, MandatorySSLOpts, ConfigSSLOpts) ->
                         lists:keystore(Key, 1, OptsAcc, Opt)
                 end, SSLOpts1, MandatorySSLOpts).
 
-%% @doc This function is used when upgrading to encrypted socket. In other,
+%% @doc This function is used when upgrading to an encrypted socket. In other
 %% cases, build_handshake_response/5 is used.
 -spec build_handshake_response(#handshake{}, iodata() | undefined, boolean()) ->
     binary().
@@ -507,7 +507,7 @@ build_handshake_response(Handshake, Database, SetFoundRows) ->
       0:23/unit:8>>.
 
 %% @doc The response sent by the client to the server after receiving the
-%% initial handshake from the server
+%% initial handshake from the server.
 -spec build_handshake_response(#handshake{}, iodata(), iodata(),
                                iodata() | undefined, boolean()) ->
     binary().
@@ -615,7 +615,7 @@ parse_handshake_confirm(<<?MORE_DATA, MoreData/binary>>) ->
 
 %% -- both text and binary protocol --
 
-%% @doc Fetches one or more results and and parses the result set(s) using
+%% @doc Fetches one or more results and parses the result set(s) using
 %% either the text format (for plain queries) or the binary format (for
 %% prepared statements).
 -spec fetch_response(module(), term(), timeout(), text | binary, [binary()],
@@ -790,7 +790,7 @@ decode_text_row_acc([ColDef | ColDefs], Data, Acc) ->
             %% NULL
             decode_text_row_acc(ColDefs, Rest, [null | Acc]);
         _ ->
-            %% Every thing except NULL
+            %% Everything except NULL
             {Text, Rest} = lenenc_str(Data),
             Term = decode_text(ColDef, Text),
             decode_text_row_acc(ColDefs, Rest, [Term | Acc])
@@ -818,7 +818,7 @@ decode_text(#col{type = ?TYPE_BIT, length = Length}, Text) ->
 decode_text(#col{type = T, decimals = S, length = L,
                  decode_decimal = DecodeDecimal}, Text)
   when T == ?TYPE_DECIMAL; T == ?TYPE_NEWDECIMAL ->
-    %% Length is the max number of symbols incl. dot and minus sign, e.g. the
+    %% Length is the max number of symbols incl. dot and minus sign, i.e. the
     %% number of digits plus 2.
     decode_decimal(DecodeDecimal, Text, L - 2, S);
 decode_text(#col{type = ?TYPE_DATE},
@@ -906,7 +906,7 @@ decode_binary_row_acc([ColDef | ColDefs], <<0:1, NullBitMap/bitstring>>, Data,
 decode_binary_row_acc([], _NullBitMap, <<>>, Acc) ->
     lists:reverse(Acc).
 
-%% @doc Decodes a null bitmap as stored by MySQL and returns it in a strait
+%% @doc Decodes a null bitmap as stored by MySQL and returns it in a straight
 %% bitstring counting bits from left to right in a tuple with remaining data.
 %%
 %% In the MySQL null bitmap the bits are stored counting bytes from the left and
@@ -915,7 +915,7 @@ decode_binary_row_acc([], _NullBitMap, <<>>, Acc) ->
                          BitOffset :: integer()) ->
     {NullBitstring :: bitstring(), Rest :: binary()}.
 null_bitmap_decode(NumColumns, Data, BitOffset) ->
-    %% Binary shift right by 3 is equivallent to integer division by 8.
+    %% Binary shift right by 3 is equivalent to integer division by 8.
     BitMapLength = (NumColumns + BitOffset + 7) bsr 3,
     <<NullBitstring0:BitMapLength/binary, Rest/binary>> = Data,
     <<_:BitOffset, NullBitstring:NumColumns/bitstring, _/bitstring>> =
@@ -950,7 +950,7 @@ build_null_bitmap(Values) ->
 %%
 %% The types are type constants for the binary protocol, such as
 %% ProtocolBinary::MYSQL_TYPE_STRING. In the guide "MySQL Internals" these are
-%% not listed, but we assume that are the same as for the text protocol.
+%% not listed, but we assume that they are the same as for the text protocol.
 -spec decode_binary(ColDef :: #col{}, Data :: binary()) ->
     {Term :: term(), Rest :: binary()}.
 decode_binary(#col{type = T}, Data)
@@ -999,16 +999,16 @@ decode_binary(#col{type = ?TYPE_TINY, flags = F},
 decode_binary(#col{type = T, decimals = S, length = L,
                    decode_decimal = DecodeDecimal}, Data)
   when T == ?TYPE_DECIMAL; T == ?TYPE_NEWDECIMAL ->
-    %% Length is the max number of symbols incl. dot and minus sign, e.g. the
+    %% Length is the max number of symbols incl. dot and minus sign, i.e. the
     %% number of digits plus 2.
     {Binary, Rest} = lenenc_str(Data),
     {decode_decimal(DecodeDecimal, Binary, L - 2, S), Rest};
 decode_binary(#col{type = ?TYPE_DOUBLE},
               <<Value:64/float-little, Rest/binary>>) ->
     {Value, Rest};
-decode_binary(#col{type = ?TYPE_FLOAT}, <<0.0:32/float-little, Rest/binary>>) ->
-    %% TYPE_FLOAT conversation fails on math:log10(0.0)
-    {0.0, Rest};
+decode_binary(#col{type = ?TYPE_FLOAT},
+              <<Value:32/float-little, Rest/binary>>) when Value == 0 ->
+    {Value, Rest};
 decode_binary(#col{type = ?TYPE_FLOAT},
               <<Value:32/float-little, Rest/binary>>) ->
     %% There is a precision loss when storing and fetching a 32-bit float.
@@ -1109,7 +1109,7 @@ flooring(Value) ->
         Trunc > Value -> Trunc - 1 %% for negative values
     end.
 
-%% @doc Encodes a term reprenting av value as a binary for use in the binary
+%% @doc Encodes a term representing a value as a binary for use in the binary
 %% protocol. As this is used to encode parameters for prepared statements, the
 %% encoding is in its required form, namely `<<Type:8, Sign:8, Value/binary>>'.
 -spec encode_param(term()) -> {TypeAndSign :: binary(), Data :: binary()}.
@@ -1132,8 +1132,8 @@ encode_param(Value) when is_integer(Value), Value >= 0 ->
         Value =< 16#ffffffffffffffff ->
             {<<?TYPE_LONGLONG, 16#80>>, <<Value:64/little>>};
         true ->
-            %% If larger than a 64-bit int we send it as a string. MySQL does
-            %% silently cast strings in aithmetic expressions. Also, DECIMALs
+            %% If larger than a 64-bit int we send it as a string. MySQL
+            %% silently casts strings in arithmetic expressions. Also, DECIMALs
             %% are always sent as strings.
             encode_param(integer_to_binary(Value))
     end;
@@ -1177,8 +1177,7 @@ encode_param({{Y, M, D}, {H, Mi, S}}) when is_float(S) ->
     %% calendar:datetime() with a float for seconds. This way it looks very
     %% similar to a datetime. Microseconds in MySQL timestamps are possible but
     %% not very common.
-    Sec = trunc(S),
-    Micro = round(1000000 * (S - Sec)),
+    {Sec, Micro} = mysql_encode:split_seconds(S),
     {<<?TYPE_DATETIME, 0>>, <<11, Y:16/little, M, D, H, Mi, Sec,
                               Micro:32/little>>};
 encode_param({D, {H, M, S}}) when is_integer(S), D >= 0 ->
@@ -1191,14 +1190,13 @@ encode_param({D, {H, M, S}}) when is_integer(S), D < 0 ->
     {D1, {H1, M1, S1}} = calendar:seconds_to_daystime(-Seconds),
     {<<?TYPE_TIME, 0>>, <<8, 1, D1:32/little, H1, M1, S1>>};
 encode_param({D, {H, M, S}}) when is_float(S), D >= 0 ->
-    S1 = trunc(S),
-    Micro = round(1000000 * (S - S1)),
+    {S1, Micro} = mysql_encode:split_seconds(S),
     {<<?TYPE_TIME, 0>>, <<12, 0, D:32/little, H, M, S1, Micro:32/little>>};
 encode_param({D, {H, M, S}}) when is_float(S), S > 0.0, D < 0 ->
-    IntS = trunc(S),
-    Micro = round(1000000 * (1 - S + IntS)),
-    Seconds = (D * 24 + H) * 3600 + M * 60 + IntS + 1,
-    {D1, {M1, H1, S1}} = calendar:seconds_to_daystime(-Seconds),
+    %% Split the absolute value, then set the minus flag.
+    {Seconds, Micro} =
+        mysql_encode:split_seconds(-((D * 24 + H) * 3600 + M * 60 + S)),
+    {D1, {H1, M1, S1}} = calendar:seconds_to_daystime(Seconds),
     {<<?TYPE_TIME, 0>>, <<12, 1, D1:32/little, H1, M1, S1, Micro:32/little>>};
 encode_param({D, {H, M, V}}) when abs(V) =:= +0.0 ->
     encode_param({D, {H, M, 0}}).
@@ -1300,7 +1298,10 @@ recv_packet(SockModule, Socket, Timeout, ExpectSeqNum, Acc) ->
         {ok, Header} ->
             {Size, SeqNum, More} = parse_packet_header(Header),
             true = SeqNum == ExpectSeqNum orelse ExpectSeqNum == any,
-            {ok, Body} = SockModule:recv(Socket, Size),
+            {ok, Body} = case Size of
+                             0 -> {ok, <<>>};
+                             _ -> SockModule:recv(Socket, Size)
+                         end,
             Acc1 = <<Acc/binary, Body/binary>>,
             NextSeqNum = (SeqNum + 1) band 16#ff,
             case More of
@@ -1407,7 +1408,7 @@ send_file_chunk(SockModule, Socket, Handle, SeqNum0) ->
 %% length of payload until there are no more packets. The seq num should
 %% increment from 0 and may wrap around at 255 back to 0.
 %%
-%% When all packets are read and the payload of all packets are concatenated, it
+%% When all packets are read and the payloads of all packets are concatenated, it
 %% can be parsed using parse_response/1, etc. depending on what type of response
 %% is expected.
 -spec parse_packet_header(PackerHeader :: binary()) ->
@@ -1594,9 +1595,9 @@ encrypt_password(Password, Salt, PubKey, ServerVersion)
 
     %% In OTP 27.0, public_key:encrypt_public was deprecated, and
     %% de-deprecated again in 27.1. We mitigate the possible deprecation
-    %% warning by putting the module name in a variable and use it to
+    %% warning by putting the module name in a variable and using it to
     %% perform the call.
-    %% The option rsa_pad was renamed to rsa_padding in OTP/22, but rsa_pad
+    %% The option rsa_pad was renamed to rsa_padding in OTP 22, but rsa_pad
     %% is being kept for backwards compatibility.
     PublicKeyMod = public_key,
     PublicKeyMod:encrypt_public(Password2, PubKey, [{rsa_pad, RsaPadding}]);
@@ -1781,6 +1782,47 @@ decode_binary_test() ->
     ?assertEqual({1234.57, <<>>},
                  decode_binary(#col{type = ?TYPE_FLOAT},
                                <<1234.56789:32/float-little>>)),
+    ok.
+
+decode_binary_float_zero_test() ->
+    ?assertMatch({V, <<>>} when V == 0,
+                 decode_binary(#col{type = ?TYPE_FLOAT},
+                               <<0.0:32/float-little>>)),
+    ?assertMatch({V, <<>>} when V == 0,
+                 decode_binary(#col{type = ?TYPE_FLOAT},
+                               <<-0.0:32/float-little>>)),
+    ok.
+
+encode_param_negative_time_with_fraction_test() ->
+    %% -1 day + 22:30:00.5 = -01:29:59.5
+    ?assertEqual({<<?TYPE_TIME, 0>>,
+                  <<12, 1, 0:32/little, 1, 29, 59, 500000:32/little>>},
+                 encode_param({-1, {22, 30, 0.5}})),
+    ok.
+
+encode_param_microsecond_rounding_test() ->
+    %% Fractions that would round up to a whole second are capped at
+    %% 999999 microseconds instead of carrying over.
+    ?assertEqual({<<?TYPE_DATETIME, 0>>,
+                  <<11, 2014:16/little, 12, 31, 23, 59, 59,
+                    999999:32/little>>},
+                 encode_param({{2014, 12, 31}, {23, 59, 59.9999997}})),
+    ?assertEqual({<<?TYPE_TIME, 0>>,
+                  <<12, 0, 0:32/little, 23, 59, 59, 999999:32/little>>},
+                 encode_param({0, {23, 59, 59.9999997}})),
+    %% -1 day + 0.0000003 s = -23:59:59.9999997
+    ?assertEqual({<<?TYPE_TIME, 0>>,
+                  <<12, 1, 0:32/little, 23, 59, 59, 999999:32/little>>},
+                 encode_param({-1, {0, 0, 0.0000003}})),
+    %% Negative with a whole float second: -6 days + 23:59:57 = -5d 00:00:03
+    ?assertEqual({<<?TYPE_TIME, 0>>,
+                  <<12, 1, 5:32/little, 0, 0, 3, 0:32/little>>},
+                 encode_param({-6, {23, 59, 57.0}})),
+    %% Regular fractions are rounded as before
+    ?assertEqual({<<?TYPE_DATETIME, 0>>,
+                  <<11, 2014:16/little, 11, 23, 23, 59, 57,
+                    654321:32/little>>},
+                 encode_param({{2014, 11, 23}, {23, 59, 57.654321}})),
     ok.
 
 null_bitmap_test() ->

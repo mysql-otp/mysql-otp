@@ -40,7 +40,8 @@ disconnected() ->
 
 %% @doc Receives NumBytes bytes from mock_tcp Pid. This function can be used
 %% as a replacement for gen_tcp:recv/2 in unit tests. If there not enough data
-%% in the mock_tcp's buffer, an error is raised.
+%% in the mock_tcp's buffer, an error is raised. As with gen_tcp, if NumBytes
+%% is 0, all data of the current expected recv event is returned.
 recv(Pid, NumBytes) ->
     call(Pid, {recv, NumBytes}).
 
@@ -87,7 +88,8 @@ expect_loop(AllEvents = [{Func, Data} = Event | Events]) ->
     receive
         stop ->
             ok;
-        {ReplyTo, {recv, NumBytes}} when Func =:= recv, NumBytes =:= byte_size(Data) ->
+        {ReplyTo, {recv, NumBytes}} when Func =:= recv, NumBytes =:= byte_size(Data);
+                                         Func =:= recv, NumBytes =:= 0 ->
             reply(ReplyTo, reply, {ok, Data}),
             expect_loop(Events);
         {ReplyTo, {recv, NumBytes}} when Func =:= recv, NumBytes < byte_size(Data) ->
@@ -180,4 +182,11 @@ success_test() ->
     ?assertEqual(ok, close(Pid)),
     %% The process will exit after close. Another recv will raise noreply.
     ?assertError(noreply, recv(Pid, 3)).
+
+recv_zero_test() ->
+    %% Like gen_tcp, recv with length 0 returns all available data.
+    Pid = expect([{recv, <<"foobar">>}]),
+    ?assertEqual({ok, <<"foo">>}, recv(Pid, 3)),
+    ?assertEqual({ok, <<"bar">>}, recv(Pid, 0)),
+    ?assertEqual(ok, close(Pid)).
 -endif.

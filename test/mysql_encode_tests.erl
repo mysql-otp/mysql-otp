@@ -50,6 +50,52 @@ encode_test() ->
          {{{2014, 11, 23}, {23, 59, 57.654321}}, "'2014-11-23 23:59:57.654321'"}]
     ).
 
+microsecond_rounding_test() ->
+    %% Fractions that would round up to a whole second are capped at
+    %% 999999 microseconds instead of carrying over.
+    lists:foreach(
+        fun ({Term, Sql}) ->
+            ?assertEqual(iolist_to_binary(Sql),
+                         iolist_to_binary(mysql_encode:encode(Term)))
+        end,
+        [{{{2014, 12, 31}, {23, 59, 59.9999997}}, "'2014-12-31 23:59:59.999999'"},
+         {{{9999, 12, 31}, {23, 59, 59.9999997}}, "'9999-12-31 23:59:59.999999'"},
+         {{{2014, 2, 30}, {23, 59, 59.9999997}},  "'2014-02-30 23:59:59.999999'"},
+         {{0, {23, 59, 59.9999997}},              "'23:59:59.999999'"},
+         {{5, {0, 0, 59.9999997}},                "'120:00:59.999999'"},
+         {{-1, {0, 0, 0.0000003}},                "'-23:59:59.999999'"},
+         {{-5, {0, 0, 0.0000003}},                "'-119:59:59.999999'"}]).
+
+decimal_test() ->
+    lists:foreach(
+        fun (Str) ->
+            ?assertEqual(iolist_to_binary(Str),
+                         iolist_to_binary(mysql_encode:encode({decimal, Str})))
+        end,
+        ["10.2", <<"-10.2">>, "+1", "123.", ".5", "1e3", "1.5E-3", "-.5e+10"]).
+
+decimal_invalid_test() ->
+    lists:foreach(
+        fun (Str) ->
+            ?assertError(badarg, mysql_encode:encode({decimal, Str}))
+        end,
+        [<<>>, <<".">>, <<"e">>, <<"1e">>, <<"1--">>, <<"--1">>, <<"- 5">>,
+         <<"1.2.3">>, <<"1e5e5">>, <<"+-.">>, <<"1 OR 1">>, <<"1\n">>,
+         [8364]]).
+
 backslash_escape_test() ->
     ?assertEqual(<<"a'b\\\\c'd\\\\e">>,
                  iolist_to_binary(mysql_encode:backslash_escape("a'b\\c'd\\e"))).
+
+backslash_escape_unicode_test() ->
+    %% Unicode codepoints in lists get encoded as UTF-8, as in encode/1
+    ?assertEqual(<<"Caf", 195, 169>>,
+                 iolist_to_binary(mysql_encode:backslash_escape("Café"))),
+    ?assertEqual(<<"100 ", 226, 130, 172>>,
+                 iolist_to_binary(mysql_encode:backslash_escape("100 €"))),
+    ?assertEqual(<<"a\\\\b", 195, 169>>,
+                 iolist_to_binary(mysql_encode:backslash_escape("a\\bé"))),
+    %% Binaries are not converted
+    ?assertEqual(<<255, 0>>,
+                 iolist_to_binary(mysql_encode:backslash_escape(<<255, 0>>))),
+    ?assertError(badarg, mysql_encode:backslash_escape([16#110000])).

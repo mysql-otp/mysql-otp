@@ -16,13 +16,7 @@
 %% You should have received a copy of the GNU Lesser General Public License
 %% along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-%% @doc This module implements parts of the MySQL client/server protocol.
-%%
-%% The protocol is described in the document "MySQL Internals" which can be
-%% found under "MySQL Documentation: Expert Guides" on http://dev.mysql.com/.
-%%
-%% TCP communication is not handled in this module. Most of the public functions
-%% take funs for data communitaction as parameters.
+%% @doc Gen_server implementing a MySQL connection.
 %% @private
 -module(mysql_conn).
 
@@ -184,8 +178,8 @@ connect_socket(#state{tcp_opts = TcpOpts, host = Host, port = Port} = State) ->
     {ok, State#state{socket = Socket}}.
 
 sanitize_tcp_opts(Host, [{inet_backend, _} = InetBackend | TcpOpts0]) ->
-    %% This option is be used to turn on the experimental socket backend for
-    %% gen_tcp/inet (OTP/23). If given, it must remain the first option in the
+    %% This option is used to turn on the experimental socket backend for
+    %% gen_tcp/inet (OTP 23). If given, it must remain the first option in the
     %% list.
     [InetBackend | sanitize_tcp_opts(Host, TcpOpts0)];
 sanitize_tcp_opts(Host, TcpOpts0) ->
@@ -293,7 +287,7 @@ execute_on_connect([Query|Queries], Prepares, State) ->
 %%       able to handle this in the caller's process, we also return the
 %%       nesting level.</dd>
 %%   <dt>`{implicit_rollback, NestingLevel, ServerReason}'</dt>
-%%   <dd>This errors results in an implicit rollback: `{1213, <<"40001">>,
+%%   <dd>This error results in an implicit rollback: `{1213, <<"40001">>,
 %%       <<"Deadlock found when trying to get lock; try restarting "
 %%         "transaction">>}'.
 %%
@@ -313,7 +307,7 @@ handle_call(Msg, From, #state{socket = undefined} = State) ->
 handle_call({query, _Query, _FilterMap, _Timeout}, {FromPid, _},
             State = #state{transaction_levels = [{OtherFromPid, _} | _]})
   when FromPid =/= OtherFromPid ->
-    %% this conn is currently in transaction owned by another process
+    %% this conn is currently in a transaction owned by another process
     {reply, {error, busy}, State};
 handle_call({query, Query, FilterMap, Timeout}, _From, State) ->
     {Reply, State1} = query(Query, FilterMap, Timeout, State),
@@ -325,7 +319,7 @@ handle_call({param_query, Query, Params, FilterMap, default_timeout}, From,
 handle_call({param_query, _Query, _Params, _FilterMap, _Timeout}, {FromPid, _},
             State = #state{transaction_levels = [{OtherFromPid, _} | _]})
   when FromPid =/= OtherFromPid ->
-    %% this conn is currently in transaction owned by another process
+    %% this conn is currently in a transaction owned by another process
     {reply, {error, busy}, State};
 handle_call({param_query, Query, Params, FilterMap, Timeout}, _From,
             #state{socket = Socket, sockmod = SockMod} = State) ->
@@ -345,7 +339,7 @@ handle_call({param_query, Query, Params, FilterMap, Timeout}, _From,
                 #error{} = E ->
                     {{error, error_to_reason(E)}, Cache};
                 #prepared{} = Stmt ->
-                    %% If the first entry in the cache, start the timer.
+                    %% If this is the first entry in the cache, start the timer.
                     mysql_cache:is_empty(Cache) andalso begin
                         When = State#state.query_cache_time * 2,
                         erlang:send_after(When, self(), query_cache)
@@ -367,7 +361,7 @@ handle_call({execute, Stmt, Args, FilterMap, default_timeout}, From, State) ->
 handle_call({execute, _Stmt, _Args, _FilterMap, _Timeout}, {FromPid, _},
             State = #state{transaction_levels = [{OtherFromPid, _} | _]})
   when FromPid =/= OtherFromPid ->
-    %% this conn is currently in transaction owned by another process
+    %% this conn is currently in a transaction owned by another process
     {reply, {error, busy}, State};
 handle_call({execute, Stmt, Args, FilterMap, Timeout}, _From, State) ->
     case State#state.stmts of
@@ -387,7 +381,7 @@ handle_call({prepare, Query}, _From, State) ->
         #error{} = E ->
             {reply, {error, error_to_reason(E)}, State1};
         #prepared{statement_id = Id} = Stmt ->
-            State2 = State#state{stmts = Stmts1#{Id => Stmt}},
+            State2 = State1#state{stmts = Stmts1#{Id => Stmt}},
             {reply, {ok, Id}, State2}
     end;
 handle_call({prepare, Name, Query}, _From, State) when is_atom(Name);
@@ -451,7 +445,7 @@ handle_call(reset_connection, _From, #state{socket = Socket, sockmod = SockMod} 
     Reply = case Result of
         #ok{} -> ok;
         #error{} = E ->
-            %% 'COM_RESET_CONNECTION' is added in MySQL 5.7 and MariaDB 10
+            %% 'COM_RESET_CONNECTION' was added in MySQL 5.7 and MariaDB 10
             %% "Unknown command" is returned when MySQL =< 5.6 or MariaDB =< 5.5
             {error, error_to_reason(E)}
     end,
@@ -472,7 +466,7 @@ handle_call(in_transaction, _From, State) ->
 handle_call(start_transaction, {FromPid, _}, 
             State = #state{transaction_levels = [{OtherFromPid, _}|_]})
   when FromPid =/= OtherFromPid ->
-    %% the idea of "nested transaction" is that mysql:transaction can be called 
+    %% the idea of "nested transactions" is that mysql:transaction can be called
     %% in the transaction function, but all within the same process
     {reply, {error, busy}, State};
 handle_call(start_transaction, {FromPid, _},
@@ -664,7 +658,7 @@ update_state(Rec, State) ->
     end,
     schedule_ping(State1).
 
-%% @doc executes an unparameterized query and returns {Reply, NewState}.
+%% @doc Executes an unparameterized query and returns {Reply, NewState}.
 query(Query, FilterMap, default_timeout,
       #state{query_timeout = DefaultTimeout} = State) ->
     query(Query, FilterMap, DefaultTimeout, State);
@@ -756,7 +750,7 @@ handle_query_call_result([Rec|Recs], RecNum, Query,
         #error{code = ?ERROR_DEADLOCK} when L /= [] ->
             %% These errors result in an implicit rollback.
             Reply = {implicit_rollback, length(L), error_to_reason(Rec)},
-            %% The transaction is rollbacked, except the BEGIN, so we're still
+            %% The transaction is rolled back, except the BEGIN, so we're still
             %% in a transaction.  (In 5.7+, also the BEGIN has been rolled back,
             %% but here we assume the old behaviour.)
             NewMonitors = demonitor_processes(L, length(L) - 1),
@@ -786,7 +780,7 @@ log_warnings(#state{socket = Socket, sockmod = SockMod,
              || [Level, Code, Message] <- Rows],
     logger:warning("~s in ~s~n", [Lines, Query]).
 
-%% @doc Logs slow queries. Query is the query that gave the warnings.
+%% @doc Logs slow queries. Query is the query that was slow.
 maybe_log_slow_query(#state{log_slow_queries = true}, S, RecNum, Query)
   when S band ?SERVER_QUERY_WAS_SLOW /= 0 ->
     IndexHint = if
@@ -808,7 +802,7 @@ maybe_log_slow_query(#state{log_slow_queries = true}, S, RecNum, Query)
 maybe_log_slow_query(_, _, _, _) ->
     ok.
 
-%% @doc Makes a separate connection and execute KILL QUERY. We do this to get
+%% @doc Makes a separate connection and executes KILL QUERY. We do this to get
 %% our main connection back to normal. KILL QUERY appeared in MySQL 5.0.0.
 kill_query(#state{connection_id = ConnId, host = Host, port = Port,
                   user = User, password = Password, ssl_opts = SSLOpts,
