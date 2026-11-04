@@ -23,11 +23,11 @@ MySQL/OTP is a driver for connecting Erlang/OTP applications to MySQL
 databases. It is a native implementation of the MySQL protocol in Erlang.
 
 This is the documentation generated from the Erlang source code using EDoc.
-The project page is on Github:
+The project page is on GitHub:
 <a href="https://github.com/mysql-otp/mysql-otp/"
    target="_top">https://github.com/mysql-otp/mysql-otp/</a>.
 
-For the reference manual see the <a href="mysql.html">mysql</a> module.
+For the reference manual, see the <a href="mysql.html">mysql</a> module.
 
 <h2 id="value-representation">Value representation</h2>
 
@@ -101,8 +101,8 @@ For the reference manual see the <a href="mysql.html">mysql</a> module.
 Notes:
 
 <ol>
-  <li id="vn1">When fetching VARCHAR, TEXT etc. they are returned as `binary()'.
-    When sending (insert or update) any `unicode:chardata()' is accepted as
+  <li id="vn1">When fetching VARCHAR, TEXT etc. values, they are returned as
+    `binary()'. When sending (insert or update), any `unicode:chardata()' is accepted as
     input. In a (possibly deep) list of integers and binaries, the integers are
     treated as Unicode codepoints while binaries are treated as UTF-8 encoded
     Unicode data. For lists, an error occurs if you try to send invalid Unicode
@@ -110,8 +110,8 @@ Notes:
     to allow sending binary non-Unicode data for MySQL's binary strings (BLOB,
     VARBINARY, etc.).</li>
   <li id="vn2">DECIMALs are returned as `integer()' or `float()' when the value
-    can be represented without precision loss and as `binary()' for high
-    precision DECIMAL values. This is similar to how the `odbc' OTP application
+    can be represented without precision loss, and as `binary()' for
+    high-precision DECIMAL values. This is similar to how the `odbc' OTP application
     treats DECIMALs.</li>
   <li id="vn3">DECIMALs can be sent as `{decimal, Value}' (where Value is a
     number, string or binary) but values received from the database are
@@ -133,4 +133,4 @@ Copyright 2014-2021 The authors of MySQL/OTP. See the project page at
 This library is free software licensed under the GNU LGPL which allows you to
 use it in proprietary applications as well as free software applications with
 other licenses. This documentation is generated from the source code and thus
-goes under the same license as the library itself.
+is covered by the same license as the library itself.

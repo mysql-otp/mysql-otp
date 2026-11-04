@@ -111,7 +111,7 @@
 %%       gen_server:start_link/4.</dd>
 %%   <dt>`{host, Host}'</dt>
 %%   <dd>Hostname of the MySQL database. Since OTP version 19, it is also
-%%       possible to specify a local (Unix) Socket by specifying
+%%       possible to specify a local (Unix) socket by specifying
 %%       `{local, SocketFile}'. Default `"localhost"'.</dd>
 %%   <dt>`{port, Port}'</dt>
 %%   <dd>Port; default 3306 for non-local or 0 for local (Unix) sockets.</dd>
@@ -133,8 +133,8 @@
 %%             will have been executed.</dd>
 %%         <dt>`asynchronous'</dt>
 %%         <dd>The connection process will be started and returned to the caller
-%%             before really establishing a connection to the server and executing
-%%             the on-connect prepares and executes. This will instead be done
+%%             before actually establishing a connection to the server and executing
+%%             the on-connect prepares and queries. This will instead be done
 %%             immediately afterwards as the first action of the connection
 %%             process.</dd>
 %%         <dt>`lazy'</dt>
@@ -145,7 +145,7 @@
 %%      </dl>
 %%   </dd>
 %%   <dt>`{connect_timeout, Timeout}'</dt>
-%%   <dd>The maximum time to spend for start_link/1.</dd>
+%%   <dd>The maximum time to spend in start_link/1.</dd>
 %%   <dt>`{allowed_local_paths, [binary()]}'</dt>
 %%   <dd>This option allows you to specify a list of directories or individual
 %%       files on the client machine which the server may request, for example
@@ -161,10 +161,10 @@
 %%       are flagged as slow by the server if their execution time exceeds the
 %%       value in the `long_query_time' variable.</dd>
 %%   <dt>`{keep_alive, boolean() | timeout()}'</dt>
-%%   <dd>Send ping when unused for a certain time. Possible values are `true',
-%%       `false' and `integer() > 0' for an explicit interval in milliseconds.
-%%       The default is `false'. For `true' a default ping timeout is used.
-%%       </dd>
+%%   <dd>Send a ping when the connection is unused for a certain time.
+%%       Possible values are `true', `false' and `integer() > 0' for an
+%%       explicit interval in milliseconds. The default is `false'. For `true'
+%%       a default ping timeout is used.</dd>
 %%   <dt>`{prepare, NamedStatements}'</dt>
 %%   <dd>Named prepared statements to be created as soon as the connection is
 %%       ready.</dd>
@@ -177,7 +177,7 @@
 %%       prepared statement. This can be given per query using `query/3,4' and
 %%       `execute/4'. The default is `infinity'.</dd>
 %%   <dt>`{found_rows, boolean()}'</dt>
-%%   <dd>If set to true, the connection will be established with
+%%   <dd>If set to true, the connection will be established with the
 %%       CLIENT_FOUND_ROWS capability. affected_rows/1 will now return the
 %%       number of found rows, not the number of rows changed by the
 %%       query.</dd>
@@ -202,12 +202,12 @@
 %%       number is specified, the float is rounded to this number of
 %%       decimals. This is off (false) by default.</dd>
 %%   <dt>`{decode_decimal, auto | float | number | binary}'</dt>
-%%   <dd>When decoding `decimal' columns from the server, force the return the
-%%       value as either a `binary()', `float()`, or `number()' (specified by
-%%       the atoms `binary', `float', `number' respectively). Defaults to
-%%       `auto', which will return a number (`integer()' or `float()') unless
-%%       the conversion to `float()' would result in a loss of precision, in
-%%       which case, `binary()' is returned.</dd>
+%%   <dd>When decoding `decimal' columns from the server, force the return of
+%%       the value as either a `binary()', `float()', or `number()'
+%%       (specified by the atoms `binary', `float', `number' respectively).
+%%       Defaults to `auto', which will return a number (`integer()' or
+%%       `float()') unless the conversion to `float()' would result in a loss
+%%       of precision, in which case, `binary()' is returned.</dd>
 %% </dl>
 -spec start_link(Options :: [option()]) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Options) ->
@@ -218,7 +218,7 @@ start_link(Options) ->
             gen_server:start_link(ServerName, mysql_conn, Options, [])
     end.
 
-%% @see stop/2.
+%% @see stop/2
 -spec stop(Conn) -> ok
     when Conn :: connection().
 stop(Conn) ->
@@ -319,7 +319,7 @@ query(Conn, Query, Params, FilterMap) when (Params == no_params orelse
 %%
 %% === Parameters ===
 %%
-%% `Conn' is identifying a connection process started using
+%% `Conn' identifies a connection process started using
 %% `mysql:start_link/1'.
 %%
 %% `Query' is the query to execute, as a binary or a list.
@@ -345,15 +345,15 @@ query(Conn, Query, Params, FilterMap) when (Params == no_params orelse
 %% === Return value ===
 %%
 %% Results are returned in the form `{ok, ColumnNames, Rows}' if there is one
-%% result set. If there are more than one result sets, they are returned in the
+%% result set. If there is more than one result set, they are returned in the
 %% form `{ok, [{ColumnNames, Rows}, ...]}'. This is typically the case if
 %% multiple queries are specified at the same time, separated by semicolons.
 %%
 %% For queries that don't return any rows (INSERT, UPDATE, etc.) only the atom
 %% `ok' is returned.
 %%
-%% If this function is called on a connection which is already in transaction 
-%% owned by another process, `{error, busy}` will be returned.
+%% If this function is called on a connection which is already in a transaction
+%% owned by another process, `{error, busy}' will be returned.
 %%
 %% === FilterMap details ===
 %%
@@ -391,8 +391,8 @@ query(Conn, Query, Params, FilterMap) when (Params == no_params orelse
 %%     %% For rows where the first column is >= 20 and < 30, include
 %%     %% the atom 'foo' in place of the row instead.
 %%     ([A|_]) when A < 30 ->
-%%         {true, foo}};
-%%     %% For rows where the first row is >= 30 and < 40, send the
+%%         {true, foo};
+%%     %% For rows where the first column is >= 30 and < 40, send the
 %%     %% row to a gen_server via call (ie, wait for a response),
 %%     %% and do not include the row in the result.
 %%     (R=[A|_]) when A < 40 ->
@@ -487,7 +487,7 @@ execute(Conn, StatementRef, Params, FilterMap) when FilterMap == no_filtermap_fu
 %%
 %% See `query/5' for an explanation of the `FilterMap' argument.
 %%
-%% Note that if this function is called on a connection which is already in transaction 
+%% Note that if this function is called on a connection which is already in a transaction
 %% owned by another process, `{error, busy}' will be returned.
 %%
 %% @see prepare/2
@@ -552,14 +552,14 @@ unprepare(Conn, StatementRef) ->
     gen_server:call(Conn, {unprepare, StatementRef}).
 
 %% @doc Returns the number of warnings generated by the last query/2 or
-%% execute/3 calls.
+%% execute/3 call.
 -spec warning_count(connection()) -> integer().
 warning_count(Conn) ->
     gen_server:call(Conn, warning_count).
 
 %% @doc Returns the number of inserted, updated and deleted rows of the last
 %% executed query or prepared statement. If found_rows is set on the
-%% connection, for update operation the return value will equal to the number
+%% connection, for update operations the return value will be equal to the number
 %% of rows matched by the query.
 -spec affected_rows(connection()) -> integer().
 affected_rows(Conn) ->
@@ -611,7 +611,7 @@ transaction(Conn, Fun, Retries) ->
 %% MySQL's savepoints are used to implement nested transactions.
 %%
 %% If this function is called on a connection which is already in a transaction
-%% owned by another process, `{aborted, busy}` is returned. The idea of nested
+%% owned by another process, `{aborted, busy}' is returned. The idea of nested
 %% transactions is that this function can be called in the Fun, but all within
 %% the same process.
 %%
@@ -623,18 +623,18 @@ transaction(Conn, Fun, Retries) ->
 %% exception.
 %%
 %% Note that an error response from a query does not cause a transaction to be
-%% rollbacked. To force a rollback on a MySQL error you can trigger a `badmatch'
+%% rolled back. To force a rollback on a MySQL error you can trigger a `badmatch'
 %% using e.g. `ok = mysql:query(Pid, "SELECT some_non_existent_value")'. An
-%% exception to this is the error 1213 "Deadlock", after the specified number
-%% of retries, all failed. In this case, the transaction is aborted and the
+%% exception to this is error 1213 "Deadlock" after the specified number
+%% of retries have all failed. In this case, the transaction is aborted and the
 %% error is returned as the reason for the aborted transaction, along with a
 %% stacktrace pointing to where the last deadlock was detected. (In earlier
-%% versions, up to and including 1.3.2, transactions where automatically
+%% versions, up to and including 1.3.2, transactions were automatically
 %% restarted also for the error 1205 "Lock wait timeout". This is no longer the
 %% case.)
 %%
-%% Some queries such as ALTER TABLE cause an *implicit commit* on the server.
-%% If such a query is executed within a transaction, an error on the form
+%% Some queries such as ALTER TABLE cause an <em>implicit commit</em> on the server.
+%% If such a query is executed within a transaction, an error of the form
 %% `{implicit_commit, Query}' is raised. This means that the transaction has
 %% been committed prematurely. This also happens if an explicit COMMIT is
 %% executed as a plain query within a managed transaction. (Don't do that!)
@@ -660,7 +660,7 @@ transaction(Conn, Fun, Retries) ->
          TransactionResult :: transaction_result(Result).
 transaction(Conn, Fun, Args, Retries) when is_list(Args),
                                            is_function(Fun, length(Args)) ->
-    %% The guard makes sure that we can apply Fun to Args. Any error we catch
+    %% The guard makes sure that we can apply Fun to Args. Any errors we catch
     %% in the try-catch are actual errors that occurred in Fun.
     case gen_server:call(Conn, start_transaction, infinity) of
         ok -> 
@@ -701,7 +701,7 @@ execute_transaction(Conn, Fun, Args, Retries) ->
         %% retries left
         throw:{implicit_rollback, 1, _}
           when Retries == infinity ->
-            %% In MySQL < 5.7 we're not in a transaction here, but in earlier
+            %% In MySQL 5.7+ we're not in a transaction here, but in earlier
             %% versions we are, so we can't use `gen_server:call(Conn,
             %% start_transaction, infinity)' here.
             ok = query(Conn, <<"BEGIN">>),
@@ -713,7 +713,7 @@ execute_transaction(Conn, Fun, Args, Retries) ->
         throw:{implicit_rollback, 1, Reason}:Stacktrace
           when Retries == 0 ->
             %% No more retries. Return 'aborted' along with the deadlock error
-            %% and a the trace to the line where the deadlock occurred.
+            %% and the trace to the line where the deadlock occurred.
             %% In MySQL < 5.7, we are still in a transaction here, but in 5.7+
             %% we're not.  The ROLLBACK executed here has no effect if no
             %% transaction is ongoing.
@@ -725,27 +725,27 @@ execute_transaction(Conn, Fun, Args, Retries) ->
             erlang:raise(throw, {implicit_rollback, N - 1, Reason},
                          Stacktrace);
         error:{implicit_commit, _Query} = E:Stacktrace ->
-            %% The called did something like ALTER TABLE which resulted in an
+            %% The fun did something like ALTER TABLE which resulted in an
             %% implicit commit. The server has already committed. We need to
             %% jump out of N levels of transactions.
             %%
-            %% Returning 'atomic' or 'aborted' would both be wrong. Raise an
+            %% Returning 'atomic' or 'aborted' would both be wrong. Raising an
             %% exception is the best we can do.
             erlang:raise(error, E, Stacktrace);
         error:change_user_in_transaction = E:Stacktrace ->
-            %% The called tried to change user inside the transaction, which
+            %% The fun tried to change user inside the transaction, which
             %% is not allowed and a serious mistake. We roll back and raise
             %% an error.
             ok = gen_server:call(Conn, rollback, infinity),
             erlang:raise(error, E, Stacktrace);
         error:reset_connection_in_transaction = E:Stacktrace ->
-            %% The called tried to reset connection inside the transaction, which
+            %% The fun tried to reset the connection inside the transaction, which
             %% is not allowed and a serious mistake. We roll back and raise
             %% an error.
             ok = gen_server:call(Conn, rollback, infinity),
             erlang:raise(error, E, Stacktrace);
         Class:Reason:Stacktrace ->
-            %% We must be able to rollback. Otherwise let's crash.
+            %% We must be able to roll back. Otherwise let's crash.
             ok = gen_server:call(Conn, rollback, infinity),
             %% These forms for throw, error and exit mirror Mnesia's behaviour.
             Aborted = case Class of
@@ -766,7 +766,7 @@ execute_transaction(Conn, Fun, Args, Retries) ->
 change_user(Conn, Username, Password) ->
     change_user(Conn, Username, Password, []).
 
-%% @doc Changes the user of the active connection without closing and
+%% @doc Changes the user of the active connection without closing
 %% and re-opening it. The currently active session will be reset (ie,
 %% user variables, temporary tables, prepared statements, etc will
 %% be lost) independent of whether the operation succeeds or fails.
@@ -776,7 +776,7 @@ change_user(Conn, Username, Password) ->
 %% an error exception and `change_user_in_transaction' as the error
 %% message.
 %%
-%% If the change user operation fails, `{error, Reason}'  will be
+%% If the change user operation fails, `{error, Reason}' will be
 %% returned. Specifically, if the operation itself fails (eg
 %% authentication failure), `change_user_failed' will be returned as
 %% the reason, while if the operation itself succeeds but one of
@@ -815,7 +815,7 @@ reset_connection(Conn) ->
     end,
     gen_server:call(Conn, reset_connection).
 
-%% @doc Encodes a term as a MySQL literal so that it can be used to inside a
+%% @doc Encodes a term as a MySQL literal so that it can be used inside a
 %% query. If backslash escapes are enabled, backslashes and single quotes in
 %% strings and binaries are escaped. Otherwise only single quotes are escaped.
 %%
