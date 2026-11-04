@@ -14,7 +14,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
-%% @doc A minimalistic time triggered maps based cache data structure.
+%% @doc A minimalistic, time-triggered, map-based cache data structure.
 %%
 %% The cache keeps track of when each key was last used. Elements are evicted
 %% using manual calls to evict_older_than/2. Most of the functions return a new

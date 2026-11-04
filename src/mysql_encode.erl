@@ -5,7 +5,7 @@
 
 -export([encode/1, backslash_escape/1, split_seconds/1]).
 
-%% @doc Encodes a term as an ANSI SQL literal so that it can be used to inside
+%% @doc Encodes a term as an ANSI SQL literal so that it can be used inside
 %% a query. In strings only single quotes (') are escaped. If backslash escapes
 %% are enabled for the connection, you should first use backslash_escape/1 to
 %% escape backslashes in strings.
