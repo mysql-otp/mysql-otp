@@ -1,3 +1,21 @@
+%% MySQL/OTP – MySQL client library for Erlang/OTP
+%% Copyright (C) 2026 Jan Uhlig
+%%
+%% This file is part of MySQL/OTP.
+%%
+%% MySQL/OTP is free software: you can redistribute it and/or modify it under
+%% the terms of the GNU Lesser General Public License as published by the Free
+%% Software Foundation, either version 3 of the License, or (at your option)
+%% any later version.
+%%
+%% This program is distributed in the hope that it will be useful, but WITHOUT
+%% ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+%% FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+%% more details.
+%%
+%% You should have received a copy of the GNU Lesser General Public License
+%% along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 %% @doc A logger report handler that be used to capture expected errors in
 %% tests. The current error report handlers are disabled during the execution
 %% of a function. Afterwards, they are restored and the errors that occered are
